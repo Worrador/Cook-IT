@@ -35,8 +35,23 @@ class CookITApp(tk.Tk):
             self.logic.initialize()
             self.update_status("Ready to choose a recipe!")
             self.enable_choose_button()
+        except FileNotFoundError:
+            self.handle_missing_file()
         except Exception as e:
             self.update_status(f"Error: {str(e)}")
+
+
+
+    def handle_missing_file(self):
+        message = ("The 'Recipes.xlsx' file was not found. "
+                   "Would you like to create it?")
+        if messagebox.askyesno("File Not Found", message):
+            self.logic.create_workbook()
+            messagebox.showinfo("File Created",
+                "An empty 'Recipes.xlsx' file has been created.\n"
+                "Please fill it with recipies and restart the application.")
+        else:
+            self.update_status("Data loading cancelled. File not found.")
 
     def update_status(self, message):
         self.status_label.config(text=message)

@@ -44,6 +44,14 @@ class CookITLogic:
         with open('Recipes.xlsx', 'wb') as f:
             f.write(fh.read())
 
+    def create_workbook(self):
+        if not os.path.exists('Recipes.xlsx'):
+            self.wb = openpyxl.Workbook()
+            self.ws_recipes = self.wb.active
+            self.ws_recipes.title = 'Recipes'
+            self.ws_recency = self.wb.create_sheet(title='Recency')
+            self.wb.save('Recipes.xlsx')
+
     def load_workbook(self):
         self.wb = openpyxl.load_workbook('Recipes.xlsx')
         self.ws_recipes = self.wb['Recipes']
