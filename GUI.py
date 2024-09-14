@@ -1,3 +1,33 @@
+import sys
+import subprocess
+import importlib.util
+
+required_packages = [
+    'openpyxl',
+    'google-auth-oauthlib',
+    'google-auth-httplib2',
+    'google-api-python-client'
+]
+
+def is_package_installed(package_name):
+    spec = importlib.util.find_spec(package_name)
+    return spec is not None
+
+def install_package(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+def check_and_install_packages():
+    for package in required_packages:
+        if not is_package_installed(package):
+            print(f"Installing {package}...")
+            install_package(package)
+        else:
+            print(f"{package} is already installed.")
+    print("All required packages have been installed.")
+
+# Run the package check and installation
+check_and_install_packages()
+
 import tkinter as tk
 from tkinter import messagebox
 import webbrowser
