@@ -1,5 +1,6 @@
 import random
 import os
+import sys
 import io
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -10,6 +11,15 @@ import openpyxl
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 FILE_NAME = 'Recipe_list.xlsx'
+
+if getattr(sys, 'frozen', False):
+    # If running as a frozen executable
+    base_path = sys._MEIPASS
+else:
+    # If running as a script
+    base_path = os.path.dirname(__file__)
+
+json_path = os.path.join(base_path, 'credentials.json')
 
 class CookITLogic:
     def __init__(self):
@@ -28,7 +38,7 @@ class CookITLogic:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+                flow = InstalledAppFlow.from_client_secrets_file(json_path, SCOPES)
                 creds = flow.run_local_server(port=0)
             with open('token.json', 'w') as token:
                 token.write(creds.to_json())
