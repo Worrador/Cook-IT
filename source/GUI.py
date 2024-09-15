@@ -66,7 +66,7 @@ class CookITApp(tk.Tk):
                 messagebox.showinfo("No URL", "No URL was given for this recipe.")
             else:
                 webbrowser.open(url)
-            if comment is None or url == '':
+            if comment is None or comment == '':
                 messagebox.showinfo("No comment", "No comment was given for this recipe.")
             else:
                 messagebox.showinfo("Comment for the recipe", f"{comment}")
