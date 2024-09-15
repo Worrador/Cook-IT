@@ -125,7 +125,7 @@ class CookITLogic:
             self.ws_Recipe_list = self.wb['Recipe_list']
             self.ws_recency = self.wb['Recency']
             # Get the stored row count
-            stored_count = self.ws_Recipe_list.cell(row=1, column=5).value
+            stored_count = int(self.ws_Recipe_list.cell(row=1, column=5).value)
 
             if stored_count is None or self.ws_Recipe_list.cell(row=stored_count, column=1).value is None:
                 # Recounting needed
