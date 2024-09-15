@@ -19,7 +19,8 @@ a = Analysis(
     binaries=[],
     datas=[
         (os.path.join(source_dir, 'credentials.json'), '.'),  # Include credentials.json in the build
-        (os.path.join(source_dir, 'Cook_IT.py'), '.')         # Include Cook_IT.py in the build
+        (os.path.join(source_dir, 'Cook_IT.py'), '.'),         # Include Cook_IT.py
+        ('..\\resource\\Cook-IT.ico', 'resource')  # Include the icon as a data file
     ],
     hiddenimports=[],
     hookspath=[],
