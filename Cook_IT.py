@@ -118,11 +118,28 @@ class CookITLogic:
             self.ws_Recipe_list.append(["Recipe Name", "URL"])
             self.ws_recency = self.wb.create_sheet("Recency")
             self.ws_recency.append(["Recency"])
+            self.row_count = 1
         else:
             self.wb = openpyxl.load_workbook(FILE_NAME)
             self.ws_Recipe_list = self.wb['Recipe_list']
             self.ws_recency = self.wb['Recency']
-        self.row_count = self.ws_Recipe_list.max_row
+            # Get the stored row count
+            stored_count = self.ws_Recipe_list.cell(row=1, column=5).value
+
+            if stored_count is None or self.ws_Recipe_list.cell(row=stored_count, column=1).value is None:
+                # Recounting needed
+                self.row_count = 1
+            else:
+                # Count only rows with data starting from stored_count
+                self.row_count = stored_count
+
+            for row in self.ws_Recipe_list.iter_rows(min_row=self.row_count+1, max_col=1, values_only=True):
+                if row[0]:
+                    self.row_count += 1
+                else:
+                    break
+            # Update the stored count
+            self.ws_Recipe_list.cell(row=1, column=5, value=self.row_count)
 
     def choose_recipe(self):
         if self.row_count < 2:
@@ -175,4 +192,5 @@ class CookITLogic:
         self.ws_Recipe_list.append([name, url])
         self.ws_recency.append([0])
         self.row_count += 1
+        self.ws_Recipe_list.cell(row=1, column=5, value=self.row_count)
         self.save_and_upload()
