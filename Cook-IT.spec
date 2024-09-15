@@ -30,11 +30,11 @@ exe = EXE(
     a.binaries,
     a.zipfiles,
     a.datas,
-    name='GUI',
+    name='Cook-IT',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
+    strip=True,
+    upx=False,
     console=False,  # Set to True if you want a console window
     windowed=True,  # Set to False if you want a console window
     cipher=block_cipher,
