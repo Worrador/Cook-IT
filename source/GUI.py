@@ -3,12 +3,19 @@ from tkinter import messagebox, simpledialog
 import webbrowser
 import threading
 from Cook_IT import CookITLogic
+import os
 
 class CookITApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Cook-IT")
         self.geometry("400x300")
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(current_dir, "..", "resource", "Cook-IT.ico")
+
+        if os.path.exists(icon_path):
+            self.iconbitmap(icon_path)
 
         self.logic = CookITLogic()
 
@@ -49,13 +56,20 @@ class CookITApp(tk.Tk):
         self.add_button.config(state=tk.NORMAL)
 
     def choose_recipe(self):
-        recipe_name, url, chosen_row = self.logic.choose_recipe()
+        recipe_name, url, comment, chosen_row = self.logic.choose_recipe()
         if recipe_name is None:
             messagebox.showinfo("No Recipes", "No recipes available. Please add some recipes first.")
             return
         if messagebox.askyesno("Recipe Chosen", f"Do you want to cook {recipe_name}?"):
             self.logic.update_recency(chosen_row)
-            webbrowser.open(url)
+            if url is None or url == '':
+                messagebox.showinfo("No URL", "No URL was given for this recipe.")
+            else:
+                webbrowser.open(url)
+            if comment is None or url == '':
+                messagebox.showinfo("No comment", "No comment was given for this recipe.")
+            else:
+                messagebox.showinfo("Comment for the recipe", f"{comment}")
             self.logic.save_and_upload()
         else:
             self.choose_recipe()  # Choose again if user says no
@@ -63,10 +77,10 @@ class CookITApp(tk.Tk):
     def add_recipe(self):
         name = simpledialog.askstring("Add Recipe", "Enter recipe name:")
         if name:
-            url = simpledialog.askstring("Add Recipe", "Enter recipe URL:")
-            if url:
-                self.logic.add_recipe(name, url)
-                messagebox.showinfo("Recipe Added", f"Recipe '{name}' has been added successfully!")
+            url = simpledialog.askstring("Add Recipe", "Enter recipe URL (optional):")
+            comment = simpledialog.askstring("Add Recipe", "Enter comment to recipe (optional):")
+            self.logic.add_recipe(name, url, comment)
+            messagebox.showinfo("Recipe Added", f"Recipe '{name}' has been added successfully!")
 
     def quit(self):
         if messagebox.askyesno("Quit", "Are you sure you want to quit?"):

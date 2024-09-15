@@ -70,7 +70,7 @@ class CookITLogic:
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = "Recipe_list"
-            ws.append(["Recipe Name", "URL"])
+            ws.append(["Recipe Name", "URL", "Comment", "Number or Recipes"])
             wb.create_sheet("Recency")
             wb.save(FILE_NAME)
 
@@ -112,10 +112,11 @@ class CookITLogic:
 
     def load_workbook(self):
         if not os.path.exists(FILE_NAME):
+            # TODO: do we need this part here? Shouldnt creating be handled by get or create method?
             self.wb = openpyxl.Workbook()
             self.ws_Recipe_list = self.wb.active
             self.ws_Recipe_list.title = "Recipe_list"
-            self.ws_Recipe_list.append(["Recipe Name", "URL"])
+            self.ws_Recipe_list.append(["Recipe Name", "URL", "Comment", "Number or Recipes"])
             self.ws_recency = self.wb.create_sheet("Recency")
             self.ws_recency.append(["Recency"])
             self.row_count = 1
@@ -143,7 +144,7 @@ class CookITLogic:
 
     def choose_recipe(self):
         if self.row_count < 2:
-            return None, None, None  # No Recipe_list available
+            return None, None, None, None  # No Recipe_list available
         while True:
             random_row_number = random.randint(2, self.row_count)
             recency_value = self.ws_recency.cell(row=random_row_number, column=1).value or 0
@@ -151,7 +152,8 @@ class CookITLogic:
             if recency_value < random.randint(1, 100):
                 recipe_name = self.ws_Recipe_list.cell(row=random_row_number, column=1).value
                 url = self.ws_Recipe_list.cell(row=random_row_number, column=2).value
-                return recipe_name, url, random_row_number
+                comment = self.ws_Recipe_list.cell(row=random_row_number, column=3).value
+                return recipe_name, url, comment, random_row_number
 
     def update_recency(self, chosen_row):
         self.ws_recency.cell(row=chosen_row, column=1, value=105)
@@ -188,9 +190,12 @@ class CookITLogic:
             print(f"Error during initialization: {str(e)}")
             raise
 
-    def add_recipe(self, name, url):
-        self.ws_Recipe_list.append([name, url])
-        self.ws_recency.append([0])
+    def add_recipe(self, name, url, comment):
+        self.ws_Recipe_list.append([name, url, comment])
         self.row_count += 1
+        self.ws_Recipe_list.cell(row=self.row_count, column=1, value=name)
+        self.ws_Recipe_list.cell(row=self.row_count, column=2, value=url)
+        self.ws_Recipe_list.cell(row=self.row_count, column=3, value=comment)
+        # self.ws_recency.append([0])
         self.ws_Recipe_list.cell(row=1, column=5, value=self.row_count)
         self.save_and_upload()
