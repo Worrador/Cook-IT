@@ -4,3 +4,4 @@ token.json
 GUI.spec
 *.xlsx
 *.pyc
+node_modules
