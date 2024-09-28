@@ -1,4 +1,3 @@
-// main.js
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -11,13 +10,13 @@ function createWindow() {
     width: 1024,
     height: 768,
     webPreferences: {
-      preload: path.join(__dirname, 'src', 'preload.js'),
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-
-  mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
+  
+  mainWindow.loadFile('index.html');
 }
 
 app.whenReady().then(() => {
@@ -48,7 +47,6 @@ app.whenReady().then(() => {
   pythonProcess.stderr.on('data', (data) => {
     console.log(`Python debug output: ${data}`);
   });
-  
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
