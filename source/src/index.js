@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
-import CookITApp from './src/CookITApp';
+import CookITApp from './CookITApp';
 
 ReactDOM.render(
   <React.StrictMode>
