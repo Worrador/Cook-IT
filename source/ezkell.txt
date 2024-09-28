@@ -13,75 +13,40 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/components/ui/use-toast";
 
-const { electronAPI } = window;
+// Mock CookITLogic class (you'll need to implement the actual logic)
+class CookITLogic {
+  initialize() {
+    return new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  chooseRecipe() {
+    return { name: 'Spaghetti Carbonara', url: 'https://example.com/carbonara', comment: 'Delicious!' };
+  }
+  addRecipe(name, url, comment) {
+    console.log('Recipe added:', { name, url, comment });
+  }
+}
 
 const CookITApp = () => {
   const [isLoading, setIsLoading] = useState(true);
+  const [logic] = useState(() => new CookITLogic());
   const [isAddRecipeOpen, setIsAddRecipeOpen] = useState(false);
   const [newRecipe, setNewRecipe] = useState({ name: '', url: '', comment: '' });
-  const { toast } = useToast();
 
   useEffect(() => {
-    electronAPI.initialize()
-      .then(() => setIsLoading(false))
-      .catch(error => {
-        console.error('Initialization error:', error);
-        toast({
-          title: "Error",
-          description: "Failed to initialize the application. Please try again.",
-          variant: "destructive",
-        });
-      });
-  }, []);
+    logic.initialize().then(() => setIsLoading(false));
+  }, [logic]);
 
   const handleChooseRecipe = () => {
-    electronAPI.chooseRecipe()
-      .then(recipe => {
-        if (recipe) {
-          toast({
-            title: "Recipe Chosen",
-            description: `${recipe.name}\nURL: ${recipe.url || 'N/A'}\nComment: ${recipe.comment || 'N/A'}`,
-          });
-          if (recipe.url) {
-            window.open(recipe.url, '_blank');
-          }
-        } else {
-          toast({
-            title: "No Recipes",
-            description: "No recipes available. Please add some recipes first.",
-          });
-        }
-      })
-      .catch(error => {
-        console.error('Choose recipe error:', error);
-        toast({
-          title: "Error",
-          description: "Failed to choose a recipe. Please try again.",
-          variant: "destructive",
-        });
-      });
+    const { name, url, comment } = logic.chooseRecipe();
+    // In a real app, you'd want to handle this more gracefully
+    alert(`Recipe chosen: ${name}\nURL: ${url}\nComment: ${comment}`);
   };
 
   const handleAddRecipe = () => {
-    electronAPI.addRecipe(newRecipe)
-      .then(() => {
-        setIsAddRecipeOpen(false);
-        setNewRecipe({ name: '', url: '', comment: '' });
-        toast({
-          title: "Recipe Added",
-          description: `Recipe '${newRecipe.name}' has been added successfully!`,
-        });
-      })
-      .catch(error => {
-        console.error('Add recipe error:', error);
-        toast({
-          title: "Error",
-          description: "Failed to add the recipe. Please try again.",
-          variant: "destructive",
-        });
-      });
+    logic.addRecipe(newRecipe.name, newRecipe.url, newRecipe.comment);
+    setIsAddRecipeOpen(false);
+    setNewRecipe({ name: '', url: '', comment: '' });
   };
 
   if (isLoading) {

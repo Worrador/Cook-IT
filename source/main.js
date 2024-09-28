@@ -8,15 +8,16 @@ let pythonProcess;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1024,
+    height: 768,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'src', 'preload.js'),
       contextIsolation: true,
+      nodeIntegration: false,
     },
   });
 
-  mainWindow.loadFile('index.html'); // This will load your React app
+  mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
 }
 
 app.whenReady().then(() => {
@@ -25,13 +26,29 @@ app.whenReady().then(() => {
   // Start Python process
   pythonProcess = spawn('python', ['cook_it_bridge.py']);
 
-  pythonProcess.stdout.on('data', (data) => {
-    console.log(`Python stdout: ${data}`);
-  });
+  let bufferedData = '';
 
-  pythonProcess.stderr.on('data', (data) => {
-    console.error(`Python stderr: ${data}`);
+  pythonProcess.stdout.on('data', (data) => {
+    bufferedData += data.toString();
+    let newlineIndex;
+    while ((newlineIndex = bufferedData.indexOf('\n')) !== -1) {
+      const line = bufferedData.slice(0, newlineIndex);
+      bufferedData = bufferedData.slice(newlineIndex + 1);
+      try {
+        const response = JSON.parse(line);
+        console.log('Received JSON response:', response);
+        // Handle the response
+        // You might need to implement a way to match responses to requests
+      } catch (error) {
+        console.error('Error parsing Python stdout:', error);
+      }
+    }
   });
+  
+  pythonProcess.stderr.on('data', (data) => {
+    console.log(`Python debug output: ${data}`);
+  });
+  
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -51,28 +68,34 @@ app.on('will-quit', () => {
 
 // IPC handlers
 ipcMain.handle('initialize', async () => {
-  return new Promise((resolve, reject) => {
-    pythonProcess.stdin.write(JSON.stringify({ action: 'initialize' }) + '\n');
-    pythonProcess.stdout.once('data', (data) => {
-      resolve(JSON.parse(data.toString()));
-    });
-  });
+  return sendToPython({ action: 'initialize' });
 });
 
 ipcMain.handle('choose-recipe', async () => {
-  return new Promise((resolve, reject) => {
-    pythonProcess.stdin.write(JSON.stringify({ action: 'choose-recipe' }) + '\n');
-    pythonProcess.stdout.once('data', (data) => {
-      resolve(JSON.parse(data.toString()));
-    });
-  });
+  return sendToPython({ action: 'choose-recipe' });
 });
 
 ipcMain.handle('add-recipe', async (event, recipe) => {
-  return new Promise((resolve, reject) => {
-    pythonProcess.stdin.write(JSON.stringify({ action: 'add-recipe', recipe }) + '\n');
-    pythonProcess.stdout.once('data', (data) => {
-      resolve(JSON.parse(data.toString()));
-    });
-  });
+  return sendToPython({ action: 'add-recipe', recipe });
 });
+
+function sendToPython(message) {
+  return new Promise((resolve, reject) => {
+    const responseHandler = (data) => {
+      try {
+        const response = JSON.parse(data);
+        if (response.error) {
+          reject(new Error(response.error));
+        } else {
+          resolve(response);
+        }
+        pythonProcess.stdout.removeListener('data', responseHandler);
+      } catch (error) {
+        // If it's not valid JSON, we ignore it (it might be partial data)
+      }
+    };
+
+    pythonProcess.stdout.on('data', responseHandler);
+    pythonProcess.stdin.write(JSON.stringify(message) + '\n');
+  });
+}

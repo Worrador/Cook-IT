@@ -1,0 +1,47 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html class="h-full bg-gray-100">
+<head>
+    <meta charset="UTF-8">
+    <title>Cook-IT</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="h-full">
+    <div class="min-h-full">
+        <nav class="bg-gray-800">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between h-16">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <h1 class="text-white font-bold text-xl">Cook-IT</h1>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <main>
+            <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                <div class="px-4 py-6 sm:px-0">
+                    <div class="border-4 border-dashed border-gray-200 rounded-lg h-96 p-4">
+                        <button id="chooseRecipe" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            Choose Random Recipe
+                        </button>
+                        <div id="recipeDisplay" class="mt-4"></div>
+                        <h2 class="text-2xl font-bold mt-8 mb-4">Add New Recipe</h2>
+                        <form id="addRecipeForm" class="space-y-4">
+                            <input type="text" id="recipeName" placeholder="Recipe Name" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            <input type="text" id="recipeUrl" placeholder="URL" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            <input type="text" id="recipeComment" placeholder="Comment" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            <button type="submit" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                                Add Recipe
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="renderer.js"></script>
+</body>
+</html>
