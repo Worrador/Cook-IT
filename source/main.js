@@ -7,8 +7,8 @@ let pythonProcess;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1024,
-    height: 768,
+    width: 512,
+    height: 384,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

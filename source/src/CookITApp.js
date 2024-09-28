@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent, CardFooter } from './components/card.jsx';
-import { Button } from './components/button.jsx';
+import { Button } from './components/button.jsx'; // Make sure this imports the updated Button component
 import { Input } from './components/input.jsx';
 import { Loader2, ChefHat, PlusCircle, X } from 'lucide-react';
 import {
@@ -65,12 +65,12 @@ const CookITApp = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Button className="w-full" onClick={handleChooseRecipe}>
+          <Button className="w-full" variant="default" onClick={handleChooseRecipe}>
             Choose Recipe
           </Button>
           <Dialog open={isAddRecipeOpen} onOpenChange={setIsAddRecipeOpen}>
             <DialogTrigger asChild>
-              <Button className="w-full">
+              <Button className="w-full" variant="default">
                 <PlusCircle className="mr-2 h-4 w-4" /> Add Recipe
               </Button>
             </DialogTrigger>
@@ -117,7 +117,7 @@ const CookITApp = () => {
                 </div>
               </div>
               <DialogFooter>
-                <Button onClick={handleAddRecipe}>Add Recipe</Button>
+                <Button variant="default" onClick={handleAddRecipe}>Add Recipe</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
