@@ -1,15 +1,16 @@
 const path = require('path');
 
 module.exports = {
-  entry: './App.js', // Update this to the correct path of your main React file
+  mode: 'development',
+  entry: './index.js',
   output: {
-    filename: 'bundle.js',
     path: path.resolve(__dirname, 'build'),
+    filename: 'bundle.js',
   },
   module: {
     rules: [
       {
-        test: /\.(js|jsx)$/,
+        test: /\.js$/,
         exclude: /node_modules/,
         use: {
           loader: 'babel-loader',
@@ -17,14 +18,7 @@ module.exports = {
             presets: ['@babel/preset-env', '@babel/preset-react']
           }
         }
-      },
-      {
-        test: /\.css$/,
-        use: ['style-loader', 'css-loader'],
-      },
-    ],
-  },
-  resolve: {
-    extensions: ['.js', '.jsx'],
-  },
+      }
+    ]
+  }
 };
