@@ -23,6 +23,19 @@ else:
 
 json_path = os.path.join(base_path, 'credentials.json')
 
+import contextlib
+
+# Create a context manager to redirect stdout to stderr
+@contextlib.contextmanager
+def redirect_stdout_to_stderr():
+    old_stdout = sys.stdout
+    sys.stdout = sys.stderr
+    try:
+        yield
+    finally:
+        sys.stdout = old_stdout
+
+
 class CookITLogic:
     def __init__(self):
         self.service = None
@@ -48,7 +61,7 @@ class CookITLogic:
 
     def get_or_create_file(self):
         # Check if we have a stored file ID in the local Excel file
-        print("Checking if we have a stored file ID...", file=sys.stderr)
+        print("Checking if we have a stored file ID...")
         if os.path.exists(FILE_NAME):
             self.wb = openpyxl.load_workbook(FILE_NAME)
             self.ws_Recipes = self.wb['Recipes']
@@ -69,7 +82,7 @@ class CookITLogic:
         items = results.get('files', [])
 
         if not items:
-            print("File not found in Drive. Creating a new file...", file=sys.stderr)
+            print("File not found in Drive. Creating a new file...")
             # File doesn't exist, create it
             self.wb = openpyxl.Workbook()
             self.ws_Recipes = self.wb.active
@@ -85,7 +98,7 @@ class CookITLogic:
                                         resumable=True)
                 file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
                 self.file_id = file.get('id')
-                print(f"Created new file with ID: {self.file_id}", file=sys.stderr)
+                print(f"Created new file with ID: {self.file_id}")
         else:
             # File exists, use the first match
             self.file_id = items[0]['id']
@@ -102,7 +115,7 @@ class CookITLogic:
             with open(FILE_NAME, 'wb') as f:
                 f.write(fh.read())
         except Exception as e:
-            print(f"Error downloading file: {str(e)}", file=sys.stderr)
+            print(f"Error downloading file: {str(e)}")
             raise
 
     def load_workbook(self):
@@ -162,18 +175,19 @@ class CookITLogic:
                 self.service.files().update(fileId=self.file_id, media_body=media).execute()
 
         except Exception as e:
-            print(f"Error in save_and_upload: {str(e)}", file=sys.stderr)
+            print(f"Error in save_and_upload: {str(e)}")
             raise
 
     def initialize(self):
-        try:
-            self.get_google_drive_service()
-            self.get_or_create_file()
-            self.download_file()
-            self.load_workbook()
-        except Exception as e:
-            print(f"Error during initialization: {str(e)}", file=sys.stderr)
-            raise
+        with redirect_stdout_to_stderr():
+            try:
+                self.get_google_drive_service()
+                self.get_or_create_file()
+                self.download_file()
+                self.load_workbook()
+            except Exception as e:
+                print(f"Error during initialization: {str(e)}")
+                raise
 
     def add_recipe(self, name, url, comment):
         self.ws_Recipes.append([name, url, comment])
