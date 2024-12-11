@@ -60,17 +60,17 @@ const CookITApp = () => {
       <Card className="w-full max-w-md mx-auto">
         <CardHeader>
           <div className="flex items-center justify-center">
-            <ChefHat className="h-12 w-12 text-primary" />
-            <h1 className="text-3xl font-bold ml-2">Cook-IT</h1>
+            <ChefHat className="h-12 w-12 text-primary headerItems" />
+            <h1 className="text-3xl font-bold ml-2 headerItems">Cook-IT</h1>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Button className="w-full" variant="default" onClick={handleChooseRecipe}>
+        <CardContent className="space-y-4 mb-5">
+          <Button  className="w-full cardButtonBg text-white dark:md:hover:bg-fuchsia-600" variant="default" onClick={handleChooseRecipe}>
             Choose Recipe
           </Button>
-          <Dialog open={isAddRecipeOpen} onOpenChange={setIsAddRecipeOpen}>
+          <Dialog className="space-y-4 hover:bg-sky-700" open={isAddRecipeOpen} onOpenChange={setIsAddRecipeOpen}>
             <DialogTrigger asChild>
-              <Button className="w-full" variant="default">
+              <Button className="w-full addNewRecipeBtn text-white" variant="default">
                 <PlusCircle className="mr-2 h-4 w-4" /> Add Recipe
               </Button>
             </DialogTrigger>
@@ -90,7 +90,7 @@ const CookITApp = () => {
                     id="name"
                     value={newRecipe.name}
                     onChange={(e) => setNewRecipe({ ...newRecipe, name: e.target.value })}
-                    className="col-span-3"
+                    className="col-span-3 focus:outline-none focus:ring-0 focus:border-orange-500 addRecipeInputColor"
                   />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -101,7 +101,7 @@ const CookITApp = () => {
                     id="url"
                     value={newRecipe.url}
                     onChange={(e) => setNewRecipe({ ...newRecipe, url: e.target.value })}
-                    className="col-span-3"
+                    className="col-span-3 focus:outline-none focus:ring-0 focus:border-orange-500 addRecipeInputColor"
                   />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -112,18 +112,18 @@ const CookITApp = () => {
                     id="comment"
                     value={newRecipe.comment}
                     onChange={(e) => setNewRecipe({ ...newRecipe, comment: e.target.value })}
-                    className="col-span-3"
+                    className="col-span-3 focus:outline-none focus:ring-0 focus:border-orange-500 addRecipeInputColor"
                   />
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="default" onClick={handleAddRecipe}>Add Recipe</Button>
+                <Button className="addNewRecipeBtn" variant="default" onClick={handleAddRecipe}>Add Recipe</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </CardContent>
         <CardFooter>
-          <Button variant="outline" className="w-full" onClick={() => window.close()}>
+          <Button variant="default" className="w-full cardQuitBtn hover:bg-sky-700" onClick={() => window.close()}>
             <X className="mr-2 h-4 w-4" /> Quit
           </Button>
         </CardFooter>
