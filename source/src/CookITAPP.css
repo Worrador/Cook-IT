@@ -3,9 +3,48 @@
 @import 'tailwindcss/utilities';
 
 .bg-dark {
-    background-color: #1F2937; /* Dark gray color */
-  }
-  
+    background-color: #1F2937;
+}
+
 .text-white {
-color: white;
+    color: white;
+}
+
+.cardBackground {
+  background-color: #f2bc42;
+}
+
+.modalBackground {
+  background-color: #f7f7f7;
+}
+
+.headerItems {
+  color: #3c2f1a;
+}
+
+.cardButtonBg {
+  background-color:	#3c2f1a;
+  text-transform: uppercase;
+  text-shadow: 1px 1px #181818;
+}
+
+.addNewRecipeBtn {
+  background-color: #db601e;
+  text-shadow: 1px 1px #181818;
+  text-transform: uppercase;
+}
+
+.addRecipeInputColor {
+  background-color: #3c2f1a;
+  color: white;
+  text-shadow: 1px 1px #181818;
+}
+
+.cardQuitBtn {
+  background-color: #041556;
+  color: white;
+  width: 25%;
+  margin: 0 auto;
+  text-transform: uppercase;
+  text-shadow: 1px 1px #181818;
 }
