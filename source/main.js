@@ -9,13 +9,16 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 512,
     height: 384,
+    frame: false,
+    transparent: true,
+    backgroundColor: 'rgba(0, 0, 0, 0)', // Ensure fully transparent background
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-  
+
   mainWindow.loadFile('index.html');
 }
 
@@ -43,7 +46,7 @@ app.whenReady().then(() => {
       }
     }
   });
-  
+
   pythonProcess.stderr.on('data', (data) => {
     console.log(`Python debug output: ${data}`);
   });

@@ -16,6 +16,7 @@ const Button = React.forwardRef(({ className, variant, size, ...props }, ref) =>
           "h-9 px-3 rounded-md": size === "sm",
           "h-11 px-8 rounded-md": size === "lg",
         },
+        "no-drag",
         className
       )}
       ref={ref}
