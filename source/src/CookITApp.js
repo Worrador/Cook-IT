@@ -77,9 +77,6 @@ const CookITApp = () => {
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
                 <DialogTitle>Add New Recipe</DialogTitle>
-                <DialogDescription>
-                  Enter the details of your new recipe here.
-                </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">

@@ -7,7 +7,7 @@ let pythonProcess;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 512,
+    width: 450,
     height: 384,
     frame: false,
     transparent: true,
