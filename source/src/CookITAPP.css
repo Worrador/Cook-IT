@@ -11,7 +11,7 @@
 }
 
 .cardBackground {
-  background-color: #f2bc42;
+  background-color: rgba(242, 188, 66, 1);
 }
 
 .modalBackground {
@@ -23,19 +23,19 @@
 }
 
 .cardButtonBg {
-  background-color:	#3c2f1a;
+  background-color:	#db601e;
   text-transform: uppercase;
   text-shadow: 1px 1px #181818;
 }
 
 .addNewRecipeBtn {
-  background-color: #db601e;
+  background-color: #3c2f1a;
   text-shadow: 1px 1px #181818;
   text-transform: uppercase;
 }
 
 .addRecipeInputColor {
-  background-color: #3c2f1a;
+  background-color: rgba(219, 96, 30, 0.8);
   color: white;
   text-shadow: 1px 1px #181818;
 }
@@ -43,7 +43,7 @@
 .cardQuitBtn {
   background-color: #041556;
   color: white;
-  width: 25%;
+  width: 28%;
   margin: 0 auto;
   text-transform: uppercase;
   text-shadow: 1px 1px #181818;
