@@ -61,13 +61,15 @@ class CookITLogic:
 
     def get_or_create_file(self):
         # Check if we have a stored file ID in the local Excel file
-        print("Checking if we have a stored file ID...")
+        print("Checking if we have a stored file ID in local file...")
         if os.path.exists(FILE_NAME):
+            print("Local file was found.")
             self.wb = openpyxl.load_workbook(FILE_NAME)
             self.ws_Recipes = self.wb['Recipes']
             stored_file_id = self.ws_Recipes.cell(row=1, column=6).value
             if stored_file_id:
-                self.file_id = stored_file_id
+                print("File ID was found.")
+                self.file_id = stored_file_id   
                 # Verify the file still exists in Drive
                 try:
                     self.service.files().get(fileId=self.file_id).execute()
@@ -76,6 +78,7 @@ class CookITLogic:
                     pass  # File not found, we'll create a new one
 
         # Search for the file in Drive
+        print(f"No ID was found, searching for file:'{FILE_NAME}' on Drive...")
         results = self.service.files().list(
             q=f"name='{FILE_NAME}'", spaces='drive',
             fields="files(id, name)").execute()
@@ -105,6 +108,7 @@ class CookITLogic:
 
     def download_file(self):
         try:
+            print(f"Downloading file:'{FILE_NAME}'...")
             request = self.service.files().get_media(fileId=self.file_id)
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
@@ -122,23 +126,30 @@ class CookITLogic:
         self.wb = openpyxl.load_workbook(FILE_NAME)
         self.ws_Recipes = self.wb['Recipes']
         self.ws_recency = self.wb['Recency']
+        
         # Get the stored row count
         stored_count = self.ws_Recipes.cell(row=1, column=5).value
-
-        if stored_count is None or self.ws_Recipes.cell(row=stored_count, column=1).value is None:
+        
+        if stored_count is None or self.ws_Recipes.cell(row=int(stored_count) if stored_count is not None else 1, column=1).value is None:
             # Recounting needed
+            print("Recounting recipes from 1 needed.")
             self.row_count = 1
         else:
             # Count only rows with data starting from stored_count
-            self.row_count = int(stored_count)
-
-        for row in self.ws_Recipes.iter_rows(min_row=self.row_count+1, max_col=1, values_only=True):
+            print(f"Recounting recipes from '{stored_count}' needed.")
+            self.row_count = int(stored_count)  # Convert to integer explicitly
+        
+        # Ensure row_count is an integer for iter_rows
+        current_row = int(self.row_count) + 1
+        for row in self.ws_Recipes.iter_rows(min_row=current_row, max_col=1, values_only=True):
             if row[0]:
                 self.row_count += 1
             else:
                 break
+                
         # Update the stored count
         self.ws_Recipes.cell(row=1, column=5, value=self.row_count)
+        print(f"Stored count updated to '{self.row_count}'.")
 
     def choose_recipe(self):
         if self.row_count < 2:

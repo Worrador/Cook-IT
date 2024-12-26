@@ -25,19 +25,34 @@
 .cardButtonBg {
   background-color:	#db601e;
   text-transform: uppercase;
-  text-shadow: 1px 1px #181818;
 }
 
-.addNewRecipeBtn {
+.addNewRecipeBtnEnabled {
   background-color: #3c2f1a;
+  text-transform: uppercase;
+}
+
+
+.addNewRecipeBtnDisabled {
+  background-color: rgba(242, 188, 66, 1);
   text-shadow: 1px 1px #181818;
   text-transform: uppercase;
 }
 
 .addRecipeInputColor {
-  background-color: rgba(219, 96, 30, 0.8);
   color: white;
-  text-shadow: 1px 1px #181818;
+}
+
+.addRecipeEmpty {
+  background-color: #F9DDA1;
+  color: #3c2f1a;
+  font-weight: bold;
+}
+
+.addRecipeWritten {
+  background-color: rgba(242, 188, 66, 1);
+  color: #3c2f1a;
+  font-weight: bold;
 }
 
 .cardQuitBtn {
