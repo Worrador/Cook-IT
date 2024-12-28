@@ -24,6 +24,11 @@ def handle_request(request):
             logic.add_recipe(recipe['name'], recipe['url'], recipe['comment'])
             logic.save_and_upload()
             return {"success": True}
+        elif action == 'update-comment':
+            recipe = request['recipe']
+            logic.update_recipe_comment(recipe['name'], recipe['url'], recipe['comment'])
+            logic.save_and_upload()
+            return {"success": True}
     except Exception as e:
         return {"error": str(e)}
 
