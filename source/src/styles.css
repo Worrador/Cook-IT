@@ -1,4 +1,8 @@
 /* styles.css */
+
+@import './ToastStyles.css';
+
+
 body {
   font-family: Arial, sans-serif;
   padding: 20px;
@@ -13,4 +17,15 @@ input {
   display: block;
   margin: 10px 0;
   padding: 5px;
+}
+
+/* styles.css (or any global CSS file) */
+.toast-slide-in {
+  animation: slide-in-from-top; 
+  max-width: 300px;
+  padding: 12px; 
+  border-radius: 8px; 
+  font-size: 14px; 
+  background-color: #333; 
+  color: white; 
 }

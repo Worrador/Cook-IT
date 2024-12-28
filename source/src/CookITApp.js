@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef  } from 'react';
 import { Card, CardHeader, CardContent, CardFooter } from './components/card.jsx';
 import { Button } from './components/button.jsx'; // Make sure this imports the updated Button component
 import { Input } from './components/input.jsx';
@@ -18,6 +18,8 @@ import {
 } from "./components/dialog.jsx";
 import { Label } from "./components/label.jsx";
 import './CookITApp.css';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const CookITApp = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -25,6 +27,13 @@ const CookITApp = () => {
   const [newRecipe, setNewRecipe] = useState({ name: '', url: '', comment: '' });
   const [isRecipeDetailsOpen, setIsRecipeDetailsOpen] = useState(false);
   const [chosenRecipe, setChosenRecipe] = useState(null);
+  const firstInputRef = useRef(null); // Ref for the first input
+
+  useEffect(() => {
+    if (isAddRecipeOpen && firstInputRef.current) {
+      firstInputRef.current.focus(); // Focus the input when dialog opens
+    }
+  }, [isAddRecipeOpen]);
 
   useEffect(() => {
     window.electronAPI.initialize().then(() => setIsLoading(false));
@@ -70,17 +79,21 @@ const CookITApp = () => {
     console.log('Recipe chosen:', recipe);
   };
 
+  
   const handleAddRecipe = async () => {
     try {
       await window.electronAPI.addRecipe(newRecipe);
       setIsAddRecipeOpen(false);
       setNewRecipe({ name: '', url: '', comment: '' });
-      alert('Recipe added successfully!');
+  
+      // Show a toast instead of alert
+      toast.success('Recipe added successfully!');
     } catch (error) {
       console.error('Error adding recipe:', error);
-      alert('Error adding recipe: ' + error.message);
+      toast.error('Error adding recipe: ' + error.message);
     }
   };
+  
 
   if (isLoading) {
     return (
@@ -107,7 +120,21 @@ const CookITApp = () => {
               <span>Choose Recipe</span>
             </div>
           </Button>
-          <Dialog className="space-y-4 hover:bg-sky-700" open={isAddRecipeOpen} onOpenChange={setIsAddRecipeOpen} autoFocus>
+          <Dialog
+            open={isAddRecipeOpen}
+            onOpenChange={(open) => {
+              setIsAddRecipeOpen(open);
+              if (open) {
+                // Ensure focus is set when dialog opens
+                setTimeout(() => {
+                  firstInputRef.current?.focus();
+                }, 0); // Use a timeout to wait for the dialog to fully render
+              } else {
+                // Reset form when dialog closes
+                setNewRecipe({ name: '', url: '', comment: '' });
+              }
+            }}
+          >
             <DialogTrigger asChild>
               <Button className="w-full addNewRecipeBtnEnabled text-white group" variant="default">
                 <div className="flex items-center transition-transform group-hover:scale-110">
@@ -126,6 +153,7 @@ const CookITApp = () => {
                   </Label>
                   <Input
                     id="name"
+                    ref={firstInputRef} // Attach the ref here
                     value={newRecipe.name}
                     onChange={(e) => setNewRecipe({ ...newRecipe, name: e.target.value })}
                     className={`col-span-3 border-transparent focus:outline-none focus:ring-0 focus:border-orange-500 border-2 addRecipeInputColor ${
@@ -161,16 +189,16 @@ const CookITApp = () => {
                 </div>
               </div>
               <DialogFooter>
-              <Button 
-                className={`addNewRecipeBtn ${
-                  newRecipe.name && newRecipe.url ? 'addNewRecipeBtnEnabled' : 'addNewRecipeBtnDisabled'
-                }`} 
-                variant="default" 
-                onClick={handleAddRecipe}
-                disabled={!(newRecipe.name && newRecipe.url)}
-              >
-                Add Recipe
-              </Button>
+                <Button
+                  className={`addNewRecipeBtn ${
+                    newRecipe.name && newRecipe.url ? 'addNewRecipeBtnEnabled' : 'addNewRecipeBtnDisabled'
+                  }`}
+                  variant="default"
+                  onClick={handleAddRecipe}
+                  disabled={!(newRecipe.name && newRecipe.url)}
+                >
+                  Add Recipe
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -195,6 +223,27 @@ const CookITApp = () => {
         onCook={handleCook}
         onCommentChange={handleCommentChange}
       />
+    <ToastContainer
+      position="top-center"
+      autoClose={1000}
+      hideProgressBar={true}
+      newestOnTop={false}
+      closeOnClick
+      rtl={false}
+      pauseOnFocusLoss
+      draggable
+      pauseOnHover
+      closeButton={false} // Hide the close button
+      style={{
+        zIndex: 9999, // Ensure it's above other content
+        top: '10%', // Adjust vertical position
+        maxWidth: '300px', // Limit the width of the popup
+        left: '50%',
+        transform: 'translateX(-50%)', // Ensure centering is perfect
+      }}
+      className="toast-animation" // Custom class for animation
+    />
+
     </div>
   );
 };
