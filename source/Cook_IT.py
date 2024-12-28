@@ -132,11 +132,11 @@ class CookITLogic:
         
         if stored_count is None or self.ws_Recipes.cell(row=int(stored_count) if stored_count is not None else 1, column=1).value is None:
             # Recounting needed
-            print("Recounting recipes from 1 needed.")
+            print("Recounting recipes from line 1 needed.")
             self.row_count = 1
         else:
             # Count only rows with data starting from stored_count
-            print(f"Recounting recipes from '{stored_count}' needed.")
+            print(f"Recounting recipes from line {int(stored_count)} needed.")
             self.row_count = int(stored_count)  # Convert to integer explicitly
         
         # Ensure row_count is an integer for iter_rows
@@ -149,7 +149,7 @@ class CookITLogic:
                 
         # Update the stored count
         self.ws_Recipes.cell(row=1, column=5, value=self.row_count)
-        print(f"Stored count updated to '{self.row_count}'.")
+        print(f"Stored line count updated to {self.row_count}.")
 
     def choose_recipe(self):
         if self.row_count < 2:

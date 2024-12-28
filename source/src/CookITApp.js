@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent, CardFooter } from './components/card.jsx';
 import { Button } from './components/button.jsx'; // Make sure this imports the updated Button component
 import { Input } from './components/input.jsx';
+import RecipeDetailsDialog from './components/RecipeDetailsDialog.jsx';
 import { Loader2, ChefHat, PlusCircle, X, BookOpen} from 'lucide-react';
 import {
   Dialog,
@@ -22,6 +23,8 @@ const CookITApp = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAddRecipeOpen, setIsAddRecipeOpen] = useState(false);
   const [newRecipe, setNewRecipe] = useState({ name: '', url: '', comment: '' });
+  const [isRecipeDetailsOpen, setIsRecipeDetailsOpen] = useState(false);
+  const [chosenRecipe, setChosenRecipe] = useState(null);
 
   useEffect(() => {
     window.electronAPI.initialize().then(() => setIsLoading(false));
@@ -30,11 +33,41 @@ const CookITApp = () => {
   const handleChooseRecipe = async () => {
     try {
       const recipe = await window.electronAPI.chooseRecipe();
-      alert(`Recipe chosen: ${recipe.name}\nURL: ${recipe.url}\nComment: ${recipe.comment}`);
+      setChosenRecipe(recipe);
+      setIsRecipeDetailsOpen(true);
     } catch (error) {
       console.error('Error choosing recipe:', error);
       alert('Error choosing recipe: ' + error.message);
     }
+  };
+
+  const handleCommentChange = async (recipe, newComment) => {
+    try {
+      // Update the comment in the chosen recipe
+      setChosenRecipe({
+        ...recipe,
+        comment: newComment
+      });
+      
+      // You'll need to add this endpoint to your Python backend
+      await window.electronAPI.updateComment({
+        name: recipe.name,
+        url: recipe.url,
+        comment: newComment
+      });
+    } catch (error) {
+      console.error('Error updating comment:', error);
+      alert('Error updating comment: ' + error.message);
+    }
+  };
+  
+  const handleNext = async () => {
+    await handleChooseRecipe();
+  };
+  
+  const handleCook = (recipe) => {
+    // Any additional logic you want to run when a recipe is chosen
+    console.log('Recipe chosen:', recipe);
   };
 
   const handleAddRecipe = async () => {
@@ -74,7 +107,7 @@ const CookITApp = () => {
               <span>Choose Recipe</span>
             </div>
           </Button>
-          <Dialog className="space-y-4 hover:bg-sky-700" open={isAddRecipeOpen} onOpenChange={setIsAddRecipeOpen}>
+          <Dialog className="space-y-4 hover:bg-sky-700" open={isAddRecipeOpen} onOpenChange={setIsAddRecipeOpen} autoFocus>
             <DialogTrigger asChild>
               <Button className="w-full addNewRecipeBtnEnabled text-white group" variant="default">
                 <div className="flex items-center transition-transform group-hover:scale-110">
@@ -143,11 +176,25 @@ const CookITApp = () => {
           </Dialog>
         </CardContent>
         <CardFooter>
-          <Button variant="default" className="w-full cardQuitBtn hover:bg-sky-700" onClick={() => window.close()}>
-            <X className="mr-2 h-4 w-4" /> Quit
+          <Button
+            variant="default"
+            className="w-full cardQuitBtn hover:bg-sky-700 group transition-transform"
+            onClick={() => window.close()}>
+            <X className="mr-2 h-4 w-4 transition-transform group-hover:rotate-180 group-hover:scale-125" />
+            Quit
           </Button>
+
         </CardFooter>
       </Card>
+
+      <RecipeDetailsDialog 
+        recipe={chosenRecipe}
+        isOpen={isRecipeDetailsOpen}
+        setIsOpen={setIsRecipeDetailsOpen}
+        onNext={handleNext}
+        onCook={handleCook}
+        onCommentChange={handleCommentChange}
+      />
     </div>
   );
 };
