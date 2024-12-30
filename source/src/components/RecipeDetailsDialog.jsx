@@ -34,9 +34,8 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onComm
   };
 
   const handleCook = () => {
-    window.open(recipe.url, '_blank');
+    window.electronAPI.openUrl(recipe.url);
     onCook && onCook(recipe);
-    setIsOpen(false);
   };
 
   const handleNext = () => {
@@ -96,7 +95,7 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onComm
               ) : (
                 <div
                   onClick={handleCommentClick}
-                  className="text-sm cursor-pointer hover:bg-gray-50 p-2 rounded-md flex items-center gap-2 group"
+                  className="text-sm cursor-pointer hover:bg-[#f7f0e2] p-2 rounded-md flex items-center gap-2 group"
                 >
                   <div className="flex-grow">
                     {commentText || (
@@ -110,22 +109,20 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onComm
           </div>
         </div>
         <DialogFooter className="flex gap-2">
-          <Button 
-            variant="default"
-            onClick={handleCook}
-            className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
-          >
+        <Button className="w-full cardButtonBg2 text-white transition-colors group" variant="default" onClick={handleCook}>
+          <div className="flex items-center transition-transform group-hover:scale-125 gap-2">
             <ChefHat className="h-4 w-4" />
             I will Cook IT!
-          </Button>
-          <Button 
-            variant="outline"
-            onClick={handleNext}
-            className="border-blue-600 text-blue-600 hover:bg-blue-50 flex items-center gap-2"
-          >
-            Next
-            <ArrowRight className="h-4 w-4" />
-          </Button>
+          </div>
+        </Button>
+        <Button
+          variant="outline"
+          onClick={handleNext}
+          className="border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2] flex items-center gap-2"
+        >
+          Next
+          <ArrowRight className="h-4 w-4" />
+        </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

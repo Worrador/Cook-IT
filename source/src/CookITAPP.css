@@ -27,6 +27,10 @@
   text-transform: uppercase;
 }
 
+.cardButtonBg2 {
+  background-color:	#db601e;
+}
+
 .addNewRecipeBtnEnabled {
   background-color: #3c2f1a;
   text-transform: uppercase;
