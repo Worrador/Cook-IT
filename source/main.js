@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -78,6 +78,10 @@ ipcMain.handle('choose-recipe', async () => {
 
 ipcMain.handle('add-recipe', async (event, recipe) => {
   return sendToPython({ action: 'add-recipe', recipe });
+});
+
+ipcMain.handle('open-url', async (event, url) => {
+  return sendToPython({ action: 'open-url', url });
 });
 
 function sendToPython(message) {

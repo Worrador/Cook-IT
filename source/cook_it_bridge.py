@@ -1,6 +1,7 @@
 import json
 import sys
 from Cook_IT import CookITLogic
+import webbrowser
 
 logic = CookITLogic()
 
@@ -28,6 +29,10 @@ def handle_request(request):
             recipe = request['recipe']
             logic.update_recipe_comment(recipe['name'], recipe['url'], recipe['comment'])
             logic.save_and_upload()
+            return {"success": True}
+        elif action == 'open-url':
+            url = request['url']
+            webbrowser.open(url)
             return {"success": True}
     except Exception as e:
         return {"error": str(e)}
