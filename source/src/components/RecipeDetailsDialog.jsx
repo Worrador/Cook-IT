@@ -64,7 +64,7 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onComm
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl">
+          <DialogTitle className="flex items-center justify-center gap-2 text-xl">
             <ScrollText className="h-5 w-5" />
             How about this recipe?
           </DialogTitle>

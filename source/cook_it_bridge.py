@@ -23,12 +23,11 @@ def handle_request(request):
         elif action == 'add-recipe':
             recipe = request['recipe']
             logic.add_recipe(recipe['name'], recipe['url'], recipe['comment'])
-            logic.save_and_upload()
             return {"success": True}
         elif action == 'update-comment':
             recipe = request['recipe']
-            logic.update_recipe_comment(recipe['name'], recipe['url'], recipe['comment'])
-            logic.save_and_upload()
+            comment = request['comment']
+            logic.update_recipe_comment(recipe['name'], recipe['url'], recipe['comment'], comment)
             return {"success": True}
         elif action == 'open-url':
             url = request['url']

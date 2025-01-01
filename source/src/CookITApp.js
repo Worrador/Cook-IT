@@ -59,11 +59,7 @@ const CookITApp = () => {
       });
       
       // You'll need to add this endpoint to your Python backend
-      await window.electronAPI.updateComment({
-        name: recipe.name,
-        url: recipe.url,
-        comment: newComment
-      });
+      await window.electronAPI.updateComment(recipe, newComment);
     } catch (error) {
       console.error('Error updating comment:', error);
       alert('Error updating comment: ' + error.message);
@@ -130,7 +126,6 @@ const CookITApp = () => {
                   firstInputRef.current?.focus();
                 }, 0); // Use a timeout to wait for the dialog to fully render
               } else {
-                // Reset form when dialog closes
                 setNewRecipe({ name: '', url: '', comment: '' });
               }
             }}
@@ -206,7 +201,7 @@ const CookITApp = () => {
         <CardFooter>
           <Button
             variant="default"
-            className="w-full cardQuitBtn hover:bg-sky-700 group transition-transform"
+            className="w-full cardQuitBtn hover:bg-[#4c8ca4] group transition-transform"
             onClick={() => window.close()}>
             <X className="mr-2 h-4 w-4 transition-transform group-hover:rotate-180 group-hover:scale-125" />
             Quit
