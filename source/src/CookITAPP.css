@@ -11,7 +11,11 @@
 }
 
 .cardBackground {
-  background-color: rgba(242, 188, 66, 1);
+  background-color: #FBE7A0;
+}
+
+.commentBackground {
+  background-color: #f7f0e2;
 }
 
 .modalBackground {
@@ -19,25 +23,25 @@
 }
 
 .headerItems {
-  color: #3c2f1a;
+  color: #6B4F37;
 }
 
 .cardButtonBg {
-  background-color:	#db601e;
+  background-color:	#E06D3D;
   text-transform: uppercase;
 }
 
 .cardButtonBg2 {
-  background-color:	#db601e;
+  background-color:	#E06D3D;
 }
 
 .addNewRecipeBtnEnabled {
-  background-color: #3c2f1a;
+  background-color: #6B4F37;
   text-transform: uppercase;
 }
 
 .addNewRecipeBtnDisabled {
-  background-color: rgba(242, 188, 66, 1);
+  background-color: #F2BC42;
   text-shadow: 1px 1px #181818;
   text-transform: uppercase;
 }
@@ -47,19 +51,19 @@
 }
 
 .addRecipeEmpty {
-  background-color: #F9DDA1;
-  color: #3c2f1a;
+  background-color: #FBE7A0;
+  color: #6B4F37;
   font-weight: bold;
 }
 
 .addRecipeWritten {
-  background-color: rgba(242, 188, 66, 1);
-  color: #3c2f1a;
+  background-color: #F2BC42;
+  color: #6B4F37;
   font-weight: bold;
 }
 
 .cardQuitBtn {
-  background-color: #041556;
+  background-color: #2C3E50;
   color: white;
   width: 28%;
   margin: 0 auto;

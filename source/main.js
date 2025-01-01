@@ -84,6 +84,10 @@ ipcMain.handle('open-url', async (event, url) => {
   return sendToPython({ action: 'open-url', url });
 });
 
+ipcMain.handle('update-comment', async (event, recipe, comment) => {
+  return sendToPython({ action: 'update-comment', recipe, comment });
+});
+
 function sendToPython(message) {
   return new Promise((resolve, reject) => {
     const responseHandler = (data) => {

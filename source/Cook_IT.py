@@ -47,17 +47,42 @@ class CookITLogic:
 
     def get_google_drive_service(self):
         creds = None
-        if os.path.exists('token.json'):
-            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(json_path, SCOPES)
-                creds = flow.run_local_server(port=0)
-            with open('token.json', 'w') as token:
-                token.write(creds.to_json())
-        self.service = build('drive', 'v3', credentials=creds)
+
+        try:
+            # Load credentials from token.json if available
+            if os.path.exists('token.json'):
+                creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+                print("Loaded credentials from token.json.")
+
+            # Refresh or authenticate if credentials are invalid
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    try:
+                        print("Credentials have expired, attempting to refresh...")
+                        creds.refresh(Request())
+                        print("Credentials successfully refreshed.")
+                    except Exception as e:
+                        print(f"Failed to refresh credentials: {e}")
+                        creds = None  # Force re-authentication
+                if not creds:
+                    print("Starting re-authentication...")
+                    flow = InstalledAppFlow.from_client_secrets_file(json_path, SCOPES)
+                    creds = flow.run_local_server(port=0)
+                    print("Re-authentication successful.")
+
+                # Save the updated or new credentials
+                with open('token.json', 'w') as token:
+                    token.write(creds.to_json())
+                    print("Credentials have been saved to token.json.")
+
+            # Build and return the Google Drive service
+            self.service = build('drive', 'v3', credentials=creds)
+            print("Google Drive service initialized.")
+            return self.service
+
+        except Exception as e:
+            print(f"Error during initialization: {e}")
+            raise
 
     def get_or_create_file(self):
         # Check if we have a stored file ID in the local Excel file
@@ -209,3 +234,15 @@ class CookITLogic:
         # self.ws_recency.append([0])
         self.ws_Recipes.cell(row=1, column=5, value=self.row_count)
         self.save_and_upload()
+
+    def update_recipe_comment(self, name, url, old_comment, new_comment):
+        # Search through rows to find matching recipe
+        for row in range(2, self.row_count + 1):
+            if (self.ws_Recipes.cell(row=row, column=1).value == name and 
+                self.ws_Recipes.cell(row=row, column=2).value == url and
+                self.ws_Recipes.cell(row=row, column=3).value == old_comment):
+                
+                self.ws_Recipes.cell(row=row, column=3, value=new_comment)
+                self.save_and_upload()
+                return True
+        return False
