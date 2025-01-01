@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chooseRecipe: () => ipcRenderer.invoke('choose-recipe'),
   addRecipe: (recipe) => ipcRenderer.invoke('add-recipe', recipe),
   updateComment: (recipe, comment) => ipcRenderer.invoke('update-comment', recipe, comment),
-  openUrl: (url) => ipcRenderer.invoke('open-url', url)
+  openUrl: (url) => ipcRenderer.invoke('open-url', url),
+  quit: () => ipcRenderer.invoke('quit')
 });

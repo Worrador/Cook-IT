@@ -233,7 +233,8 @@ class CookITLogic:
         self.ws_Recipes.cell(row=self.row_count, column=3, value=comment)
         # self.ws_recency.append([0])
         self.ws_Recipes.cell(row=1, column=5, value=self.row_count)
-        self.save_and_upload()
+        self.wb.save(FILE_NAME)
+        self.wb.close()
 
     def update_recipe_comment(self, name, url, old_comment, new_comment):
         # Search through rows to find matching recipe
@@ -243,6 +244,7 @@ class CookITLogic:
                 self.ws_Recipes.cell(row=row, column=3).value == old_comment):
                 
                 self.ws_Recipes.cell(row=row, column=3, value=new_comment)
-                self.save_and_upload()
+                self.wb.save(FILE_NAME)
+                self.wb.close()
                 return True
         return False

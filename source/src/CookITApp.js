@@ -89,6 +89,20 @@ const CookITApp = () => {
       toast.error('Error adding recipe: ' + error.message);
     }
   };
+
+  const handleQuit = async () => {
+    try {
+      document.body.style.opacity = '0';
+      await window.electronAPI.quit();
+      window.close();
+      toast.success('Changes saved to Drive');
+    } catch (error) {
+      console.error('Error saving changes:', error);
+      toast.error('Error saving changes: ' + error.message);
+    }
+  };
+
+  
   
 
   if (isLoading) {
@@ -202,7 +216,7 @@ const CookITApp = () => {
           <Button
             variant="default"
             className="w-full cardQuitBtn hover:bg-[#4c8ca4] group transition-transform"
-            onClick={() => window.close()}>
+            onClick={handleQuit}>
             <X className="mr-2 h-4 w-4 transition-transform group-hover:rotate-180 group-hover:scale-125" />
             Quit
           </Button>
