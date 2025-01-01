@@ -33,6 +33,9 @@ def handle_request(request):
             url = request['url']
             webbrowser.open(url)
             return {"success": True}
+        elif action == 'quit':
+            logic.save_and_upload();
+            return {"success": True}
     except Exception as e:
         return {"error": str(e)}
 

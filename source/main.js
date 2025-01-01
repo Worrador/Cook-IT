@@ -88,6 +88,10 @@ ipcMain.handle('update-comment', async (event, recipe, comment) => {
   return sendToPython({ action: 'update-comment', recipe, comment });
 });
 
+ipcMain.handle('quit', async (event) => {
+  return sendToPython({ action: 'quit' });
+});
+
 function sendToPython(message) {
   return new Promise((resolve, reject) => {
     const responseHandler = (data) => {
