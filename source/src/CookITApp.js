@@ -28,6 +28,7 @@ const CookITApp = () => {
   const [isRecipeDetailsOpen, setIsRecipeDetailsOpen] = useState(false);
   const [chosenRecipe, setChosenRecipe] = useState(null);
   const firstInputRef = useRef(null); // Ref for the first input
+  const [cookedRecipes, setCookedRecipes] = useState(new Map());
 
   useEffect(() => {
     if (isAddRecipeOpen && firstInputRef.current) {
@@ -57,7 +58,7 @@ const CookITApp = () => {
         ...recipe,
         comment: newComment
       });
-      
+
       // You'll need to add this endpoint to your Python backend
       await window.electronAPI.updateComment(recipe, newComment);
     } catch (error) {
@@ -65,24 +66,16 @@ const CookITApp = () => {
       alert('Error updating comment: ' + error.message);
     }
   };
-  
+
   const handleNext = async () => {
     await handleChooseRecipe();
   };
-  
-  const handleCook = (recipe) => {
-    // Any additional logic you want to run when a recipe is chosen
-    console.log('Recipe chosen:', recipe);
-  };
 
-  
   const handleAddRecipe = async () => {
     try {
       await window.electronAPI.addRecipe(newRecipe);
       setIsAddRecipeOpen(false);
       setNewRecipe({ name: '', url: '', comment: '' });
-  
-      // Show a toast instead of alert
       toast.success('Recipe added successfully!');
     } catch (error) {
       console.error('Error adding recipe:', error);
@@ -92,6 +85,7 @@ const CookITApp = () => {
 
   const handleQuit = async () => {
     try {
+      await window.electronAPI.updateRecency(Array.from(cookedRecipes.values()));
       document.body.style.opacity = '0';
       await window.electronAPI.quit();
       window.close();
@@ -102,8 +96,25 @@ const CookITApp = () => {
     }
   };
 
-  
-  
+  const handleCook = (recipe) => {
+    setCookedRecipes(prev => {
+      const updated = new Map(prev);
+      updated.set(recipe.name, {
+        name: recipe.name,
+        comment: recipe.comment
+      });
+      return updated;
+    });
+  };
+
+  const handleUncook = (recipe) => {
+    setCookedRecipes(prev => {
+      const updated = new Map(prev);
+      updated.delete(recipe.name);
+      return updated;
+    });
+  };
+
 
   if (isLoading) {
     return (
@@ -224,14 +235,15 @@ const CookITApp = () => {
         </CardFooter>
       </Card>
 
-      <RecipeDetailsDialog 
-        recipe={chosenRecipe}
-        isOpen={isRecipeDetailsOpen}
-        setIsOpen={setIsRecipeDetailsOpen}
-        onNext={handleNext}
-        onCook={handleCook}
-        onCommentChange={handleCommentChange}
-      />
+    <RecipeDetailsDialog
+      recipe={chosenRecipe}
+      isOpen={isRecipeDetailsOpen}
+      setIsOpen={setIsRecipeDetailsOpen}
+      onNext={handleNext}
+      onCook={handleCook}
+      onUncook={handleUncook}
+      onCommentChange={handleCommentChange}
+    />
     <ToastContainer
       position="top-center"
       autoClose={1000}

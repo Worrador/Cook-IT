@@ -11,9 +11,10 @@ import { Label } from './label';
 import { Input } from './input';
 import { ScrollText, ChefHat, ArrowRight, Pencil } from 'lucide-react';
 
-const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onCommentChange }) => {
+const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUncook, onCommentChange }) => {
   const [isEditingComment, setIsEditingComment] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [hasClickedCook, setHasClickedCook] = useState(false);
   const commentInputRef = useRef(null);
 
   useEffect(() => {
@@ -21,6 +22,13 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onComm
       setCommentText(recipe.comment || '');
     }
   }, [recipe]);
+
+  useEffect(() => {
+    // Reset the cook state when dialog opens/closes
+    if (!isOpen) {
+      setHasClickedCook(false);
+    }
+  }, [isOpen]);
 
   if (!recipe) return null;
 
@@ -33,13 +41,21 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onComm
     }
   };
 
+  const handleChangeMind = () => {
+    setHasClickedCook(false);
+    onUncook(recipe);
+    handleNext();
+  };
+
   const handleCook = () => {
     window.electronAPI.openUrl(recipe.url);
-    onCook && onCook(recipe);
+    setHasClickedCook(true);
+    onCook(recipe);
   };
 
   const handleNext = () => {
     setIsEditingComment(false);
+    setHasClickedCook(false);
     onNext && onNext();
   };
 
@@ -109,20 +125,36 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onComm
           </div>
         </div>
         <DialogFooter className="flex gap-2">
-        <Button className="w-full cardButtonBg2 text-white transition-colors group" variant="default" onClick={handleCook}>
-          <div className="flex items-center transition-transform group-hover:scale-125 gap-2">
-            <ChefHat className="h-4 w-4" />
-            I will Cook IT!
-          </div>
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleNext}
-          className="border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2] flex items-center gap-2"
-        >
-          Next
-          <ArrowRight className="h-4 w-4" />
-        </Button>
+          {!hasClickedCook ? (
+            <>
+              <Button
+                className="w-full cardButtonBg2 text-white transition-colors group"
+                variant="default"
+                onClick={handleCook}
+              >
+                <div className="flex items-center transition-transform group-hover:scale-110 gap-2">
+                  <ChefHat className="h-4 w-4" />
+                  I will Cook IT!
+                </div>
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleNext}
+                className="border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2] flex items-center gap-2"
+              >
+                Next
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={handleChangeMind}
+              className="w-full border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2]"
+            >
+              I changed my mind
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

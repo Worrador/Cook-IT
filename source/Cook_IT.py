@@ -94,7 +94,7 @@ class CookITLogic:
             stored_file_id = self.ws_Recipes.cell(row=1, column=6).value
             if stored_file_id:
                 print("File ID was found.")
-                self.file_id = stored_file_id   
+                self.file_id = stored_file_id
                 # Verify the file still exists in Drive
                 try:
                     self.service.files().get(fileId=self.file_id).execute()
@@ -151,10 +151,10 @@ class CookITLogic:
         self.wb = openpyxl.load_workbook(FILE_NAME)
         self.ws_Recipes = self.wb['Recipes']
         self.ws_recency = self.wb['Recency']
-        
+
         # Get the stored row count
         stored_count = self.ws_Recipes.cell(row=1, column=5).value
-        
+
         if stored_count is None or self.ws_Recipes.cell(row=int(stored_count) if stored_count is not None else 1, column=1).value is None:
             # Recounting needed
             print("Recounting recipes from line 1 needed.")
@@ -163,7 +163,7 @@ class CookITLogic:
             # Count only rows with data starting from stored_count
             print(f"Recounting recipes from line {int(stored_count)} needed.")
             self.row_count = int(stored_count)  # Convert to integer explicitly
-        
+
         # Ensure row_count is an integer for iter_rows
         current_row = int(self.row_count) + 1
         for row in self.ws_Recipes.iter_rows(min_row=current_row, max_col=1, values_only=True):
@@ -171,7 +171,7 @@ class CookITLogic:
                 self.row_count += 1
             else:
                 break
-                
+
         # Update the stored count
         self.ws_Recipes.cell(row=1, column=5, value=self.row_count)
         print(f"Stored line count updated to {self.row_count}.")
@@ -198,6 +198,26 @@ class CookITLogic:
                 cell.value = max(cell.value - 5, 0)
             else:
                 cell.value = 0
+
+    def update_recency(self, cooked_recipe_names):
+        for recipe_name in cooked_recipe_names:
+            # Search for matching recipe
+            for row in range(2, self.row_count + 1):
+                if self.ws_Recipes.cell(row=row, column=1).value == recipe_name:
+                    # Update recency for matched recipe
+                    self.ws_recency.cell(row=row, column=1, value=105)
+                    # Decrease other recipes' recency
+                    for other_row in range(2, self.row_count + 1):
+                        cell = self.ws_recency.cell(row=other_row, column=1)
+                        if cell.value is not None:
+                            cell.value = max(cell.value - 5, 0)
+                        else:
+                            cell.value = 0
+                    break
+
+        self.wb.save(FILE_NAME)
+        self.wb.close()
+        return True
 
     def save_and_upload(self):
         try:
@@ -239,10 +259,10 @@ class CookITLogic:
     def update_recipe_comment(self, name, url, old_comment, new_comment):
         # Search through rows to find matching recipe
         for row in range(2, self.row_count + 1):
-            if (self.ws_Recipes.cell(row=row, column=1).value == name and 
+            if (self.ws_Recipes.cell(row=row, column=1).value == name and
                 self.ws_Recipes.cell(row=row, column=2).value == url and
                 self.ws_Recipes.cell(row=row, column=3).value == old_comment):
-                
+
                 self.ws_Recipes.cell(row=row, column=3, value=new_comment)
                 self.wb.save(FILE_NAME)
                 self.wb.close()

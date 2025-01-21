@@ -33,6 +33,10 @@ def handle_request(request):
             url = request['url']
             webbrowser.open(url)
             return {"success": True}
+        elif action == 'update-recency':
+            cooked_recipes = request['cookedRecipes']
+            logic.update_recency([recipe['name'] for recipe in cooked_recipes])
+            return {"success": True}
         elif action == 'quit':
             logic.save_and_upload();
             return {"success": True}

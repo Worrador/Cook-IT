@@ -92,6 +92,11 @@ ipcMain.handle('quit', async (event) => {
   return sendToPython({ action: 'quit' });
 });
 
+ipcMain.handle('update-recency', async (event, cookedRecipes) => {
+  return sendToPython({ action: 'update-recency', cookedRecipes });
+});
+
+
 function sendToPython(message) {
   return new Promise((resolve, reject) => {
     const responseHandler = (data) => {
