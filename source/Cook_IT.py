@@ -256,6 +256,27 @@ class CookITLogic:
         self.wb.save(FILE_NAME)
         self.wb.close()
 
+    def delete_recipe(self, name, comment):
+        for row in range(2, self.row_count + 1):
+            if (self.ws_Recipes.cell(row=row, column=1).value == name and
+                self.ws_Recipes.cell(row=row, column=3).value == comment):
+                # Delete entire row by shifting rows up
+                self.ws_Recipes.delete_rows(row)
+                self.row_count -= 1
+
+                # Also delete corresponding rows in other worksheets if needed
+                # For example, in recency worksheet
+                for r in range(2, self.ws_recency.max_row + 1):
+                    if self.ws_recency.cell(row=r, column=1).value == row:
+                        self.ws_recency.delete_rows(r)
+                        break
+
+                self.wb.save(FILE_NAME)
+                self.wb.close()
+                return {"success": True, "message": "Recipe deleted"}
+
+        return {"success": False, "message": "Recipe not found"}
+
     def update_recipe_comment(self, name, url, old_comment, new_comment):
         # Search through rows to find matching recipe
         for row in range(2, self.row_count + 1):

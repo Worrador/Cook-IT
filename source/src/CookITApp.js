@@ -1,20 +1,16 @@
 import React, { useState, useEffect, useRef  } from 'react';
 import { Card, CardHeader, CardContent, CardFooter } from './components/card.jsx';
-import { Button } from './components/button.jsx'; // Make sure this imports the updated Button component
+import { Button } from './components/button.jsx';
 import { Input } from './components/input.jsx';
 import RecipeDetailsDialog from './components/RecipeDetailsDialog.jsx';
 import { Loader2, ChefHat, PlusCircle, X, BookOpen} from 'lucide-react';
 import {
   Dialog,
-  DialogPortal,
-  DialogOverlay,
-  DialogClose,
   DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogFooter,
   DialogTitle,
-  DialogDescription,
 } from "./components/dialog.jsx";
 import { Label } from "./components/label.jsx";
 import './CookITApp.css';
@@ -113,6 +109,20 @@ const CookITApp = () => {
       updated.delete(recipe.name);
       return updated;
     });
+  };
+
+  const handleDelete = async (recipe) => {
+  try {
+    await window.electronAPI.deleteRecipe(recipe);
+    setCookedRecipes(prev => {
+      const updated = new Map(prev);
+      updated.delete(recipe.name);
+      return updated;
+    });
+  } catch (error) {
+    console.error('Error deleting recipe:', error);
+    toast.error('Failed to delete recipe');
+  }
   };
 
 
@@ -243,6 +253,7 @@ const CookITApp = () => {
       onCook={handleCook}
       onUncook={handleUncook}
       onCommentChange={handleCommentChange}
+      onDelete={handleDelete}
     />
     <ToastContainer
       position="top-center"

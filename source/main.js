@@ -38,7 +38,7 @@ app.whenReady().then(() => {
       bufferedData = bufferedData.slice(newlineIndex + 1);
       try {
         const response = JSON.parse(line);
-        console.log('Received JSON response:', response);
+        console.log('Frontend received:', response);
         // Handle the response
         // You might need to implement a way to match responses to requests
       } catch (error) {
@@ -48,7 +48,7 @@ app.whenReady().then(() => {
   });
 
   pythonProcess.stderr.on('data', (data) => {
-    console.log(`Python debug output: ${data}`);
+    console.log(`Backend: ${data}`);
   });
 
   app.on('activate', function () {
@@ -94,6 +94,10 @@ ipcMain.handle('quit', async (event) => {
 
 ipcMain.handle('update-recency', async (event, cookedRecipes) => {
   return sendToPython({ action: 'update-recency', cookedRecipes });
+});
+
+ipcMain.handle('delete-recipe', async (event, recipe) => {
+  return sendToPython({ action: 'delete-recipe', recipe });
 });
 
 
