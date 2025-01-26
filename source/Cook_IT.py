@@ -79,60 +79,61 @@ class CookITLogic:
             raise
 
     def get_or_create_file(self):
-        # Check if we have a stored file ID in the local CSV file
-        print("Checking if we have a stored file ID in local file...")
         if os.path.exists(FILE_NAME):
-            print("Local file was found.")
             try:
-                self.df_recipes = pd.read_excel(FILE_NAME)
+                # Read only visible sheets
+                self.df_recipes = pd.read_excel(FILE_NAME, sheet_name='Recipes')
+                # Read hidden recency data
+                with pd.ExcelWriter(FILE_NAME, engine='openpyxl', mode='a') as writer:
+                    if 'Recency' not in writer.book.sheetnames:
+                        self.df_recency = pd.DataFrame(columns=['Recency'])
+                        self.df_recency.to_excel(writer, sheet_name='Recency', index=False)
+                        writer.book['Recency'].sheet_state = 'hidden'
 
-                # Check if file_id exists in the dataframe
-                if 'file_id' in self.df_recipes.columns:
-                    stored_file_id = self.df_recipes['file_id'].iloc[0]
-                    if pd.notna(stored_file_id):
-                        print("File ID was found.")
-                        self.file_id = stored_file_id
-                        # Verify the file still exists in Drive
-                        try:
-                            self.service.files().get(fileId=self.file_id).execute()
-                            return
-                        except:
-                            pass  # File not found, we'll create a new one
+                stored_file_id = self.df_recipes.get('file_id', [None])[0]
+                if pd.notna(stored_file_id):
+                    self.file_id = stored_file_id
+                    try:
+                        self.service.files().get(fileId=self.file_id).execute()
+                        return
+                    except:
+                        pass
             except Exception as e:
-                print(f"Error reading CSV: {e}")
+                print(f"Error reading Excel: {e}")
 
-        # Search for the file in Drive
-        print(f"No ID was found, searching for file:'{FILE_NAME}' on Drive...")
-        results = self.service.files().list(
-            q=f"name='{FILE_NAME}' and trashed=false",
-            spaces='drive',
-            fields="files(id, name)").execute()
-        items = results.get('files', [])
+        # Create new file with hidden recency sheet
+        self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment'])
+        self.df_recency = pd.DataFrame(columns=['Recency'])
 
-        if not items:
-            print("File not found in Drive. Creating a new file...")
-            # File doesn't exist, create it
-            self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment'])
-            self.df_recipes.to_excel(FILE_NAME, index=False)
+        with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
+            self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
+            self.df_recency.to_excel(writer, sheet_name='Recency', index=False)
+            writer.book['Recency'].sheet_state = 'hidden'
 
-            # Create a companion recency DataFrame
-            self.df_recency = pd.DataFrame(columns=['Recency'])
+        file_metadata = {'name': FILE_NAME}
+        with open(FILE_NAME, 'rb') as file:
+            media = MediaIoBaseUpload(file,
+                                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                    resumable=True)
+            file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+            self.file_id = file.get('id')
 
-            file_metadata = {'name': FILE_NAME}
+    def save_and_upload(self):
+        try:
+            with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
+                self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
+                self.df_recency.to_excel(writer, sheet_name='Recency', index=False)
+                writer.book['Recency'].sheet_state = 'hidden'
+
             with open(FILE_NAME, 'rb') as file:
                 media = MediaIoBaseUpload(file,
-                                        mimetype='text/csv',
+                                        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                         resumable=True)
-                file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                self.file_id = file.get('id')
-                print(f"Created new file with ID: {self.file_id}")
+                self.service.files().update(fileId=self.file_id, media_body=media).execute()
 
-                # Add file_id to DataFrame and save
-                self.df_recipes['file_id'] = self.file_id
-                self.df_recipes.to_excel(FILE_NAME, index=False)
-        else:
-            # File exists, use the first match
-            self.file_id = items[0]['id']
+        except Exception as e:
+            print(f"Error in save_and_upload: {str(e)}")
+            raise
 
     def download_file(self):
         try:
@@ -192,20 +193,6 @@ class CookITLogic:
 
         self.df_recipes.to_excel(FILE_NAME, index=False)
         return True
-
-    def save_and_upload(self):
-        try:
-            self.df_recipes.to_excel(FILE_NAME, index=False)
-
-            with open(FILE_NAME, 'rb') as file:
-                media = MediaIoBaseUpload(file,
-                                        mimetype='text/csv',
-                                        resumable=True)
-                self.service.files().update(fileId=self.file_id, media_body=media).execute()
-
-        except Exception as e:
-            print(f"Error in save_and_upload: {str(e)}")
-            raise
 
     def initialize(self):
         with redirect_stdout_to_stderr():
