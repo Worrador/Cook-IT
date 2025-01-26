@@ -10,6 +10,7 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 import openpyxl
+from openpyxl.styles import Font
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 FILE_NAME = 'Recipes.xlsx'
@@ -84,6 +85,18 @@ class CookITLogic:
             print(f"Error during initialization: {e}")
             raise
 
+    def set_bold_headers(self, worksheet):
+        # Make the first row (headers) bold
+        for cell in worksheet[1]:
+            cell.font = Font(bold=True)
+
+            # Calculate and set width just for the first row
+            try:
+                adjusted_width = len(str(cell.value)) + 2
+                worksheet.column_dimensions[cell.column_letter].width = adjusted_width
+            except:
+                pass
+
     def get_or_create_file(self):
         # Check if we have a stored file ID in the local Excel file
         print("Checking if we have a stored file ID in local file...")
@@ -91,6 +104,7 @@ class CookITLogic:
             print("Local file was found.")
             self.wb = openpyxl.load_workbook(FILE_NAME)
             self.ws_Recipes = self.wb['Recipes']
+
             stored_file_id = self.ws_Recipes.cell(row=1, column=6).value
             if stored_file_id:
                 print("File ID was found.")
@@ -98,6 +112,7 @@ class CookITLogic:
                 # Verify the file still exists in Drive
                 try:
                     self.service.files().get(fileId=self.file_id).execute()
+                    self.wb.save(FILE_NAME)  # Save the changes
                     return
                 except:
                     pass  # File not found, we'll create a new one
@@ -105,7 +120,8 @@ class CookITLogic:
         # Search for the file in Drive
         print(f"No ID was found, searching for file:'{FILE_NAME}' on Drive...")
         results = self.service.files().list(
-            q=f"name='{FILE_NAME}'", spaces='drive',
+            q=f"name='{FILE_NAME}' and trashed=false",
+            spaces='drive',
             fields="files(id, name)").execute()
         items = results.get('files', [])
 
@@ -115,8 +131,20 @@ class CookITLogic:
             self.wb = openpyxl.Workbook()
             self.ws_Recipes = self.wb.active
             self.ws_Recipes.title = "Recipes"
-            self.ws_Recipes.append(["Recipe Name", "URL", "Comment", "Number of Recipes"])
+            self.ws_Recipes.append(["Recipe Name", "URL", "Comment", "Number of Lines"])
+            self.set_bold_headers(self.ws_Recipes)
             self.wb.create_sheet("Recency")
+
+            # Hide columns not used by the user
+            self.ws_Recipes.column_dimensions[openpyxl.utils.get_column_letter(4)].hidden = True
+            self.ws_Recipes.column_dimensions[openpyxl.utils.get_column_letter(5)].hidden = True
+
+            # Hide Recency sheet
+            if 'Recency' in self.wb.sheetnames:
+                recency_sheet = self.wb["Recency"]
+                recency_sheet.sheet_state = 'hidden'
+
+
             self.wb.save(FILE_NAME)
 
             file_metadata = {'name': FILE_NAME}
@@ -130,6 +158,8 @@ class CookITLogic:
         else:
             # File exists, use the first match
             self.file_id = items[0]['id']
+
+
 
     def download_file(self):
         try:
@@ -246,6 +276,7 @@ class CookITLogic:
                 raise
 
     def add_recipe(self, name, url, comment):
+        print(f"Adding recipe with name: {name}.", file=sys.stderr, flush=True)
         self.ws_Recipes.append([name, url, comment])
         self.row_count += 1
         self.ws_Recipes.cell(row=self.row_count, column=1, value=name)
