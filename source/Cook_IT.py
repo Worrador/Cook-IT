@@ -1,16 +1,15 @@
-#Cook_IT.py
-
-import random
 import os
 import sys
+import random
 import io
+import pandas as pd
+import numpy as np
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
-import openpyxl
-from openpyxl.styles import Font
+import contextlib
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 FILE_NAME = 'Recipes.xlsx'
@@ -24,9 +23,6 @@ else:
 
 json_path = os.path.join(base_path, 'credentials.json')
 
-import contextlib
-
-# Create a context manager to redirect stdout to stderr
 @contextlib.contextmanager
 def redirect_stdout_to_stderr():
     old_stdout = sys.stdout
@@ -36,14 +32,11 @@ def redirect_stdout_to_stderr():
     finally:
         sys.stdout = old_stdout
 
-
 class CookITLogic:
     def __init__(self):
         self.service = None
-        self.wb = None
-        self.ws_Recipes = None
-        self.ws_recency = None
-        self.row_count = 0
+        self.df_recipes = None
+        self.df_recency = None
         self.file_id = None
 
     def get_google_drive_service(self):
@@ -85,37 +78,28 @@ class CookITLogic:
             print(f"Error during initialization: {e}")
             raise
 
-    def set_bold_headers(self, worksheet):
-        # Make the first row (headers) bold
-        for cell in worksheet[1]:
-            cell.font = Font(bold=True)
-
-            # Calculate and set width just for the first row
-            try:
-                adjusted_width = len(str(cell.value)) + 2
-                worksheet.column_dimensions[cell.column_letter].width = adjusted_width
-            except:
-                pass
-
     def get_or_create_file(self):
-        # Check if we have a stored file ID in the local Excel file
+        # Check if we have a stored file ID in the local CSV file
         print("Checking if we have a stored file ID in local file...")
         if os.path.exists(FILE_NAME):
             print("Local file was found.")
-            self.wb = openpyxl.load_workbook(FILE_NAME)
-            self.ws_Recipes = self.wb['Recipes']
+            try:
+                self.df_recipes = pd.read_excel(FILE_NAME)
 
-            stored_file_id = self.ws_Recipes.cell(row=1, column=6).value
-            if stored_file_id:
-                print("File ID was found.")
-                self.file_id = stored_file_id
-                # Verify the file still exists in Drive
-                try:
-                    self.service.files().get(fileId=self.file_id).execute()
-                    self.wb.save(FILE_NAME)  # Save the changes
-                    return
-                except:
-                    pass  # File not found, we'll create a new one
+                # Check if file_id exists in the dataframe
+                if 'file_id' in self.df_recipes.columns:
+                    stored_file_id = self.df_recipes['file_id'].iloc[0]
+                    if pd.notna(stored_file_id):
+                        print("File ID was found.")
+                        self.file_id = stored_file_id
+                        # Verify the file still exists in Drive
+                        try:
+                            self.service.files().get(fileId=self.file_id).execute()
+                            return
+                        except:
+                            pass  # File not found, we'll create a new one
+            except Exception as e:
+                print(f"Error reading CSV: {e}")
 
         # Search for the file in Drive
         print(f"No ID was found, searching for file:'{FILE_NAME}' on Drive...")
@@ -128,38 +112,27 @@ class CookITLogic:
         if not items:
             print("File not found in Drive. Creating a new file...")
             # File doesn't exist, create it
-            self.wb = openpyxl.Workbook()
-            self.ws_Recipes = self.wb.active
-            self.ws_Recipes.title = "Recipes"
-            self.ws_Recipes.append(["Recipe Name", "URL", "Comment", "Number of Lines"])
-            self.set_bold_headers(self.ws_Recipes)
-            self.wb.create_sheet("Recency")
+            self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment'])
+            self.df_recipes.to_excel(FILE_NAME, index=False)
 
-            # Hide columns not used by the user
-            self.ws_Recipes.column_dimensions[openpyxl.utils.get_column_letter(4)].hidden = True
-            self.ws_Recipes.column_dimensions[openpyxl.utils.get_column_letter(5)].hidden = True
-
-            # Hide Recency sheet
-            if 'Recency' in self.wb.sheetnames:
-                recency_sheet = self.wb["Recency"]
-                recency_sheet.sheet_state = 'hidden'
-
-
-            self.wb.save(FILE_NAME)
+            # Create a companion recency DataFrame
+            self.df_recency = pd.DataFrame(columns=['Recency'])
 
             file_metadata = {'name': FILE_NAME}
             with open(FILE_NAME, 'rb') as file:
                 media = MediaIoBaseUpload(file,
-                                        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                        mimetype='text/csv',
                                         resumable=True)
                 file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
                 self.file_id = file.get('id')
                 print(f"Created new file with ID: {self.file_id}")
+
+                # Add file_id to DataFrame and save
+                self.df_recipes['file_id'] = self.file_id
+                self.df_recipes.to_excel(FILE_NAME, index=False)
         else:
             # File exists, use the first match
             self.file_id = items[0]['id']
-
-
 
     def download_file(self):
         try:
@@ -178,85 +151,55 @@ class CookITLogic:
             raise
 
     def load_workbook(self):
-        self.wb = openpyxl.load_workbook(FILE_NAME)
-        self.ws_Recipes = self.wb['Recipes']
-        self.ws_recency = self.wb['Recency']
+        # Load recipes and recency data
+        self.df_recipes = pd.read_excel(FILE_NAME)
 
-        # Get the stored row count
-        stored_count = self.ws_Recipes.cell(row=1, column=5).value
-
-        if stored_count is None or self.ws_Recipes.cell(row=int(stored_count) if stored_count is not None else 1, column=1).value is None:
-            # Recounting needed
-            print("Recounting recipes from line 1 needed.")
-            self.row_count = 1
-        else:
-            # Count only rows with data starting from stored_count
-            print(f"Recounting recipes from line {int(stored_count)} needed.")
-            self.row_count = int(stored_count)  # Convert to integer explicitly
-
-        # Ensure row_count is an integer for iter_rows
-        current_row = int(self.row_count) + 1
-        for row in self.ws_Recipes.iter_rows(min_row=current_row, max_col=1, values_only=True):
-            if row[0]:
-                self.row_count += 1
-            else:
-                break
-
-        # Update the stored count
-        self.ws_Recipes.cell(row=1, column=5, value=self.row_count)
-        print(f"Stored line count updated to {self.row_count}.")
+        # Ensure recency column exists, initialize if not
+        if 'Recency' not in self.df_recipes.columns:
+            self.df_recipes['Recency'] = 0
 
     def choose_recipe(self):
-        if self.row_count < 2:
-            return None, None, None, None  # No Recipes available
+        # Filter recipes and select based on recency
+        if len(self.df_recipes) < 1:
+            return None, None, None, None
+
         while True:
-            random_row_number = random.randint(2, self.row_count)
-            recency_value = self.ws_recency.cell(row=random_row_number, column=1).value or 0
+            random_recipe = self.df_recipes.sample()
+            recency_value = random_recipe['Recency'].values[0]
 
             if recency_value < random.randint(1, 100):
-                recipe_name = self.ws_Recipes.cell(row=random_row_number, column=1).value
-                url = self.ws_Recipes.cell(row=random_row_number, column=2).value
-                comment = self.ws_Recipes.cell(row=random_row_number, column=3).value
-                return recipe_name, url, comment, random_row_number
-
-    def update_recency(self, chosen_row):
-        self.ws_recency.cell(row=chosen_row, column=1, value=105)
-
-        for row in range(2, self.row_count + 1):
-            cell = self.ws_recency.cell(row=row, column=1)
-            if cell.value is not None:
-                cell.value = max(cell.value - 5, 0)
-            else:
-                cell.value = 0
+                return (
+                    random_recipe['Recipe Name'].values[0],
+                    random_recipe['URL'].values[0],
+                    random_recipe['Comment'].values[0],
+                    random_recipe.index[0] + 2  # +2 to match previous 1-based indexing
+                )
 
     def update_recency(self, cooked_recipe_names):
         for recipe_name in cooked_recipe_names:
-            # Search for matching recipe
-            for row in range(2, self.row_count + 1):
-                if self.ws_Recipes.cell(row=row, column=1).value == recipe_name:
-                    # Update recency for matched recipe
-                    self.ws_recency.cell(row=row, column=1, value=105)
-                    # Decrease other recipes' recency
-                    for other_row in range(2, self.row_count + 1):
-                        cell = self.ws_recency.cell(row=other_row, column=1)
-                        if cell.value is not None:
-                            cell.value = max(cell.value - 5, 0)
-                        else:
-                            cell.value = 0
-                    break
+            # Find index of recipe
+            mask = self.df_recipes['Recipe Name'] == recipe_name
 
-        self.wb.save(FILE_NAME)
-        self.wb.close()
+            # Update recency for matched recipe
+            self.df_recipes.loc[mask, 'Recency'] = 105
+
+            # Decrease other recipes' recency
+            other_mask = ~mask
+            self.df_recipes.loc[other_mask, 'Recency'] = np.maximum(
+                self.df_recipes.loc[other_mask, 'Recency'] - 5,
+                0
+            )
+
+        self.df_recipes.to_excel(FILE_NAME, index=False)
         return True
 
     def save_and_upload(self):
         try:
-            self.wb.save(FILE_NAME)
-            self.wb.close()
+            self.df_recipes.to_excel(FILE_NAME, index=False)
 
             with open(FILE_NAME, 'rb') as file:
                 media = MediaIoBaseUpload(file,
-                                        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                        mimetype='text/csv',
                                         resumable=True)
                 self.service.files().update(fileId=self.file_id, media_body=media).execute()
 
@@ -276,47 +219,41 @@ class CookITLogic:
                 raise
 
     def add_recipe(self, name, url, comment):
-        print(f"Adding recipe with name: {name}.", file=sys.stderr, flush=True)
-        self.ws_Recipes.append([name, url, comment])
-        self.row_count += 1
-        self.ws_Recipes.cell(row=self.row_count, column=1, value=name)
-        self.ws_Recipes.cell(row=self.row_count, column=2, value=url)
-        self.ws_Recipes.cell(row=self.row_count, column=3, value=comment)
-        # self.ws_recency.append([0])
-        self.ws_Recipes.cell(row=1, column=5, value=self.row_count)
-        self.wb.save(FILE_NAME)
-        self.wb.close()
+        new_recipe = pd.DataFrame({
+            'Recipe Name': [name.encode('windows-1250').decode('utf-8')],
+            'URL': [url],
+            'Comment': [comment],
+            'Recency': [0]
+        })
+
+        self.df_recipes = pd.concat([self.df_recipes, new_recipe], ignore_index=True)
+        self.df_recipes.to_excel(FILE_NAME, index=False)
 
     def delete_recipe(self, name, comment):
-        for row in range(2, self.row_count + 1):
-            if (self.ws_Recipes.cell(row=row, column=1).value == name and
-                self.ws_Recipes.cell(row=row, column=3).value == comment):
-                # Delete entire row by shifting rows up
-                self.ws_Recipes.delete_rows(row)
-                self.row_count -= 1
+        # Find the recipe to delete
+        mask = (
+            (self.df_recipes['Recipe Name'] == name) &
+            (self.df_recipes['Comment'] == comment)
+        )
 
-                # Also delete corresponding rows in other worksheets if needed
-                # For example, in recency worksheet
-                for r in range(2, self.ws_recency.max_row + 1):
-                    if self.ws_recency.cell(row=r, column=1).value == row:
-                        self.ws_recency.delete_rows(r)
-                        break
-
-                self.wb.save(FILE_NAME)
-                self.wb.close()
-                return {"success": True, "message": "Recipe deleted"}
+        if mask.any():
+            self.df_recipes = self.df_recipes[~mask]
+            self.df_recipes.to_excel(FILE_NAME, index=False)
+            return {"success": True, "message": "Recipe deleted"}
 
         return {"success": False, "message": "Recipe not found"}
 
     def update_recipe_comment(self, name, url, old_comment, new_comment):
-        # Search through rows to find matching recipe
-        for row in range(2, self.row_count + 1):
-            if (self.ws_Recipes.cell(row=row, column=1).value == name and
-                self.ws_Recipes.cell(row=row, column=2).value == url and
-                self.ws_Recipes.cell(row=row, column=3).value == old_comment):
+        # Find the recipe to update
+        mask = (
+            (self.df_recipes['Recipe Name'] == name) &
+            (self.df_recipes['URL'] == url) &
+            (self.df_recipes['Comment'] == old_comment)
+        )
 
-                self.ws_Recipes.cell(row=row, column=3, value=new_comment)
-                self.wb.save(FILE_NAME)
-                self.wb.close()
-                return True
+        if mask.any():
+            self.df_recipes.loc[mask, 'Comment'] = new_comment
+            self.df_recipes.to_excel(FILE_NAME, index=False)
+            return True
+
         return False
