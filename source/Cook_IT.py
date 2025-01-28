@@ -10,6 +10,10 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 import contextlib
+import locale
+
+# Get the system's default encoding
+SYSTEM_ENCODING = locale.getpreferredencoding()
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 FILE_NAME = 'Recipes.xlsx'
@@ -143,7 +147,7 @@ class CookITLogic:
             downloader = MediaIoBaseDownload(fh, request)
             done = False
             while done is False:
-                status, done = downloader.next_chunk()
+                _, done = downloader.next_chunk()
             fh.seek(0)
             with open(FILE_NAME, 'wb') as f:
                 f.write(fh.read())
@@ -207,9 +211,9 @@ class CookITLogic:
 
     def add_recipe(self, name, url, comment):
         new_recipe = pd.DataFrame({
-            'Recipe Name': [name.encode('windows-1250').decode('utf-8')],
+            'Recipe Name': [name.encode(SYSTEM_ENCODING).decode('utf-8')],
             'URL': [url],
-            'Comment': [comment],
+            'Comment': [comment.encode(SYSTEM_ENCODING).decode('utf-8')],
             'Recency': [0]
         })
 
@@ -219,8 +223,8 @@ class CookITLogic:
     def delete_recipe(self, name, comment):
         # Find the recipe to delete
         mask = (
-            (self.df_recipes['Recipe Name'] == name) &
-            (self.df_recipes['Comment'] == comment)
+            (self.df_recipes['Recipe Name'] == name.encode(SYSTEM_ENCODING).decode('utf-8')) &
+            (self.df_recipes['Comment'] == comment.encode(SYSTEM_ENCODING).decode('utf-8'))
         )
 
         if mask.any():
@@ -233,13 +237,13 @@ class CookITLogic:
     def update_recipe_comment(self, name, url, old_comment, new_comment):
         # Find the recipe to update
         mask = (
-            (self.df_recipes['Recipe Name'] == name) &
+            (self.df_recipes['Recipe Name'] == name.encode(SYSTEM_ENCODING).decode('utf-8')) &
             (self.df_recipes['URL'] == url) &
-            (self.df_recipes['Comment'] == old_comment)
+            (self.df_recipes['Comment'] == old_comment.encode(SYSTEM_ENCODING).decode('utf-8'))
         )
 
         if mask.any():
-            self.df_recipes.loc[mask, 'Comment'] = new_comment
+            self.df_recipes.loc[mask, 'Comment'] = new_comment.encode(SYSTEM_ENCODING).decode('utf-8')
             self.df_recipes.to_excel(FILE_NAME, index=False)
             return True
 
