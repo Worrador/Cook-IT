@@ -17,7 +17,7 @@ def handle_request(request):
             recipe_name, url, comment, _ = logic.choose_recipe()
             if recipe_name is None:
                 print("No recipe chosen", file=sys.stderr, flush=True)
-                return None
+                return {"empty": True}  # Return an object instead of None
             print(f"Chosen recipe - Name: {recipe_name}, URL: {url}", file=sys.stderr, flush=True)
             return {
                 "name": recipe_name,

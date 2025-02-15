@@ -17,6 +17,11 @@ import './CookITApp.css';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+const showToast = (message, type = 'info') => {
+  const duration = Math.max(message.length * 60 + 300, 1000);
+  toast[type](message, { autoClose: duration });
+};
+
 const CookITApp = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAddRecipeOpen, setIsAddRecipeOpen] = useState(false);
@@ -39,11 +44,15 @@ const CookITApp = () => {
   const handleChooseRecipe = async () => {
     try {
       const recipe = await window.electronAPI.chooseRecipe();
+      if (recipe.empty) {
+        showToast("Recipe book is empty, please add a few recipes first!", "info");
+        return;
+      }
       setChosenRecipe(recipe);
       setIsRecipeDetailsOpen(true);
     } catch (error) {
       console.error('Error choosing recipe:', error);
-      alert('Error choosing recipe: ' + error.message);
+      showToast('Error choosing recipe: ' + error.message, "error");
     }
   };
 
@@ -59,7 +68,7 @@ const CookITApp = () => {
       await window.electronAPI.updateComment(recipe, newComment);
     } catch (error) {
       console.error('Error updating comment:', error);
-      alert('Error updating comment: ' + error.message);
+      alert('Error updating comment: ' + error.message, "error");
     }
   };
 
@@ -72,10 +81,10 @@ const CookITApp = () => {
       await window.electronAPI.addRecipe(newRecipe);
       setIsAddRecipeOpen(false);
       setNewRecipe({ name: '', url: '', comment: '' });
-      toast.success('Recipe added successfully!');
+      showToast('Recipe added successfully!', "success");
     } catch (error) {
       console.error('Error adding recipe:', error);
-      toast.error('Error adding recipe: ' + error.message);
+      showToast('Error adding recipe: ' + error.message, "error");
     }
   };
 
@@ -85,10 +94,10 @@ const CookITApp = () => {
       document.body.style.opacity = '0';
       await window.electronAPI.quit();
       window.close();
-      toast.success('Changes saved to Drive');
+      showToast('Changes saved to Drive', "success");
     } catch (error) {
       console.error('Error saving changes:', error);
-      toast.error('Error saving changes: ' + error.message);
+      showToast('Error saving changes: ' + error.message, "error");
     }
   };
 
@@ -121,7 +130,7 @@ const CookITApp = () => {
     });
   } catch (error) {
     console.error('Error deleting recipe:', error);
-    toast.error('Failed to delete recipe');
+    showToast('Failed to delete recipe');
   }
   };
 
@@ -257,7 +266,7 @@ const CookITApp = () => {
     />
     <ToastContainer
       position="top-center"
-      autoClose={1000}
+      autoClose={4000}  // Set a longer default duration - 4 seconds
       hideProgressBar={true}
       newestOnTop={false}
       closeOnClick
@@ -265,15 +274,15 @@ const CookITApp = () => {
       pauseOnFocusLoss
       draggable
       pauseOnHover
-      closeButton={false} // Hide the close button
+      closeButton={false}
       style={{
-        zIndex: 9999, // Ensure it's above other content
-        top: '10%', // Adjust vertical position
-        maxWidth: '300px', // Limit the width of the popup
+        zIndex: 9999,
+        top: '10%',
+        maxWidth: '300px',
         left: '50%',
-        transform: 'translateX(-50%)', // Ensure centering is perfect
+        transform: 'translateX(-50%)',
       }}
-      className="toast-animation" // Custom class for animation
+      className="toast-animation"
     />
 
     </div>
