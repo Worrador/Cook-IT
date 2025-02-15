@@ -3,7 +3,8 @@ import { Card, CardHeader, CardContent, CardFooter } from './components/card.jsx
 import { Button } from './components/button.jsx';
 import { Input } from './components/input.jsx';
 import RecipeDetailsDialog from './components/RecipeDetailsDialog.jsx';
-import { Loader2, ChefHat, PlusCircle, X, BookOpen} from 'lucide-react';
+import HelpDialog from './components/HelpDialog.jsx';
+import { Loader2, ChefHat, PlusCircle, X, BookOpen,HelpCircle} from 'lucide-react';
 import {
   Dialog,
   DialogTrigger,
@@ -17,9 +18,13 @@ import './CookITApp.css';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-const showToast = (message, type = 'info') => {
+
+const showToast = (message, type = 'info', onCloseCallback = () => {}) => {
   const duration = Math.max(message.length * 60 + 300, 1000);
-  toast[type](message, { autoClose: duration });
+  toast[type](message, {
+    autoClose: duration,
+    onClose: onCloseCallback, // Trigger the callback when the toast is closed
+  });
 };
 
 const CookITApp = () => {
@@ -30,6 +35,8 @@ const CookITApp = () => {
   const [chosenRecipe, setChosenRecipe] = useState(null);
   const firstInputRef = useRef(null); // Ref for the first input
   const [cookedRecipes, setCookedRecipes] = useState(new Map());
+  const [showHelp, setShowHelp] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   useEffect(() => {
     if (isAddRecipeOpen && firstInputRef.current) {
@@ -45,7 +52,9 @@ const CookITApp = () => {
     try {
       const recipe = await window.electronAPI.chooseRecipe();
       if (recipe.empty) {
-        showToast("Recipe book is empty, please add a few recipes first!", "info");
+        showToast("Recipe book is empty, please add a few recipes first!", "info", () => {
+          setShowHelp(true);
+        });
         return;
       }
       setChosenRecipe(recipe);
@@ -146,7 +155,7 @@ const CookITApp = () => {
 
   return (
     <div className="container mx-auto p-4 border-transparent">
-      <Card className="w-full max-w-md mx-auto border-transparent">
+      <Card className="w-full max-w-md mx-auto border-transparent relative">
         <CardHeader>
           <div className="flex items-center justify-center">
             <ChefHat className="h-12 w-12 text-primary headerItems" />
@@ -242,6 +251,18 @@ const CookITApp = () => {
             </DialogContent>
           </Dialog>
         </CardContent>
+        {showHelp && (
+          <Button
+            className="absolute left-0 right-0 flex items-center justify-center cursor-pointer z-10 group bg-transparent border-none"
+            style={{ bottom: "74px" }}
+            onClick={() => setIsHelpOpen(true)}
+          >
+            <div className="flex items-center gap-1 text-[#6B4F37] transition-colors group-hover:text-[#A37B58]">
+              <span className="text-xs font-bold">How does IT work</span>
+              <HelpCircle className="h-4 w-4 font-bold text-[#6B4F37] group-hover:text-[#A37B58]" />
+            </div>
+          </Button>
+        )}
         <CardFooter>
           <Button
             variant="default"
@@ -284,7 +305,7 @@ const CookITApp = () => {
       }}
       className="toast-animation"
     />
-
+    <HelpDialog isOpen={isHelpOpen} setIsOpen={setIsHelpOpen} />
     </div>
   );
 };
