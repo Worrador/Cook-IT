@@ -23,7 +23,7 @@ if getattr(sys, 'frozen', False):
     base_path = sys._MEIPASS
 else:
     # If running as a script
-    base_path = os.path.dirname(__file__)
+    base_path = os.getcwd()
 
 json_path = os.path.join(base_path, 'credentials.json')
 
@@ -40,7 +40,6 @@ class CookITLogic:
     def __init__(self):
         self.service = None
         self.df_recipes = None
-        self.df_recency = None
         self.file_id = None
 
     def get_google_drive_service(self):
@@ -83,36 +82,32 @@ class CookITLogic:
             raise
 
     def get_or_create_file(self):
-        if os.path.exists(FILE_NAME):
-            try:
-                # Read only visible sheets
-                self.df_recipes = pd.read_excel(FILE_NAME, sheet_name='Recipes')
-                # Read hidden recency data
-                with pd.ExcelWriter(FILE_NAME, engine='openpyxl', mode='a') as writer:
-                    if 'Recency' not in writer.book.sheetnames:
-                        self.df_recency = pd.DataFrame(columns=['Recency'])
-                        self.df_recency.to_excel(writer, sheet_name='Recency', index=False)
-                        writer.book['Recency'].sheet_state = 'hidden'
+        results = self.service.files().list(
+            q=f"name='{FILE_NAME}' and trashed=false",
+            spaces='drive',
+            fields="files(id, name)").execute()
+        items = results.get('files', [])
 
-                stored_file_id = self.df_recipes.get('file_id', [None])[0]
-                if pd.notna(stored_file_id):
-                    self.file_id = stored_file_id
-                    try:
-                        self.service.files().get(fileId=self.file_id).execute()
-                        return
-                    except:
-                        pass
-            except Exception as e:
-                print(f"Error reading Excel: {e}")
+        if items:
+            self.file_id = items[0]['id']
 
-        # Create new file with hidden recency sheet
-        self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment'])
-        self.df_recency = pd.DataFrame(columns=['Recency'])
+            # Check if local file exists
+            if os.path.exists(FILE_NAME):
+                # Perform merge if local file exists
+                self.df_recipes = self.merge_local_changes()
+                return
 
+            # If no local file, just download
+            self.download_file()
+            excel_file = pd.ExcelFile(FILE_NAME)
+            self.df_recipes = pd.read_excel(excel_file, sheet_name='Recipes')
+            self.df_recipes = self.df_recipes.fillna("")
+            return
+
+        # Create new file if not found in Drive
+        self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Recency'])
         with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
             self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
-            self.df_recency.to_excel(writer, sheet_name='Recency', index=False)
-            writer.book['Recency'].sheet_state = 'hidden'
 
         file_metadata = {'name': FILE_NAME}
         with open(FILE_NAME, 'rb') as file:
@@ -122,13 +117,89 @@ class CookITLogic:
             file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
             self.file_id = file.get('id')
 
+    def merge_local_changes(self):
+        try:
+            # Read local file
+            local_df = pd.read_excel(FILE_NAME)
+            local_df = local_df.fillna("")
+
+            # Download and read remote file
+            remote_temp = 'remote_' + FILE_NAME
+            request = self.service.files().get_media(fileId=self.file_id)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while done is False:
+                _, done = downloader.next_chunk()
+            fh.seek(0)
+            with open(remote_temp, 'wb') as f:
+                f.write(fh.read())
+
+            remote_df = pd.read_excel(remote_temp)
+            remote_df = remote_df.fillna("")
+
+            # Merge logic
+            # Use recipe name, URL, and comment as composite key for comparison
+            local_keys = set(zip(local_df['Recipe Name'], local_df['URL'], local_df['Comment']))
+            remote_keys = set(zip(remote_df['Recipe Name'], remote_df['URL'], remote_df['Comment']))
+
+            # Find new and deleted recipes
+            new_local = local_keys - remote_keys
+            new_remote = remote_keys - local_keys
+            total_diff = len(new_local) + len(new_remote)
+            if total_diff == 0:
+                os.remove(remote_temp)
+                return local_df
+
+            print(f"Changes found both in remote and local Recipe book, number of differences: {str(total_diff)}")
+
+            # Create merged dataframe starting with remote data
+            merged_df = remote_df.copy()
+
+            # Add new local recipes
+            new_local_records = local_df[local_df.apply(
+                lambda x: (x['Recipe Name'], x['URL'], x['Comment']) in new_local, axis=1
+            )]
+            merged_df = pd.concat([merged_df, new_local_records], ignore_index=True)
+
+            # Update recency values
+            # Keep higher recency value between local and remote for matching recipes
+            merged_df['Recency'] = merged_df['Recency'].apply(lambda x: 0.0 if (x == "" or pd.isna(x)) else float(x))
+            local_df['Recency'] = local_df['Recency'].apply(lambda x: 0.0 if (x == "" or pd.isna(x)) else float(x))
+
+            for idx, row in merged_df.iterrows():
+                key = (row['Recipe Name'], row['URL'], row['Comment'])
+                local_match = local_df[
+                    (local_df['Recipe Name'] == key[0]) &
+                    (local_df['URL'] == key[1]) &
+                    (local_df['Comment'] == key[2])
+                ]
+
+                if not local_match.empty:
+                    merged_df.at[idx, 'Recency'] = max(
+                        row['Recency'],
+                        local_match.iloc[0]['Recency']
+                    )
+
+            # Cleanup
+            os.remove(remote_temp)
+            print(f"Changes merged. Number of recipes locally before: {str(len(local_keys))}, Number of recipes after merge: {str(len(merged_df))}")
+            return merged_df
+
+        except Exception as e:
+            print(f"Error during merge: {str(e)}")
+            raise
+
     def save_and_upload(self):
         try:
             with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
                 self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
-                self.df_recency.to_excel(writer, sheet_name='Recency', index=False)
-                writer.book['Recency'].sheet_state = 'hidden'
 
+                if 'Recency' in self.df_recipes.columns:
+                    col_letter = 'D'  # Adjust if needed based on column position
+                    writer.sheets['Recipes'].column_dimensions[col_letter].hidden = True
+
+            # Upload to Drive
             with open(FILE_NAME, 'rb') as file:
                 media = MediaIoBaseUpload(file,
                                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -154,14 +225,6 @@ class CookITLogic:
         except Exception as e:
             print(f"Error downloading file: {str(e)}")
             raise
-
-    def load_workbook(self):
-        # Load recipes and recency data
-        self.df_recipes = pd.read_excel(FILE_NAME)
-
-        # Ensure recency column exists, initialize if not
-        if 'Recency' not in self.df_recipes.columns:
-            self.df_recipes['Recency'] = 0
 
     def choose_recipe(self):
         # Filter recipes and select based on recency
@@ -203,8 +266,6 @@ class CookITLogic:
             try:
                 self.get_google_drive_service()
                 self.get_or_create_file()
-                self.download_file()
-                self.load_workbook()
             except Exception as e:
                 print(f"Error during initialization: {str(e)}")
                 raise
