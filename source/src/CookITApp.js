@@ -4,7 +4,8 @@ import { Button } from './components/button.jsx';
 import { Input } from './components/input.jsx';
 import RecipeDetailsDialog from './components/RecipeDetailsDialog.jsx';
 import HelpDialog from './components/HelpDialog.jsx';
-import { Loader2, ChefHat, PlusCircle, X, BookOpen,HelpCircle} from 'lucide-react';
+import BuyCoffeeDialog from './components/BuyCoffeeDialog.jsx';
+import { Loader2, ChefHat, PlusCircle, X, BookOpen,HelpCircle, Coffee} from 'lucide-react';
 import {
   Dialog,
   DialogTrigger,
@@ -37,6 +38,8 @@ const CookITApp = () => {
   const [cookedRecipes, setCookedRecipes] = useState(new Map());
   const [showHelp, setShowHelp] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [showBuyCoffee, setShowBuyCoffee] = useState(false);
+  const [isBuyCoffeeOpen, setIsBuyCoffeeOpen] = useState(false);
 
   useEffect(() => {
     if (isAddRecipeOpen && firstInputRef.current) {
@@ -57,13 +60,14 @@ const CookITApp = () => {
         });
         return;
       }
+      setShowBuyCoffee(true);
       setChosenRecipe(recipe);
       setIsRecipeDetailsOpen(true);
     } catch (error) {
       console.error('Error choosing recipe:', error);
       showToast('Error choosing recipe: ' + error.message, "error");
     }
-  };
+};
 
   const handleCommentChange = async (recipe, newComment) => {
     try {
@@ -263,7 +267,21 @@ const CookITApp = () => {
             </div>
           </Button>
         )}
-        <CardFooter>
+        {showBuyCoffee && !showHelp && (
+          <Button
+            className="absolute left-0 right-0 flex items-center justify-center cursor-pointer z-10 group bg-transparent border-none"
+            style={{ bottom: "72px" }}
+            onClick={() => window.electronAPI.openUrl('https://ko-fi.com/worrador')}
+          >
+            <div className="flex items-end gap-1 text-[#6B4F37] transition-colors group-hover:text-[#A37B58]">
+              <Coffee className="h-3 w-3 font-bold text-[#6B4F37] group-hover:text-[#A37B58]" />
+              <span className="text-[9px] font-bold leading-none flex items-end" style={{ transform: 'translateY(-2px)' }}>
+                Buy me a Coffee :)
+              </span>
+            </div>
+          </Button>
+        )}
+        <CardFooter className="mt-8">
           <Button
             variant="default"
             className="w-full cardQuitBtn hover:bg-[#4c8ca4] group transition-transform"
@@ -306,6 +324,7 @@ const CookITApp = () => {
       className="toast-animation"
     />
     <HelpDialog isOpen={isHelpOpen} setIsOpen={setIsHelpOpen} />
+    <BuyCoffeeDialog isOpen={isBuyCoffeeOpen} setIsOpen={setIsBuyCoffeeOpen} />
     </div>
   );
 };

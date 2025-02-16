@@ -17,7 +17,7 @@ const HelpDialog = ({ isOpen, setIsOpen }) => {
           </DialogTitle>
         </DialogHeader>
         <div className="p-4">
-          <p>test</p>
+          <p>Ask Bodó</p>
         </div>
       </DialogContent>
     </Dialog>

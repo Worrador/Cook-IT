@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const isDev = process.env.NODE_ENV !== 'production';
 const { spawn } = require('child_process');
 
 let mainWindow;
@@ -11,19 +12,35 @@ function createWindow() {
     height: 384,
     frame: false,
     transparent: true,
-    backgroundColor: 'rgba(0, 0, 0, 0)', // Ensure fully transparent background
+    backgroundColor: 'rgba(0, 0, 0, 0)',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: false, // Only for development
     },
   });
 
-  mainWindow.loadFile('index.html');
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:3000');
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  } else {
+    mainWindow.loadFile(path.join(__dirname, 'build', 'index.html'));
+  }
+
+  // Handle window reload for HMR
+  mainWindow.webContents.on('did-fail-load', () => {
+    console.log('Page failed to load - retrying...');
+    setTimeout(() => {
+      mainWindow.loadURL('http://localhost:3000');
+    }, 1000);
+  });
 }
 
 app.whenReady().then(() => {
-  createWindow();
+  setTimeout(() => {
+    createWindow();
+  }, 2000); // Delay for 1 second before creating the window
 
   // Start Python process
   pythonProcess = spawn('python', ['cook_it_bridge.py']);
@@ -39,8 +56,6 @@ app.whenReady().then(() => {
       try {
         const response = JSON.parse(line);
         console.log('Frontend received:', response);
-        // Handle the response
-        // You might need to implement a way to match responses to requests
       } catch (error) {
         console.error('Error parsing Python stdout:', error);
       }
@@ -100,7 +115,6 @@ ipcMain.handle('delete-recipe', async (event, recipe) => {
   return sendToPython({ action: 'delete-recipe', recipe });
 });
 
-
 function sendToPython(message) {
   return new Promise((resolve, reject) => {
     const responseHandler = (data) => {
@@ -113,7 +127,7 @@ function sendToPython(message) {
         }
         pythonProcess.stdout.removeListener('data', responseHandler);
       } catch (error) {
-        // If it's not valid JSON, we ignore it (it might be partial data)
+        // Ignore non-JSON data (partial responses)
       }
     };
 
