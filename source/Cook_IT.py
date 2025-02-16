@@ -235,7 +235,7 @@ class CookITLogic:
             random_recipe = self.df_recipes.sample()
             recency_value = random_recipe['Recency'].values[0]
 
-            if recency_value < random.randint(1, 100):
+            if recency_value < random.randint(1, 101):
                 return (
                     random_recipe['Recipe Name'].values[0],
                     random_recipe['URL'].values[0],
@@ -249,7 +249,7 @@ class CookITLogic:
             mask = self.df_recipes['Recipe Name'] == recipe_name
 
             # Update recency for matched recipe
-            self.df_recipes.loc[mask, 'Recency'] = 99
+            self.df_recipes.loc[mask, 'Recency'] = 100
 
             # Decrease other recipes' recency
             other_mask = ~mask

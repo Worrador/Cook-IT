@@ -21,11 +21,21 @@ input {
 
 /* styles.css (or any global CSS file) */
 .toast-slide-in {
-  animation: slide-in-from-top; 
+  animation: slide-in-from-top;
   max-width: 300px;
-  padding: 12px; 
-  border-radius: 8px; 
-  font-size: 14px; 
-  background-color: #333; 
-  color: white; 
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  background-color: #333;
+  color: white;
+}
+
+@keyframes fast-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fast-spin {
+  animation: fast-spin 0.5s linear infinite;
 }

@@ -31,10 +31,15 @@ module.exports = {
             opacity: '0'
           },
         },
+        'fast-spin': {
+          '0%': { transform: 'rotate(-360deg) scale(1.25)'},
+          '100%': { transform: 'rotate(0deg) scale(1.25)'},
+        },
       },
       animation: {
         "slide-in-from-top": "slide-in-top 0.3s ease-out",
         "slide-out-to-top": "slide-out-top 0.3s ease-in",
+        'fast-spin': 'fast-spin 0.75s linear infinite',
       },
     },
   },

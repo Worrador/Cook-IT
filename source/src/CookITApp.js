@@ -40,6 +40,7 @@ const CookITApp = () => {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [showBuyCoffee, setShowBuyCoffee] = useState(false);
   const [isBuyCoffeeOpen, setIsBuyCoffeeOpen] = useState(false);
+  const [isQuitting, setIsQuitting] = useState(false);
 
   useEffect(() => {
     if (isAddRecipeOpen && firstInputRef.current) {
@@ -107,16 +108,21 @@ const CookITApp = () => {
 
   const handleQuit = async () => {
     try {
+      setIsQuitting(true);
       await window.electronAPI.updateRecency(Array.from(cookedRecipes.values()));
-      document.body.style.opacity = '0';
+
       await window.electronAPI.quit();
-      window.close();
-      showToast('Changes saved to Drive', "success");
+      setIsQuitting(false);
+      showToast("Changes saved to Drive", "success", () => {
+          document.body.style.opacity = '0';
+          window.close();
+        });
     } catch (error) {
       console.error('Error saving changes:', error);
       showToast('Error saving changes: ' + error.message, "error");
     }
   };
+
 
   const handleCook = (recipe) => {
     setCookedRecipes(prev => {
@@ -302,9 +308,16 @@ const handleDelete = async (recipe) => {
         <CardFooter className="mt-8">
           <Button
             variant="default"
-            className="w-full cardQuitBtn hover:bg-[#4c8ca4] group transition-transform"
-            onClick={handleQuit}>
-            <X className="mr-2 h-4 w-4 transition-transform group-hover:rotate-180 group-hover:scale-125" />
+            className={`w-full cardQuitBtn group transition-transform ${
+              isQuitting ? 'bg-[#4c8ca4]' : 'hover:bg-[#4c8ca4]'
+            }`}
+            onClick={handleQuit}
+          >
+            <X
+              className={`mr-2 h-4 w-4 transition-transform ${
+                isQuitting ? 'scale-125 animate-fast-spin' : 'group-hover:rotate-180 group-hover:scale-125'
+              }`}
+            />
             Quit
           </Button>
 
