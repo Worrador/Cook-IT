@@ -142,7 +142,7 @@ const CookITApp = () => {
     });
   };
 
-  const handleDelete = async (recipe) => {
+const handleDelete = async (recipe) => {
   try {
     await window.electronAPI.deleteRecipe(recipe);
     setCookedRecipes(prev => {
@@ -150,12 +150,21 @@ const CookITApp = () => {
       updated.delete(recipe.name);
       return updated;
     });
+
+    // Choose new recipe without closing the dialog
+    const newRecipe = await window.electronAPI.chooseRecipe();
+    if (newRecipe.empty) {
+      setIsRecipeDetailsOpen(false);
+      showToast("No more recipes in the recipe book!", "error");
+      return;
+    }
+    showToast('Successfully deleted recipe: ' + recipe.name, "success");
+    setChosenRecipe(newRecipe);
   } catch (error) {
     console.error('Error deleting recipe:', error);
-    showToast('Failed to delete recipe');
+    showToast('Failed to delete recipe: ' + error.message, "error");
   }
-  };
-
+};
 
   if (isLoading) {
     return (

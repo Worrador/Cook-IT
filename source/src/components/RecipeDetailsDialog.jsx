@@ -78,7 +78,8 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
 
   const handleDelete = () => {
     onDelete(recipe);
-    handleNext();
+    setIsEditingComment(false);
+    setHasClickedCook(false);
   };
 
   return (
