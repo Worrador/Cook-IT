@@ -48,7 +48,12 @@ const CookITApp = () => {
   }, [isAddRecipeOpen]);
 
   useEffect(() => {
-    window.electronAPI.initialize().then(() => setIsLoading(false));
+    const initApp = async () => {
+      await window.electronAPI.initialize();
+      const savedCount = localStorage.getItem('cookItClickCount') || '0';
+      setIsLoading(false);
+    };
+    initApp();
   }, []);
 
   const handleChooseRecipe = async () => {
@@ -60,14 +65,13 @@ const CookITApp = () => {
         });
         return;
       }
-      setShowBuyCoffee(true);
       setChosenRecipe(recipe);
       setIsRecipeDetailsOpen(true);
     } catch (error) {
       console.error('Error choosing recipe:', error);
       showToast('Error choosing recipe: ' + error.message, "error");
     }
-};
+  };
 
   const handleCommentChange = async (recipe, newComment) => {
     try {
@@ -123,6 +127,11 @@ const CookITApp = () => {
       });
       return updated;
     });
+
+    const currentCount = parseInt(localStorage.getItem('cookItClickCount') || '0');
+    const newCount = (currentCount + 1) % 5;
+    localStorage.setItem('cookItClickCount', newCount.toString());
+    setShowBuyCoffee(newCount % 5 === 0);
   };
 
   const handleUncook = (recipe) => {
@@ -258,7 +267,7 @@ const CookITApp = () => {
         {showHelp && (
           <Button
             className="absolute left-0 right-0 flex items-center justify-center cursor-pointer z-10 group bg-transparent border-none"
-            style={{ bottom: "74px" }}
+            style={{ bottom: "72px", left: "50%", transform: "translateX(-50%)"}}
             onClick={() => setIsHelpOpen(true)}
           >
             <div className="flex items-center gap-1 text-[#6B4F37] transition-colors group-hover:text-[#A37B58]">
@@ -269,8 +278,8 @@ const CookITApp = () => {
         )}
         {showBuyCoffee && !showHelp && (
           <Button
-            className="absolute left-0 right-0 flex items-center justify-center cursor-pointer z-10 group bg-transparent border-none"
-            style={{ bottom: "72px" }}
+            className="absolute flex items-center justify-center cursor-pointer z-10 group bg-transparent border-none"
+            style={{ bottom: "72px", left: "50%", transform: "translateX(-50%)"}}
             onClick={() => window.electronAPI.openUrl('https://ko-fi.com/worrador')}
           >
             <div className="flex items-end gap-1 text-[#6B4F37] transition-colors group-hover:text-[#A37B58]">

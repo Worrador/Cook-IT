@@ -249,7 +249,7 @@ class CookITLogic:
             mask = self.df_recipes['Recipe Name'] == recipe_name
 
             # Update recency for matched recipe
-            self.df_recipes.loc[mask, 'Recency'] = 105
+            self.df_recipes.loc[mask, 'Recency'] = 99
 
             # Decrease other recipes' recency
             other_mask = ~mask
