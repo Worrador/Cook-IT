@@ -1,14 +1,14 @@
 const path = require('path');
-const ReactRefreshWebpackPlugin = require('@pmmmwh/react-refresh-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const isDevelopment = process.env.NODE_ENV === 'development';
 
 module.exports = {
-  mode: 'development',
-  entry: ['./src/index.js'],
+  mode: isDevelopment ? 'development' : 'production',
+  entry: './src/index.js',
   output: {
     path: path.resolve(__dirname, 'build'),
     filename: 'bundle.js',
-    publicPath: '/',
+    publicPath: './',
   },
   module: {
     rules: [
@@ -19,13 +19,13 @@ module.exports = {
           loader: 'babel-loader',
           options: {
             presets: ['@babel/preset-env', '@babel/preset-react'],
-            plugins: ['@babel/plugin-transform-runtime', 'react-refresh/babel'],
+            plugins: isDevelopment ? ['react-refresh/babel'] : []
           }
         }
       },
       {
-        test: /\.css$/i,
-        use: ['style-loader', 'css-loader', 'postcss-loader'],
+        test: /\.css$/,
+        use: ['style-loader', 'css-loader', 'postcss-loader']
       }
     ]
   },
@@ -35,30 +35,22 @@ module.exports = {
       '@': path.resolve(__dirname, 'src'),
     },
     fallback: {
-      fs: false,
       path: require.resolve('path-browserify'),
       os: require.resolve('os-browserify/browser'),
       util: require.resolve('util/'),
+      fs: false,
       child_process: false
     },
   },
-  devServer: {
-    static: {
-      directory: path.join(__dirname, 'build'),
-      serveIndex: false
-    },
+  plugins: [
+    isDevelopment && new ReactRefreshWebpackPlugin(),
+    new HtmlWebpackPlugin({
+      template: 'index.html'
+    }),
+  ].filter(Boolean),
+  devServer: isDevelopment ? {
     hot: true,
     port: 3000,
     historyApiFallback: true,
-    devMiddleware: {
-      publicPath: '/',
-    },
-  },
-  plugins: [
-    new ReactRefreshWebpackPlugin(),
-    new HtmlWebpackPlugin({
-      template: path.join(__dirname, 'index.html'),
-      filename: 'index.html',
-    }),
-  ],
+  } : undefined
 };

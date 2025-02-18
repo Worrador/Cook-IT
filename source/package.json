@@ -8,7 +8,8 @@
     "restart": "tasklist /FI \"IMAGENAME eq electron.exe\" 2>NUL | find /I \"electron.exe\" >NUL || electron . && taskkill /F /IM electron.exe && electron .",
     "dev": "webpack serve --config webpack.config.js",
     "build": "webpack --config webpack.config.js",
-    "package": "electron-builder build --win --linux --mac"
+    "package": "electron-builder build --win",
+    "dist": "electron-builder"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.1",
@@ -17,7 +18,6 @@
     "chalk": "^4.1.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
-    "electron": "^25.0.0",
     "lucide-react": "^0.446.0",
     "os-browserify": "^0.3.0",
     "path-browserify": "^1.0.1",
@@ -40,7 +40,8 @@
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "css-loader": "^7.1.2",
-    "electron-builder": "^24.4.0",
+    "electron": "^34.2.0",
+    "electron-builder": "^24.13.3",
     "electron-reload": "^2.0.0-alpha.1",
     "html-webpack-plugin": "^5.6.3",
     "postcss": "^8.4.49",
@@ -54,15 +55,23 @@
     "webpack-dev-server": "^5.2.0"
   },
   "build": {
-    "appId": "com.yourcompany.cookit",
+    "appId": "Worrador.CookIT",
     "productName": "Cook-IT",
     "files": [
       "build/**/*",
       "main.js",
-      "preload.js"
+      "preload.js",
+      "!node_modules/**/*"
     ],
-    "extraFiles": [
-      "cook_it_bridge.py"
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist"
+    },
+    "extraResources": [
+      {
+        "from": "../resource/dist/Cook-IT.exe",
+        "to": "Cook-IT.exe"
+      }
     ]
   }
 }

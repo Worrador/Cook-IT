@@ -1,6 +1,8 @@
+
+// mainWindow.js
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
-const isDev = process.env.NODE_ENV !== 'production';
+const isDev = process.env.NODE_ENV === 'development';
 const { spawn } = require('child_process');
 
 let mainWindow;
@@ -17,7 +19,6 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false, // Only for development
     },
   });
 
@@ -27,22 +28,28 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, 'build', 'index.html'));
   }
 
-  // Handle window reload for HMR
-  mainWindow.webContents.on('did-fail-load', () => {
-    console.log('Page failed to load - retrying...');
-    setTimeout(() => {
-      mainWindow.loadURL('http://localhost:3000');
-    }, 1000);
-  });
+   mainWindow.webContents.openDevTools();
 }
 
 app.whenReady().then(() => {
   setTimeout(() => {
     createWindow();
-  }, 2000); // Delay for 1 second before creating the window
+  }, 2000);
 
   // Start Python process
-  pythonProcess = spawn('python', ['cook_it_bridge.py']);
+  const backendPath = isDev
+    ? path.join(__dirname, '..', 'resource', 'dist', 'Cook-IT.exe')
+    : path.join(process.resourcesPath, 'Cook-IT.exe');
+
+  // Add these logs right before spawning the process
+  console.log('Starting backend process...');
+  console.log('Backend path:', backendPath);
+
+  pythonProcess = spawn(backendPath);
+  console.log('Backend process started');
+  pythonProcess.on('error', (err) => {
+    console.error('Failed to start backend:', err);
+  });
 
   let bufferedData = '';
 
@@ -69,6 +76,7 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
 
 app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();
