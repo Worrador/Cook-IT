@@ -1,5 +1,3 @@
-
-// mainWindow.js
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development';
@@ -28,66 +26,36 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, 'build', 'index.html'));
   }
 
-   mainWindow.webContents.openDevTools();
-}
-
-app.whenReady().then(() => {
-  setTimeout(() => {
-    createWindow();
-  }, 2000);
-
   // Start Python process
   const backendPath = isDev
     ? path.join(__dirname, '..', 'resource', 'dist', 'Cook-IT.exe')
     : path.join(process.resourcesPath, 'Cook-IT.exe');
 
-  // Add these logs right before spawning the process
-  console.log('Starting backend process...');
   console.log('Backend path:', backendPath);
 
-  pythonProcess = spawn(backendPath);
-  console.log('Backend process started');
-  pythonProcess.on('error', (err) => {
-    console.error('Failed to start backend:', err);
-  });
-
-  let bufferedData = '';
-
-  pythonProcess.stdout.on('data', (data) => {
-    bufferedData += data.toString();
-    let newlineIndex;
-    while ((newlineIndex = bufferedData.indexOf('\n')) !== -1) {
-      const line = bufferedData.slice(0, newlineIndex);
-      bufferedData = bufferedData.slice(newlineIndex + 1);
-      try {
-        const response = JSON.parse(line);
-        console.log('Frontend received:', response);
-      } catch (error) {
-        console.error('Error parsing Python stdout:', error);
-      }
+  pythonProcess = spawn(backendPath, [], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      PYTHONIOENCODING: 'utf-8',
+      PYTHONUNBUFFERED: '1'
     }
   });
 
+  pythonProcess.on('error', (err) => {
+    console.error('Backend error:', err);
+  });
+
+  pythonProcess.stdout.on('data', (data) => {
+    console.log('Backend output:', data.toString());
+  });
+
   pythonProcess.stderr.on('data', (data) => {
-    console.log(`Backend: ${data}`);
+    console.error('Backend error:', data.toString());
   });
+}
 
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
-
-
-app.on('window-all-closed', function () {
-  if (process.platform !== 'darwin') app.quit();
-});
-
-app.on('will-quit', () => {
-  // Terminate the Python process
-  if (pythonProcess) {
-    pythonProcess.kill();
-  }
-});
+app.whenReady().then(createWindow);
 
 // IPC handlers
 ipcMain.handle('initialize', async () => {

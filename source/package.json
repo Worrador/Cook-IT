@@ -60,18 +60,20 @@
     "files": [
       "build/**/*",
       "main.js",
-      "preload.js",
-      "!node_modules/**/*"
+      "preload.js"
     ],
-    "directories": {
-      "buildResources": "assets",
-      "output": "dist"
-    },
     "extraResources": [
       {
         "from": "../resource/dist/Cook-IT.exe",
-        "to": "Cook-IT.exe"
+        "to": "./Cook-IT.exe"
       }
-    ]
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    }
   }
 }
