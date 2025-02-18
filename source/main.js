@@ -13,6 +13,7 @@ function createWindow() {
     frame: false,
     transparent: true,
     backgroundColor: 'rgba(0, 0, 0, 0)',
+    icon: path.join(__dirname, 'assets', 'chef-hat.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -26,12 +27,9 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, 'build', 'index.html'));
   }
 
-  // Start Python process
   const backendPath = isDev
     ? path.join(__dirname, '..', 'resource', 'dist', 'Cook-IT.exe')
     : path.join(process.resourcesPath, 'Cook-IT.exe');
-
-  console.log('Backend path:', backendPath);
 
   pythonProcess = spawn(backendPath, [], {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -40,18 +38,6 @@ function createWindow() {
       PYTHONIOENCODING: 'utf-8',
       PYTHONUNBUFFERED: '1'
     }
-  });
-
-  pythonProcess.on('error', (err) => {
-    console.error('Backend error:', err);
-  });
-
-  pythonProcess.stdout.on('data', (data) => {
-    console.log('Backend output:', data.toString());
-  });
-
-  pythonProcess.stderr.on('data', (data) => {
-    console.error('Backend error:', data.toString());
   });
 }
 

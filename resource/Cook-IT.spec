@@ -14,7 +14,7 @@ source_dir = os.path.join(current_dir, '../source/')
 block_cipher = None
 
 a = Analysis(
-    [os.path.join(source_dir, 'GUI.py')],  # Use relative path to GUI.py
+    [os.path.join(source_dir, 'cook_it_bridge.py')],  # Use relative path to GUI.py
     pathex=[source_dir],                   # Set the search path to source_dir
     binaries=[],
     datas=[
@@ -22,7 +22,15 @@ a = Analysis(
         (os.path.join(source_dir, 'Cook_IT.py'), '.'),         # Include Cook_IT.py
         ('..\\resource\\Cook-IT.ico', 'resource')  # Include the icon as a data file
     ],
-    hiddenimports=[],
+    hiddenimports=[
+        'google.oauth2.credentials',
+        'google_auth_oauthlib.flow',
+        'googleapiclient.discovery',
+        'googleapiclient.http',
+        'pandas',
+        'numpy',
+        'openpyxl'
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -39,12 +47,12 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     name='Cook-IT',
-    debug=False,
+    debug=True,  # Enabled debug for troubleshooting
     bootloader_ignore_signals=False,
-    strip=True,
+    strip=False,  # Disabled stripping for better error messages
     upx=False,
-    console=False,  # Set to True if you want a console window
-    windowed=True,  # Set to False if you want a console window
+    console=True,  # Enabled console temporarily for debugging
+    windowed=False,  # Disabled windowed mode to see console output
     icon=['.\\Cook-IT.ico'],
     cipher=block_cipher,
     hooksconfig={}

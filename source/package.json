@@ -8,7 +8,7 @@
     "restart": "tasklist /FI \"IMAGENAME eq electron.exe\" 2>NUL | find /I \"electron.exe\" >NUL || electron . && taskkill /F /IM electron.exe && electron .",
     "dev": "webpack serve --config webpack.config.js",
     "build": "webpack --config webpack.config.js",
-    "package": "electron-builder build --win",
+    "package": "npm run build && electron-builder build --win",
     "dist": "electron-builder"
   },
   "dependencies": {
@@ -60,7 +60,8 @@
     "files": [
       "build/**/*",
       "main.js",
-      "preload.js"
+      "preload.js",
+      "assets/chef-hat.ico"
     ],
     "extraResources": [
       {
@@ -69,11 +70,13 @@
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "assets/ChefHat.ico"
     },
     "nsis": {
-      "oneClick": true,
-      "perMachine": false
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
     }
   }
 }
