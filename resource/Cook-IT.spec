@@ -1,26 +1,21 @@
-# GUI.spec
-
 import sys
 import os
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
-# Get the path to the current directory (where the .spec file is located)
 current_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-
-# Define the relative path to the source directory where GUI.py is located
 source_dir = os.path.join(current_dir, '../source/')
 
 block_cipher = None
 
 a = Analysis(
-    [os.path.join(source_dir, 'cook_it_bridge.py')],  # Use relative path to GUI.py
-    pathex=[source_dir],                   # Set the search path to source_dir
+    [os.path.join(source_dir, 'cook_it_bridge.py')],
+    pathex=[source_dir],
     binaries=[],
     datas=[
-        (os.path.join(source_dir, 'credentials.json'), '.'),  # Include credentials.json in the build
-        (os.path.join(source_dir, 'Cook_IT.py'), '.'),         # Include Cook_IT.py
-        ('..\\resource\\Cook-IT.ico', 'resource')  # Include the icon as a data file
+        (os.path.join(source_dir, 'credentials.json'), '.'),
+        (os.path.join(source_dir, 'Cook_IT.py'), '.'),
+        ('..\\resource\\Cook-IT.ico', 'resource')
     ],
     hiddenimports=[
         'google.oauth2.credentials',
@@ -47,12 +42,12 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     name='Cook-IT',
-    debug=True,  # Enabled debug for troubleshooting
+    debug=False,
     bootloader_ignore_signals=False,
-    strip=False,  # Disabled stripping for better error messages
-    upx=False,
-    console=True,  # Enabled console temporarily for debugging
-    windowed=False,  # Disabled windowed mode to see console output
+    strip=True,
+    upx=True,
+    console=False,
+    windowed=True,
     icon=['.\\Cook-IT.ico'],
     cipher=block_cipher,
     hooksconfig={}
