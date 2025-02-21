@@ -75,26 +75,102 @@
 .toast-rounded {
   border-radius: 12px !important;
   overflow: hidden;
+  padding: 12px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 
-/* You may also want to add some nice styling */
+/* Base toast styling */
 .Toastify__toast {
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
   background-color: #fff;
   color: #333;
+  border-left: 4px solid #ddd;
+  min-height: 64px !important;
+  transition: transform 0.2s ease-out;
 }
 
+.Toastify__toast:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15);
+}
+
+/* Success toast styling */
 .Toastify__toast--success {
   background-color: #e7f7ed;
   color: #2c7a40;
+  border-left: 4px solid #4ade80;
 }
 
+/* Error toast styling */
 .Toastify__toast--error {
   background-color: #fdebeb;
   color: #d63031;
+  border-left: 4px solid #f87171;
 }
 
+/* Info toast styling */
 .Toastify__toast--info {
   background-color: #e6f7ff;
   color: #1677ff;
+  border-left: 4px solid #38bdf8;
+}
+
+/* Toast body content */
+.Toastify__toast-body {
+  padding: 6px 4px;
+  line-height: 1.5;
+  font-size: 15px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+/* Restore the default toast icons and style them */
+.Toastify__toast-icon {
+  display: flex !important;
+  width: 22px !important;
+  margin-right: 12px !important;
+}
+
+/* Toast entrance animation */
+@keyframes toast-slide-in {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.Toastify__toast--enter {
+  animation: toast-slide-in 0.3s ease forwards;
+}
+
+/* Toast exit animation */
+@keyframes toast-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.Toastify__toast--exit {
+  animation: toast-fade-out 0.2s ease forwards;
+}
+
+/* Make toast responsive */
+@media (max-width: 480px) {
+  .Toastify__toast {
+    margin-bottom: 8px;
+    width: 90%;
+    max-width: none;
+  }
+
+  .Toastify__toast-body {
+    font-size: 14px;
+  }
 }
