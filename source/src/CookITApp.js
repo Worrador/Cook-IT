@@ -354,6 +354,7 @@ const handleDelete = async (recipe) => {
       onDelete={handleDelete}
     />
     <ToastContainer
+      toastClassName="toast-rounded"
       position="top-center"
       autoClose={4000}  // Set a longer default duration - 4 seconds
       hideProgressBar={true}

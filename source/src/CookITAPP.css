@@ -70,3 +70,31 @@
   text-transform: uppercase;
   text-shadow: 1px 1px #181818;
 }
+
+/* In CookITApp.css */
+.toast-rounded {
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+/* You may also want to add some nice styling */
+.Toastify__toast {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  background-color: #fff;
+  color: #333;
+}
+
+.Toastify__toast--success {
+  background-color: #e7f7ed;
+  color: #2c7a40;
+}
+
+.Toastify__toast--error {
+  background-color: #fdebeb;
+  color: #d63031;
+}
+
+.Toastify__toast--info {
+  background-color: #e6f7ff;
+  color: #1677ff;
+}
