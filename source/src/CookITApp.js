@@ -1,3 +1,4 @@
+// CookITApp.js
 import React, { useState, useEffect, useRef  } from 'react';
 import { Card, CardHeader, CardContent, CardFooter } from './components/card.jsx';
 import { Button } from './components/button.jsx';
@@ -108,17 +109,35 @@ const CookITApp = () => {
 
   const handleQuit = async () => {
     try {
-      setIsQuitting(true);
-      await window.electronAPI.updateRecency(Array.from(cookedRecipes.values()));
+      // Show saving notification first
+      const savingToast = toast.info("Saving changes to Drive...", {
+        autoClose: false, // Don't auto close this one
+        closeButton: false // Prevent manual closing
+      });
 
+      // Set quitting state
+      setIsQuitting(true);
+
+      // Perform save operations
+      await window.electronAPI.updateRecency(Array.from(cookedRecipes.values()));
       await window.electronAPI.quit();
+
+      // Reset quitting state
       setIsQuitting(false);
-      showToast("Changes saved to Drive", "success", () => {
-          document.body.style.opacity = '0';
-          window.close();
-        });
+
+
+
+      toast.dismiss(savingToast);
+      // Use setTimeout to delay the final close
+      setTimeout(() => {
+        // Show success toast briefly
+        document.body.style.opacity = '0';
+        window.close();
+      }, 750);
+
     } catch (error) {
       console.error('Error saving changes:', error);
+      setIsQuitting(false);
       showToast('Error saving changes: ' + error.message, "error");
     }
   };
@@ -308,8 +327,8 @@ const handleDelete = async (recipe) => {
         <CardFooter className="mt-8">
           <Button
             variant="default"
-            className={`w-full cardQuitBtn group transition-transform ${
-              isQuitting ? 'bg-[#4c8ca4]' : 'hover:bg-[#4c8ca4]'
+            className={`w-full cardQuitBtn group transition-transform hover:bg-[#4c8ca4] ${
+              isQuitting && '!bg-[#4c8ca4]'
             }`}
             onClick={handleQuit}
           >

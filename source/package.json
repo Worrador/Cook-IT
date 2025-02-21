@@ -4,8 +4,9 @@
   "description": "A desktop recipe management application",
   "main": "main.js",
   "scripts": {
-    "start": "concurrently \"cross-env NODE_ENV=development npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
-    "restart": "tasklist /FI \"IMAGENAME eq electron.exe\" 2>NUL | find /I \"electron.exe\" >NUL || electron . && taskkill /F /IM electron.exe && electron .",
+    "start": "cross-env NODE_ENV=development concurrently \"npm run dev\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
+    "restart": "npm run restart-electron",
+    "restart-electron": "node -e \"try { require('child_process').execSync('taskkill /F /IM electron.exe'); } catch(e) {} process.exit(0);\" && cross-env NODE_ENV=development electron .",
     "dev": "webpack serve --config webpack.config.js",
     "build": "webpack --config webpack.config.js",
     "package": "npm run build && electron-builder build --win",
@@ -71,7 +72,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "assets/ChefHat.ico"
+      "icon": "assets/ChefHatColored.ico"
     },
     "nsis": {
       "oneClick": false,

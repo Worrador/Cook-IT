@@ -9,7 +9,7 @@ import {
 import { Button } from './button';
 import { Label } from './label';
 import { Input } from './input';
-import { ScrollText, ChefHat, ArrowRight, Pencil, Trash2 } from 'lucide-react';
+import { ScrollText, ChefHat, ArrowRight, Pencil, Trash2, ThumbsUp } from 'lucide-react';
 
 const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUncook, onCommentChange, onDelete }) => {
   const [isEditingComment, setIsEditingComment] = useState(false);
@@ -57,6 +57,10 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
     setIsEditingComment(false);
     setHasClickedCook(false);
     onNext && onNext();
+  };
+
+  const handleLikedRecipe = () => {
+    setIsOpen(false);
   };
 
   const handleCommentClick = () => {
@@ -153,24 +157,31 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
               </Button>
             </>
           ) : (
-            <>
-              <Button
-                variant="destructive"
-                onClick={handleDelete}
-                className="w-full bg-red-400 hover:bg-red-500 flex items-center gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                I did not like this recipe
-              </Button>
+            <div className="grid grid-cols-2 gap-2 w-full">
               <Button
                 variant="outline"
                 onClick={handleChangeMind}
-                className="w-full border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2] flex items-center gap-2"
+                className="col-span-2 border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2] flex items-center gap-2"
               >
                 I changed my mind
                 <ArrowRight className="h-4 w-4" />
               </Button>
-            </>
+              <Button
+                onClick={handleLikedRecipe}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 flex items-center justify-center gap-1 whitespace-nowrap text-xs md:text-sm"
+              >
+                <ThumbsUp className="h-4 w-4" />
+                I liked it!
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                className="bg-red-400 hover:bg-red-500 flex items-center justify-center gap-1 whitespace-nowrap text-xs md:text-sm"
+              >
+                <Trash2 className="h-4 w-4" />
+                I did not like it
+              </Button>
+            </div>
           )}
         </DialogFooter>
       </DialogContent>

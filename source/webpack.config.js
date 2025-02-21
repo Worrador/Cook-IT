@@ -1,5 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const ReactRefreshWebpackPlugin = require('@pmmmwh/react-refresh-webpack-plugin');
 const isDevelopment = process.env.NODE_ENV === 'development';
 
 module.exports = {
@@ -8,7 +9,7 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, 'build'),
     filename: 'bundle.js',
-    publicPath: './',
+    publicPath: isDevelopment ? '/' : './',
   },
   module: {
     rules: [
@@ -25,7 +26,21 @@ module.exports = {
       },
       {
         test: /\.css$/,
-        use: ['style-loader', 'css-loader', 'postcss-loader']
+        use: [
+          'style-loader',
+          'css-loader',
+          {
+            loader: 'postcss-loader',
+            options: {
+              postcssOptions: {
+                plugins: [
+                  'tailwindcss',
+                  'autoprefixer',
+                ],
+              },
+            },
+          },
+        ]
       }
     ]
   },
@@ -48,9 +63,15 @@ module.exports = {
       template: 'index.html'
     }),
   ].filter(Boolean),
-  devServer: isDevelopment ? {
+  devServer: {
     hot: true,
     port: 3000,
     historyApiFallback: true,
-  } : undefined
+    static: {
+      directory: path.join(__dirname, 'public'),
+    },
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+    },
+  }
 };
