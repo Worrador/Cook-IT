@@ -1,12 +1,56 @@
+// main.js
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development';
 const { spawn } = require('child_process');
+const { performance } = require('perf_hooks');
+const fs = require('fs');
+
+// Add performance markers
+let startupMetrics = {
+  appStart: 0,
+  windowCreated: 0,
+  pythonProcessStarted: 0,
+  pythonInitialized: 0,
+  totalStartupTime: 0
+};
+
+// Start measuring as early as possible
+startupMetrics.appStart = performance.now();
 
 let mainWindow;
-let pythonProcess;
+let pythonProcess = null;
 
-function createWindow() {
+
+function getPythonPath() {
+  if (isDev) {
+    // For development environment
+    const pythonScript = path.join(__dirname, 'cook_it_bridge.py');
+    // Check if python script exists
+    if (!fs.existsSync(pythonScript)) {
+      throw new Error(`Python script not found at: ${pythonScript}`);
+    }
+    
+    // On Windows, try to use python from PATH
+    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3';
+    return {
+      command: pythonCommand,
+      args: [pythonScript]
+    };
+  } else {
+    // For production environment
+    const exePath = path.join(process.resourcesPath, 'Cook-IT.exe');
+    if (!fs.existsSync(exePath)) {
+      throw new Error(`Executable not found at: ${exePath}`);
+    }
+    return {
+      command: exePath,
+      args: []
+    };
+  }
+}
+
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 450,
     height: 384,
@@ -21,32 +65,54 @@ function createWindow() {
     },
   });
 
-  if (isDev) {
-    mainWindow.loadURL('http://localhost:3000');
-  } else {
-    mainWindow.loadFile(path.join(__dirname, 'build', 'index.html'));
-  }
+  startupMetrics.windowCreated = performance.now();
 
-  const backendPath = isDev
-    ? path.join(__dirname, '..', 'resource', 'dist', 'Cook-IT.exe')
-    : path.join(process.resourcesPath, 'Cook-IT.exe');
+  const { command, args } = getPythonPath();
+  console.log(`Launching process with command: ${command} and args:`, args);
 
-  pythonProcess = spawn(backendPath, [], {
+  pythonProcess = spawn(command, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: {
       ...process.env,
       PYTHONIOENCODING: 'utf-8',
       PYTHONUNBUFFERED: '1'
-    }
+    },
+    shell: process.platform === 'win32' // Use shell on Windows
+  });
+
+  startupMetrics.pythonProcessStarted = performance.now();
+
+  // Load the app
+  if (isDev) {
+    await mainWindow.loadURL('http://localhost:3000');
+  } else {
+    await mainWindow.loadFile(path.join(__dirname, 'build', 'index.html'));
+  }
+
+  // Add startup time logging
+  ipcMain.handle('get-startup-metrics', () => {
+    return startupMetrics;
   });
 }
 
-app.whenReady().then(createWindow);
-
-// IPC handlers
+// Modified initialize handler to measure Python initialization
 ipcMain.handle('initialize', async () => {
-  return sendToPython({ action: 'initialize' });
+  const result = await sendToPython({ action: 'initialize' });
+  startupMetrics.pythonInitialized = performance.now();
+  startupMetrics.totalStartupTime = startupMetrics.pythonInitialized - startupMetrics.appStart;
+  
+  // Log startup metrics
+  console.log('Startup Metrics:', {
+    'Total Startup Time': `${startupMetrics.totalStartupTime.toFixed(2)}ms`,
+    'Window Creation Time': `${(startupMetrics.windowCreated - startupMetrics.appStart).toFixed(2)}ms`,
+    'Python Process Start Time': `${(startupMetrics.pythonProcessStarted - startupMetrics.windowCreated).toFixed(2)}ms`,
+    'Python Initialization Time': `${(startupMetrics.pythonInitialized - startupMetrics.pythonProcessStarted).toFixed(2)}ms`
+  });
+  
+  return result;
 });
+
+app.whenReady().then(createWindow);
 
 ipcMain.handle('choose-recipe', async () => {
   return sendToPython({ action: 'choose-recipe' });
