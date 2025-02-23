@@ -1,75 +1,113 @@
 import json
 import sys
+import asyncio
+import threading
+from queue import Queue
 from Cook_IT import CookITLogic
 import webbrowser
 
-logic = CookITLogic()
+class AsyncCookITBridge:
+    def __init__(self):
+        self.logic = CookITLogic()
+        self.drive_queue = Queue()
+        self.initialized = False
+        self.drive_thread = None
+        
+    def start_drive_thread(self):
+        def drive_worker():
+            try:
+                self.logic.get_google_drive_service()
+                self.logic._handle_remote_sync()
+            except Exception as e:
+                print(f"Drive thread error: {e}", file=sys.stderr)
+                
+        self.drive_thread = threading.Thread(target=drive_worker, daemon=True)
+        self.drive_thread.start()
 
-def handle_request(request):
-    try:
-        action = request['action']
-        if action == 'initialize':
-            print("Initializing CookIT Logic", file=sys.stderr, flush=True)
-            logic.initialize()
-            return {"success": True}
-        elif action == 'choose-recipe':
-            print("Choosing a recipe", file=sys.stderr, flush=True)
-            recipe_name, url, comment, _ = logic.choose_recipe()
-            if recipe_name is None:
-                print("No recipe chosen", file=sys.stderr, flush=True)
-                return {"empty": True}  # Return an object instead of None
-            print(f"Chosen recipe - Name: {recipe_name}, URL: {url}", file=sys.stderr, flush=True)
-            return {
-                "name": recipe_name,
-                "url": url,
-                "comment": comment
-            }
-        elif action == 'add-recipe':
-            recipe = request['recipe']
-            print(f"Adding recipe - Name: {recipe['name']}, URL: {recipe['url']}", file=sys.stderr, flush=True)
-            logic.add_recipe(recipe['name'], recipe['url'], recipe['comment'])
-            return {"success": True}
-        elif action == 'update-comment':
-            recipe = request['recipe']
-            comment = request['comment']
-            print(f"Updating comment for recipe '{recipe['name']}' from '{recipe['comment']}' to '{comment}'", file=sys.stderr, flush=True)
-            logic.update_recipe_comment(recipe['name'], recipe['url'], recipe['comment'], comment)
-            return {"success": True}
-        elif action == 'open-url':
-            url = request['url']
-            print(f"Opening URL: {url}", file=sys.stderr, flush=True)
-            webbrowser.open(url)
-            return {"success": True}
-        elif action == 'update-recency':
-            cooked_recipes = request['cookedRecipes']
-            recipe_names = [recipe['name'] for recipe in cooked_recipes]
-            print(f"Updating recency for recipes: {', '.join(recipe_names)}", file=sys.stderr, flush=True)
-            logic.update_recency(recipe_names)
-            return {"success": True}
-        elif action == 'delete-recipe':
-            recipe = request['recipe']
-            print(f"Deleting recipe - Name: {recipe['name']}, Comment: {recipe['comment']}", file=sys.stderr, flush=True)
-            logic.delete_recipe(recipe['name'], recipe['comment'])
-            return {"success": True}
-        elif action == 'quit':
-            print("Saving and uploading data", file=sys.stderr, flush=True)
-            logic.save_and_upload()
-            return {"success": True}
-    except Exception as e:
-        print(f"Exception occurred - {str(e)}", file=sys.stderr, flush=True)
-        return {"error": str(e)}
+    def handle_request(self, request):
+        try:
+            action = request['action']
+            
+            if action == 'initialize':
+                if not self.drive_thread:
+                    self.logic.load_local_file()  # Try local first
+                    self.start_drive_thread()     # Start background sync
+                    self.initialized = True
+                return {"success": True}
+                
+            if action == 'choose-recipe':
+                if not self.initialized:
+                    return {"waiting": True}
+                    
+                recipe_name, url, comment, _ = self.logic.choose_recipe()
+                if recipe_name is None:
+                    return {"empty": True}
+                    
+                return {
+                    "name": recipe_name,
+                    "url": url,
+                    "comment": comment
+                }
+                
+            if action == 'add-recipe':
+                recipe = request['recipe']
+                def add():
+                    self.logic.add_recipe(recipe['name'], recipe['url'], recipe['comment'])
+                self.drive_queue.put(add)
+                return {"success": True}
+                
+            if action == 'update-comment':
+                recipe = request['recipe']
+                comment = request['comment']
+                def update():
+                    self.logic.update_recipe_comment(
+                        recipe['name'], recipe['url'], 
+                        recipe['comment'], comment
+                    )
+                self.drive_queue.put(update)
+                return {"success": True}
+                
+            if action == 'open-url':
+                webbrowser.open(request['url'])
+                return {"success": True}
+                
+            if action == 'update-recency':
+                recipe_names = [r['name'] for r in request['cookedRecipes']]
+                def update():
+                    self.logic.update_recency(recipe_names)
+                self.drive_queue.put(update)
+                return {"success": True}
+                
+            if action == 'delete-recipe':
+                recipe = request['recipe']
+                def delete():
+                    self.logic.delete_recipe(recipe['name'], recipe['comment'])
+                self.drive_queue.put(delete)
+                return {"success": True}
+                
+            if action == 'quit':
+                def save():
+                    self.logic.save_and_upload()
+                self.drive_queue.put(save)
+                self.drive_queue.put(None)  # Signal thread to stop
+                return {"success": True}
+                
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return {"error": str(e)}
 
 if __name__ == "__main__":
+    bridge = AsyncCookITBridge()
+    
     while True:
         try:
             line = sys.stdin.readline()
             if not line:
                 break
             request = json.loads(line.strip())
-            print(f" Processing request - Action: {request.get('action', 'Unknown')}", file=sys.stderr, flush=True)
-            response = handle_request(request)
+            response = bridge.handle_request(request)
             print(json.dumps(response), flush=True)
         except json.JSONDecodeError as e:
-            print(json.dumps({"error": f"Invalid JSON input: {str(e)}"}), flush=True)
+            print(json.dumps({"error": f"Invalid JSON: {e}"}), flush=True)
         except Exception as e:
-            print(json.dumps({"error": f"Unexpected error: {str(e)}"}), flush=True)
+            print(json.dumps({"error": f"Unexpected error: {e}"}), flush=True)

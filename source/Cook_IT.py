@@ -36,12 +36,55 @@ def redirect_stdout_to_stderr():
     finally:
         sys.stdout = old_stdout
 
+
 class CookITLogic:
     def __init__(self):
         self.service = None
         self.df_recipes = None
         self.file_id = None
+        self.sync_complete = False
 
+    def load_local_file(self):
+        if os.path.exists(FILE_NAME):
+            try:
+                self.df_recipes = pd.read_excel(FILE_NAME)
+                self.df_recipes = self.df_recipes.fillna("")
+                return True
+            except Exception as e:
+                print(f"Error loading local file: {e}", file=sys.stderr)
+                return False
+        return False
+
+    def _handle_remote_sync(self):
+        try:
+            results = self.service.files().list(
+                q=f"name='{FILE_NAME}' and trashed=false",
+                spaces='drive',
+                fields="files(id, name)").execute()
+            items = results.get('files', [])
+
+            if items:
+                self.file_id = items[0]['id']
+                self.download_file()
+                
+                if os.path.exists(FILE_NAME):
+                    if self.df_recipes is None:
+                        self.df_recipes = pd.read_excel(FILE_NAME)
+                        self.df_recipes = self.df_recipes.fillna("")
+                    else:
+                        self.df_recipes = self.merge_local_changes()
+            else:
+                # Create new file if not found
+                if self.df_recipes is None:
+                    self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Recency'])
+                self.save_and_upload()
+                
+            self.sync_complete = True
+            
+        except Exception as e:
+            print(f"Error in remote sync: {e}", file=sys.stderr)
+            raise
+        
     def get_google_drive_service(self):
         creds = None
 
@@ -80,42 +123,6 @@ class CookITLogic:
         except Exception as e:
             print(f"Error during initialization: {e}")
             raise
-
-    def get_or_create_file(self):
-        results = self.service.files().list(
-            q=f"name='{FILE_NAME}' and trashed=false",
-            spaces='drive',
-            fields="files(id, name)").execute()
-        items = results.get('files', [])
-
-        if items:
-            self.file_id = items[0]['id']
-
-            # Check if local file exists
-            if os.path.exists(FILE_NAME):
-                # Perform merge if local file exists
-                self.df_recipes = self.merge_local_changes()
-                return
-
-            # If no local file, just download
-            self.download_file()
-            excel_file = pd.ExcelFile(FILE_NAME)
-            self.df_recipes = pd.read_excel(excel_file, sheet_name='Recipes')
-            self.df_recipes = self.df_recipes.fillna("")
-            return
-
-        # Create new file if not found in Drive
-        self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Recency'])
-        with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
-            self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
-
-        file_metadata = {'name': FILE_NAME}
-        with open(FILE_NAME, 'rb') as file:
-            media = MediaIoBaseUpload(file,
-                                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                                    resumable=True)
-            file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-            self.file_id = file.get('id')
 
     def merge_local_changes(self):
         try:
