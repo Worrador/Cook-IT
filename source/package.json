@@ -79,5 +79,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true
     }
+  },
+  "author": {
+    "name": "Ákos Poleczki",
+    "email": "akos.poleczki@gmail.com",
+    "url": "https://github.com/Worrador"
   }
 }
