@@ -65,26 +65,31 @@ class CookITLogic:
 
             if items:
                 self.file_id = items[0]['id']
-                self.download_file()
-                
+
+                # Check if local file exists
                 if os.path.exists(FILE_NAME):
-                    if self.df_recipes is None:
-                        self.df_recipes = pd.read_excel(FILE_NAME)
-                        self.df_recipes = self.df_recipes.fillna("")
-                    else:
-                        self.df_recipes = self.merge_local_changes()
+                    # Perform merge if local file exists
+                    self.df_recipes = self.merge_local_changes()
+                    return
+
+                # If no local file, just download
+                self.download_file()
+                excel_file = pd.ExcelFile(FILE_NAME)
+                self.df_recipes = pd.read_excel(excel_file, sheet_name='Recipes')
+                self.df_recipes = self.df_recipes.fillna("")
+                return
             else:
                 # Create new file if not found
                 if self.df_recipes is None:
                     self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Recency'])
                 self.save_and_upload()
-                
+
             self.sync_complete = True
-            
+
         except Exception as e:
             print(f"Error in remote sync: {e}", file=sys.stderr)
             raise
-        
+
     def get_google_drive_service(self):
         creds = None
 
@@ -144,7 +149,6 @@ class CookITLogic:
 
             remote_df = pd.read_excel(remote_temp)
             remote_df = remote_df.fillna("")
-
             # Merge logic
             # Use recipe name, URL, and comment as composite key for comparison
             local_keys = set(zip(local_df['Recipe Name'], local_df['URL'], local_df['Comment']))

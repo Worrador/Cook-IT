@@ -21,6 +21,15 @@ startupMetrics.appStart = performance.now();
 let mainWindow;
 let pythonProcess = null;
 
+// Custom logger that only logs in development
+const logger = {
+  log: (...args) => {
+    if (isDev) console.log(...args);
+  },
+  error: (...args) => {
+    if (isDev) console.error(...args);
+  }
+};
 
 function getPythonPath() {
   if (isDev) {
@@ -30,7 +39,7 @@ function getPythonPath() {
     if (!fs.existsSync(pythonScript)) {
       throw new Error(`Python script not found at: ${pythonScript}`);
     }
-    
+
     // On Windows, try to use python from PATH
     const pythonCommand = process.platform === 'win32' ? 'python' : 'python3';
     return {
@@ -68,7 +77,7 @@ async function createWindow() {
   startupMetrics.windowCreated = performance.now();
 
   const { command, args } = getPythonPath();
-  console.log(`Launching process with command: ${command} and args:`, args);
+  logger.log(`Launching process with command: ${command} and args:`, args);
 
   pythonProcess = spawn(command, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -78,6 +87,18 @@ async function createWindow() {
       PYTHONUNBUFFERED: '1'
     },
     shell: process.platform === 'win32' // Use shell on Windows
+  });
+
+  pythonProcess.on('error', (err) => {
+    logger.error('Backend error:', err);
+  });
+
+  pythonProcess.stdout.on('data', (data) => {
+    logger.log('Backend output:', data.toString());
+  });
+
+  pythonProcess.stderr.on('data', (data) => {
+    logger.error('Backend error:', data.toString());
   });
 
   startupMetrics.pythonProcessStarted = performance.now();
@@ -100,15 +121,17 @@ ipcMain.handle('initialize', async () => {
   const result = await sendToPython({ action: 'initialize' });
   startupMetrics.pythonInitialized = performance.now();
   startupMetrics.totalStartupTime = startupMetrics.pythonInitialized - startupMetrics.appStart;
-  
-  // Log startup metrics
-  console.log('Startup Metrics:', {
-    'Total Startup Time': `${startupMetrics.totalStartupTime.toFixed(2)}ms`,
-    'Window Creation Time': `${(startupMetrics.windowCreated - startupMetrics.appStart).toFixed(2)}ms`,
-    'Python Process Start Time': `${(startupMetrics.pythonProcessStarted - startupMetrics.windowCreated).toFixed(2)}ms`,
-    'Python Initialization Time': `${(startupMetrics.pythonInitialized - startupMetrics.pythonProcessStarted).toFixed(2)}ms`
-  });
-  
+
+  // Log startup metrics only in development
+  if (isDev) {
+    logger.log('Startup Metrics:', {
+      'Total Startup Time': `${startupMetrics.totalStartupTime.toFixed(2)}ms`,
+      'Window Creation Time': `${(startupMetrics.windowCreated - startupMetrics.appStart).toFixed(2)}ms`,
+      'Python Process Start Time': `${(startupMetrics.pythonProcessStarted - startupMetrics.windowCreated).toFixed(2)}ms`,
+      'Python Initialization Time': `${(startupMetrics.pythonInitialized - startupMetrics.pythonProcessStarted).toFixed(2)}ms`
+    });
+  }
+
   return result;
 });
 
@@ -155,6 +178,9 @@ function sendToPython(message) {
         pythonProcess.stdout.removeListener('data', responseHandler);
       } catch (error) {
         // Ignore non-JSON data (partial responses)
+        if (isDev) {
+          logger.error('Error parsing Python response:', error);
+        }
       }
     };
 
