@@ -42,6 +42,7 @@ const CookITApp = () => {
   const [showBuyCoffee, setShowBuyCoffee] = useState(false);
   const [isBuyCoffeeOpen, setIsBuyCoffeeOpen] = useState(false);
   const [isQuitting, setIsQuitting] = useState(false);
+  const [tutorialCount, setTutorialCount] = useState(0);
 
   useEffect(() => {
     if (isAddRecipeOpen && firstInputRef.current) {
@@ -52,6 +53,22 @@ const CookITApp = () => {
   useEffect(() => {
     const initApp = async () => {
       await window.electronAPI.initialize();
+
+      // Load the tutorial counter from localStorage
+      const savedTutorialCount = localStorage.getItem('cookItTutorialCount');
+
+      // If it doesn't exist yet or is less than 4, we should show the help button
+      if (savedTutorialCount === null || parseInt(savedTutorialCount) < 4) {
+        setShowHelp(true);
+
+        // Initialize or increment the counter
+        const newCount = savedTutorialCount === null ? 1 : parseInt(savedTutorialCount) + 1;
+        setTutorialCount(newCount);
+
+        // Save the new count to localStorage
+        localStorage.setItem('cookItTutorialCount', newCount.toString());
+      }
+
       const savedCount = localStorage.getItem('cookItClickCount') || '0';
       setIsLoading(false);
     };
