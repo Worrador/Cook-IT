@@ -9,7 +9,7 @@ import {
 import { Button } from './button';
 import { Label } from './label';
 import { Input } from './input';
-import { ScrollText, ChefHat, ArrowRight, Pencil, Trash2, ThumbsUp } from 'lucide-react';
+import { ChefHat, ArrowRight, Pencil, Trash2, ThumbsUp } from 'lucide-react';
 
 const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUncook, onCommentChange, onDelete }) => {
   const [isEditingComment, setIsEditingComment] = useState(false);
@@ -91,7 +91,7 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-center gap-2 text-xl">
-            <ScrollText className="h-5 w-5" />
+            <span className="text-lg">📜</span>
             How about this recipe?
           </DialogTitle>
         </DialogHeader>

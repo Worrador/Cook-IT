@@ -1,6 +1,5 @@
 import json
 import sys
-import asyncio
 import threading
 from queue import Queue
 from Cook_IT import CookITLogic
