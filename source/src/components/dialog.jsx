@@ -24,7 +24,7 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
 
-const DialogContent = React.forwardRef(({ className, children, ...props }, ref) => (
+const DialogContent = React.forwardRef(({ className, children, hideCloseButton = false, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -44,18 +44,20 @@ const DialogContent = React.forwardRef(({ className, children, ...props }, ref) 
       {...props}
     >
       {children}
-      <DialogPrimitive.Close
-        className="
-          absolute right-4 top-4
-          rounded-sm opacity-70
-          hover:opacity-100
-          focus:outline-none
-          transition-opacity
-        "
-      >
-        <X className="h-5 w-5 text-gray-500 hover:text-black" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
+      {!hideCloseButton && (
+        <DialogPrimitive.Close
+          className="
+            absolute right-4 top-4
+            rounded-sm opacity-70
+            hover:opacity-100
+            focus:outline-none
+            transition-opacity
+          "
+        >
+          <X className="h-5 w-5 text-gray-500 hover:text-black" />
+          <span className="sr-only">Close</span>
+        </DialogPrimitive.Close>
+      )}
     </DialogPrimitive.Content>
   </DialogPortal>
 ))

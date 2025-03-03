@@ -254,7 +254,7 @@ const handleDelete = async (recipe) => {
                 </div>
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-[425px] bg-[#fbf7f0]">
               <DialogHeader>
                 <DialogTitle>Add New Recipe</DialogTitle>
               </DialogHeader>

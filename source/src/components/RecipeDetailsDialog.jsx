@@ -88,7 +88,7 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] bg-[#fbf7f0]">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-center gap-2 text-xl">
             <span className="text-lg">📜</span>
