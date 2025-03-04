@@ -6,7 +6,7 @@ import { Input } from './components/input.jsx';
 import RecipeDetailsDialog from './components/RecipeDetailsDialog.jsx';
 import HelpDialog from './components/HelpDialog.jsx';
 import BuyCoffeeDialog from './components/BuyCoffeeDialog.jsx';
-import { Loader2, ChefHat, PlusCircle, X, BookOpen,HelpCircle, Coffee} from 'lucide-react';
+import { Loader2, ChefHat, PlusCircle, X, BookOpen,HelpCircle, Coffee, WifiOff } from 'lucide-react';
 import {
   Dialog,
   DialogTrigger,
@@ -43,6 +43,7 @@ const CookITApp = () => {
   const [isBuyCoffeeOpen, setIsBuyCoffeeOpen] = useState(false);
   const [isQuitting, setIsQuitting] = useState(false);
   const [tutorialCount, setTutorialCount] = useState(0);
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
     if (isAddRecipeOpen && firstInputRef.current) {
@@ -52,13 +53,24 @@ const CookITApp = () => {
 
   useEffect(() => {
     const initApp = async () => {
-      await window.electronAPI.initialize();
+      try {
+        const response = await window.electronAPI.initialize();
+        // Check if the response explicitly indicates offline mode
+        if (response.offline) {
+          setIsOffline(true);
+          showToast("No internet connection. Working with local recipes only.", "warning");
+        }
+      } catch (error) {
+        // Error handling for other initialization errors
+        setIsOffline(true);
+        showToast("Error connecting to Google Drive. Working with local recipes only: " + error.message, "warning");
+      }
 
       // Load the tutorial counter from localStorage
       const savedTutorialCount = localStorage.getItem('cookItTutorialCount');
 
       // If it doesn't exist yet or is less than 4, we should show the help button
-      if (savedTutorialCount === null || parseInt(savedTutorialCount) < 4) {
+      if (savedTutorialCount === null || parseInt(savedTutorialCount) < 40) {
         setShowHelp(true);
 
         // Initialize or increment the counter
@@ -69,7 +81,6 @@ const CookITApp = () => {
         localStorage.setItem('cookItTutorialCount', newCount.toString());
       }
 
-      const savedCount = localStorage.getItem('cookItClickCount') || '0';
       setIsLoading(false);
     };
     initApp();
@@ -127,7 +138,7 @@ const CookITApp = () => {
   const handleQuit = async () => {
     try {
       // Show saving notification first
-      const savingToast = toast.info("Saving changes to Drive...", {
+      const savingToast = toast.info(isOffline ? "Saving changes locally..." : "Saving changes to Drive...", {
         autoClose: false, // Don't auto close this one
         closeButton: false // Prevent manual closing
       });
@@ -141,8 +152,6 @@ const CookITApp = () => {
 
       // Reset quitting state
       setIsQuitting(false);
-
-
 
       toast.dismiss(savingToast);
       // Use setTimeout to delay the final close
@@ -224,6 +233,11 @@ const handleDelete = async (recipe) => {
           <div className="flex items-center justify-center">
             <ChefHat className="h-12 w-12 text-primary headerItems" />
             <h1 className="text-3xl font-bold ml-2 headerItems">Cook-IT</h1>
+            {isOffline && (
+              <div className="absolute right-4">
+                <WifiOff className="h-5 w-5 text-[#A37B58] mr-2 -mt-3" title="Offline Mode" />
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-4 mb-5">

@@ -12,6 +12,7 @@ class AsyncCookITBridge:
         self.initialized = False
         self.drive_thread = None
         self.queue_thread = None
+        self.offline_mode = False
 
 
     def start_queue_consumer(self):
@@ -37,7 +38,9 @@ class AsyncCookITBridge:
             try:
                 self.logic.get_google_drive_service()
                 self.logic._handle_remote_sync()
+                self.offline_mode = False
             except Exception as e:
+                self.offline_mode = True
                 print(f"Drive thread error: {e}", file=sys.stderr)
 
         self.drive_thread = threading.Thread(target=drive_worker, daemon=True)
@@ -50,10 +53,22 @@ class AsyncCookITBridge:
 
             if action == 'initialize':
                 if not self.drive_thread:
-                    self.logic.load_local_file()  # Try local first
-                    self.start_drive_thread()     # Start background sync
+                    # Always try to load local file first
+                    local_loaded = self.logic.load_local_file()
+
+                    try:
+                        # Try to start the drive thread
+                        self.start_drive_thread()
+                    except Exception as e:
+                        self.offline_mode = True
+                        # If we couldn't connect but loaded local file, continue in offline mode
+                        if not local_loaded:
+                            # No local file and couldn't connect
+                            return {"error": str(e), "offline": True}
+
                     self.initialized = True
-                return {"success": True}
+
+                return {"success": True, "offline": self.offline_mode}
 
             if action == 'choose-recipe':
                 if not self.initialized:
@@ -107,14 +122,18 @@ class AsyncCookITBridge:
 
             if action == 'quit':
                 def save():
-                    self.logic.save_and_upload()
+                    # In offline mode, we need to ensure we're just saving locally
+                    if self.offline_mode:
+                        self.logic.save_local_file_only()
+                    else:
+                        self.logic.save_and_upload()
                 self.drive_queue.put(save)
                 self.drive_queue.put(None)  # Signal thread to stop
                 return {"success": True}
 
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
-            return {"error": str(e)}
+            return {"error": str(e), "offline": self.offline_mode}
 
 if __name__ == "__main__":
     bridge = AsyncCookITBridge()

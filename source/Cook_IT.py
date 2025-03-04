@@ -90,6 +90,21 @@ class CookITLogic:
             print(f"Error in remote sync: {e}", file=sys.stderr)
             raise
 
+    def save_local_file_only(self):
+        """Save changes to local file only without attempting to upload to Drive"""
+        try:
+            with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
+                self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
+
+                if 'Recency' in self.df_recipes.columns:
+                    col_letter = 'D'  # Adjust if needed based on column position
+                    writer.sheets['Recipes'].column_dimensions[col_letter].hidden = True
+
+            return True
+        except Exception as e:
+            print(f"Error saving local file: {str(e)}")
+            raise
+
     def get_google_drive_service(self):
         creds = None
 
