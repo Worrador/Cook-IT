@@ -94,11 +94,11 @@ async function createWindow() {
   });
 
   pythonProcess.stdout.on('data', (data) => {
-    logger.log('Backend output:', data.toString());
+    logger.log('Backend response:', data.toString());
   });
 
   pythonProcess.stderr.on('data', (data) => {
-    logger.error('Backend error:', data.toString());
+    logger.error('Backend debug:', data.toString());
   });
 
   startupMetrics.pythonProcessStarted = performance.now();
@@ -167,20 +167,30 @@ ipcMain.handle('delete-recipe', async (event, recipe) => {
 
 function sendToPython(message) {
   return new Promise((resolve, reject) => {
+    // Buffer to collect partial JSON data
+    let buffer = '';
+
     const responseHandler = (data) => {
-      try {
-        const response = JSON.parse(data);
-        if (response.error) {
-          reject(new Error(response.error));
-        } else {
-          resolve(response);
+      const text = data.toString();
+
+      // Check if this is a JSON response line
+      if (text.trim().startsWith('{') && text.trim().endsWith('}')) {
+        try {
+          const response = JSON.parse(text);
+          if (response.error) {
+            reject(new Error(response.error));
+          } else {
+            resolve(response);
+          }
+          pythonProcess.stdout.removeListener('data', responseHandler);
+        } catch (error) {
+          // This looks like JSON but isn't valid - probably incomplete
+          buffer += text;
+          logger.log('Buffering partial JSON response:', buffer);
         }
-        pythonProcess.stdout.removeListener('data', responseHandler);
-      } catch (error) {
-        // Ignore non-JSON data (partial responses)
-        if (isDev) {
-          logger.error('Error parsing Python response:', error);
-        }
+      } else {
+        // This is just debug output, log it but don't try to parse it
+        // logger.log('Backend output:', text);
       }
     };
 

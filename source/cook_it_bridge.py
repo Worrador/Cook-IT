@@ -67,7 +67,7 @@ class AsyncCookITBridge:
                             return {"error": str(e), "offline": True}
 
                     self.initialized = True
-
+                print(f"{self.offline_mode}", flush=True)
                 return {"success": True, "offline": self.offline_mode}
 
             if action == 'choose-recipe':
@@ -143,10 +143,17 @@ if __name__ == "__main__":
             line = sys.stdin.readline()
             if not line:
                 break
+
             request = json.loads(line.strip())
             response = bridge.handle_request(request)
-            print(json.dumps(response), flush=True)
+
+            # Only print a response if the handler didn't already print one
+            if response is not None:
+                print(json.dumps(response), flush=True)
+
         except json.JSONDecodeError as e:
+            print(f"JSON decode error: {e}", file=sys.stderr)
             print(json.dumps({"error": f"Invalid JSON: {e}"}), flush=True)
         except Exception as e:
+            print(f"Unexpected error: {e}", file=sys.stderr)
             print(json.dumps({"error": f"Unexpected error: {e}"}), flush=True)

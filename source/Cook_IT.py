@@ -102,7 +102,7 @@ class CookITLogic:
 
             return True
         except Exception as e:
-            print(f"Error saving local file: {str(e)}")
+            print(f"Error saving local file: {str(e)}", file=sys.stderr)
             raise
 
     def get_google_drive_service(self):
@@ -112,36 +112,36 @@ class CookITLogic:
             # Load credentials from token.json if available
             if os.path.exists('token.json'):
                 creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-                print("Loaded credentials from token.json.")
+                print("Loaded credentials from token.json.", file=sys.stderr)
 
             # Refresh or authenticate if credentials are invalid
             if not creds or not creds.valid:
                 if creds and creds.expired and creds.refresh_token:
                     try:
-                        print("Credentials have expired, attempting to refresh...")
+                        print("Credentials have expired, attempting to refresh...", file=sys.stderr)
                         creds.refresh(Request())
-                        print("Credentials successfully refreshed.")
+                        print("Credentials successfully refreshed.", file=sys.stderr)
                     except Exception as e:
-                        print(f"Failed to refresh credentials: {e}")
+                        print(f"Failed to refresh credentials: {e}", file=sys.stderr)
                         creds = None  # Force re-authentication
                 if not creds:
-                    print("Starting re-authentication...")
+                    print("Starting re-authentication...", file=sys.stderr)
                     flow = InstalledAppFlow.from_client_secrets_file(json_path, SCOPES)
                     creds = flow.run_local_server(port=0)
-                    print("Re-authentication successful.")
+                    print("Re-authentication successful.", file=sys.stderr)
 
                 # Save the updated or new credentials
                 with open('token.json', 'w') as token:
                     token.write(creds.to_json())
-                    print("Credentials have been saved to token.json.")
+                    print("Credentials have been saved to token.json.", file=sys.stderr)
 
             # Build and return the Google Drive service
             self.service = build('drive', 'v3', credentials=creds)
-            print("Google Drive service initialized.")
+            print("Google Drive service initialized.", file=sys.stderr)
             return self.service
 
         except Exception as e:
-            print(f"Error during initialization: {e}")
+            print(f"Error during initialization: {e}", file=sys.stderr)
             raise
 
     def merge_local_changes(self):
@@ -177,7 +177,7 @@ class CookITLogic:
                 os.remove(remote_temp)
                 return local_df
 
-            print(f"Changes found both in remote and local Recipe book, number of differences: {str(total_diff)}")
+            print(f"Changes found both in remote and local Recipe book, number of differences: {str(total_diff)}", file=sys.stderr)
 
             # Create merged dataframe starting with remote data
             merged_df = remote_df.copy()
@@ -209,11 +209,11 @@ class CookITLogic:
 
             # Cleanup
             os.remove(remote_temp)
-            print(f"Changes merged. Number of recipes locally before: {str(len(local_keys))}, Number of recipes after merge: {str(len(merged_df))}")
+            print(f"Changes merged. Number of recipes locally before: {str(len(local_keys))}, Number of recipes after merge: {str(len(merged_df))}", file=sys.stderr)
             return merged_df
 
         except Exception as e:
-            print(f"Error during merge: {str(e)}")
+            print(f"Error during merge: {str(e)}", file=sys.stderr)
             raise
 
     def save_and_upload(self):
@@ -233,12 +233,12 @@ class CookITLogic:
                 self.service.files().update(fileId=self.file_id, media_body=media).execute()
 
         except Exception as e:
-            print(f"Error in save_and_upload: {str(e)}")
+            print(f"Error in save_and_upload: {str(e)}", file=sys.stderr)
             raise
 
     def download_file(self):
         try:
-            print(f"Downloading file:'{FILE_NAME}'...")
+            print(f"Downloading file:'{FILE_NAME}'...", file=sys.stderr)
             request = self.service.files().get_media(fileId=self.file_id)
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
@@ -249,7 +249,7 @@ class CookITLogic:
             with open(FILE_NAME, 'wb') as f:
                 f.write(fh.read())
         except Exception as e:
-            print(f"Error downloading file: {str(e)}")
+            print(f"Error downloading file: {str(e)}", file=sys.stderr)
             raise
 
     def choose_recipe(self):
@@ -293,7 +293,7 @@ class CookITLogic:
                 self.get_google_drive_service()
                 self.get_or_create_file()
             except Exception as e:
-                print(f"Error during initialization: {str(e)}")
+                print(f"Error during initialization: {str(e)}", file=sys.stderr)
                 raise
 
     def add_recipe(self, name, url, comment):

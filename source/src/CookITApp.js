@@ -53,24 +53,25 @@ const CookITApp = () => {
 
   useEffect(() => {
     const initApp = async () => {
+      let isOfflineMode = false;
       try {
+        // Make sure we properly await the full response
         const response = await window.electronAPI.initialize();
+
         // Check if the response explicitly indicates offline mode
-        if (response.offline) {
-          setIsOffline(true);
-          showToast("No internet connection. Working with local recipes only.", "warning");
+        if (response && response.offline) {
+          isOfflineMode = true;
         }
       } catch (error) {
-        // Error handling for other initialization errors
-        setIsOffline(true);
-        showToast("Error connecting to Google Drive. Working with local recipes only: " + error.message, "warning");
+        console.error('Initialization error:', error);
+        isOfflineMode = true;
       }
 
       // Load the tutorial counter from localStorage
       const savedTutorialCount = localStorage.getItem('cookItTutorialCount');
 
-      // If it doesn't exist yet or is less than 4, we should show the help button
-      if (savedTutorialCount === null || parseInt(savedTutorialCount) < 40) {
+      // If it doesn't exist yet or is less than 40, we should show the help button
+      if (savedTutorialCount === null || parseInt(savedTutorialCount) < 140) {
         setShowHelp(true);
 
         // Initialize or increment the counter
@@ -81,7 +82,20 @@ const CookITApp = () => {
         localStorage.setItem('cookItTutorialCount', newCount.toString());
       }
 
+      // Set loading to false before showing offline toast
       setIsLoading(false);
+
+      // Show offline toast only after loading is complete
+      if (isOfflineMode) {
+        // Short delay to ensure UI is updated first
+        setTimeout(() => {
+          setIsOffline(true);
+          showToast("No internet connection. Working with local recipes only.", "warning", () => {
+            // This callback runs after toast is dismissed
+            // Any additional actions after toast disappears can go here
+          });
+        }, 200);
+      }
     };
     initApp();
   }, []);
@@ -234,8 +248,8 @@ const handleDelete = async (recipe) => {
             <ChefHat className="h-12 w-12 text-primary headerItems" />
             <h1 className="text-3xl font-bold ml-2 headerItems">Cook-IT</h1>
             {isOffline && (
-              <div className="absolute right-4">
-                <WifiOff className="h-5 w-5 text-[#A37B58] mr-2 -mt-3" title="Offline Mode" />
+              <div className="absolute right-4 transition-opacity duration-300">
+                <WifiOff className="h-5 w-5 text-amber-500" title="Offline Mode" />
               </div>
             )}
           </div>
