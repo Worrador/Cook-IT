@@ -1,4 +1,3 @@
-// CookITApp.js
 import React, { useState, useEffect, useRef  } from 'react';
 import { Card, CardHeader, CardContent, CardFooter } from './components/card.jsx';
 import { Button } from './components/button.jsx';
@@ -6,7 +5,7 @@ import { Input } from './components/input.jsx';
 import RecipeDetailsDialog from './components/RecipeDetailsDialog.jsx';
 import HelpDialog from './components/HelpDialog.jsx';
 import BuyCoffeeDialog from './components/BuyCoffeeDialog.jsx';
-import { Loader2, ChefHat, PlusCircle, X, BookOpen,HelpCircle, Coffee, WifiOff } from 'lucide-react';
+import { Loader2, ChefHat, PlusCircle, X, BookOpen, HelpCircle, Coffee, WifiOff, BookX } from 'lucide-react';
 import {
   Dialog,
   DialogTrigger,
@@ -31,6 +30,7 @@ const showToast = (message, type = 'info', onCloseCallback = () => {}) => {
 
 const CookITApp = () => {
   const [isLoading, setIsLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
   const [isAddRecipeOpen, setIsAddRecipeOpen] = useState(false);
   const [newRecipe, setNewRecipe] = useState({ name: '', url: '', comment: '' });
   const [isRecipeDetailsOpen, setIsRecipeDetailsOpen] = useState(false);
@@ -43,7 +43,21 @@ const CookITApp = () => {
   const [isBuyCoffeeOpen, setIsBuyCoffeeOpen] = useState(false);
   const [isQuitting, setIsQuitting] = useState(false);
   const [tutorialCount, setTutorialCount] = useState(0);
-  const [isOffline, setIsOffline] = useState(false);
+  const [showOfflineIcon, setShowOfflineIcon] = useState(false);
+  const [criticalError, setCriticalError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [countdown, setCountdown] = useState(10);
+
+  useEffect(() => {
+    if (criticalError && countdown > 0) {
+      const timer = setTimeout(() => {
+        setCountdown(countdown - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (criticalError && countdown === 0) {
+      window.close();
+    }
+  }, [criticalError, countdown]);
 
   useEffect(() => {
     if (isAddRecipeOpen && firstInputRef.current) {
@@ -53,18 +67,44 @@ const CookITApp = () => {
 
   useEffect(() => {
     const initApp = async () => {
-      let isOfflineMode = false;
+      let initialOfflineMode = false;
       try {
-        // Make sure we properly await the full response
         const response = await window.electronAPI.initialize();
 
-        // Check if the response explicitly indicates offline mode
-        if (response && response.offline) {
-          isOfflineMode = true;
+        // Set initial offline state
+        initialOfflineMode = response && response.offline;
+
+        // Register for status updates if status is pending
+        if (response && response.statusPending) {
+          window.electronAPI.onConnectionStatusUpdate((status) => {
+            if (status.type === "connection_status") {
+              // For state updates, first show toast, then update UI
+              if (status.offline) {
+                showToast("No internet connection. Working with local recipes only.", "warning", () => {
+                  setIsOffline(true);
+                  setShowOfflineIcon(true);
+                });
+              } else if (!status.offline && isOffline) {
+                showToast("Connected to Google Drive. Syncing recipes.", "success", () => {
+                  setIsOffline(false);
+                  setShowOfflineIcon(false);
+                });
+              }
+            }
+          });
         }
       } catch (error) {
-        console.error('Initialization error:', error);
-        isOfflineMode = true;
+        console.error('Initialization error:', error.message);
+        let cleanErrorMessage = error.message;
+
+        // Extract only the part after "Error:"
+        if (cleanErrorMessage.includes("Error:")) {
+          cleanErrorMessage = cleanErrorMessage.split("Error:")[1].trim();
+        }
+
+        setErrorMessage(cleanErrorMessage);
+        setCriticalError(true);
+        setCountdown(1000);
       }
 
       // Load the tutorial counter from localStorage
@@ -85,16 +125,12 @@ const CookITApp = () => {
       // Set loading to false before showing offline toast
       setIsLoading(false);
 
-      // Show offline toast only after loading is complete
-      if (isOfflineMode) {
-        // Short delay to ensure UI is updated first
-        setTimeout(() => {
+      if (initialOfflineMode) {
+        showToast("No internet connection. Working with local recipes only.", "warning", () => {
+          // Only show offline icon after toast notification completes
           setIsOffline(true);
-          showToast("No internet connection. Working with local recipes only.", "warning", () => {
-            // This callback runs after toast is dismissed
-            // Any additional actions after toast disappears can go here
-          });
-        }, 200);
+          setShowOfflineIcon(true);
+        });
       }
     };
     initApp();
@@ -162,17 +198,15 @@ const CookITApp = () => {
 
       // Perform save operations
       await window.electronAPI.updateRecency(Array.from(cookedRecipes.values()));
-      await window.electronAPI.quit();
 
-      // Reset quitting state
-      setIsQuitting(false);
-
+      // Dismiss toast and fade out
       toast.dismiss(savingToast);
-      // Use setTimeout to delay the final close
-      setTimeout(() => {
-        // Show success toast briefly
-        document.body.style.opacity = '0';
-        window.close();
+      document.body.style.opacity = '0';
+      document.body.style.transition = 'opacity 0.75s ease';
+
+      // Wait for fade animation and then quit
+      setTimeout(async () => {
+        await window.electronAPI.quit();
       }, 750);
 
     } catch (error) {
@@ -240,6 +274,36 @@ const handleDelete = async (recipe) => {
     );
   }
 
+  if (criticalError) {
+    return (
+      <div className="container mx-auto p-4">
+        <Card className="w-full max-w-md mx-auto">
+          <CardContent className="flex flex-col items-center justify-center">
+            <div className="flex items-center justify-center gap-16 mb-4">
+              <WifiOff className="h-16 w-16 text-red-500" />
+              <BookX className="h-16 w-16 text-red-500" />
+            </div>
+            <p className="text-xl font-semibold text-center mt-4">{errorMessage}</p>
+            <p className="text-md text-center mt-2">Please connect to the internet and restart the application.</p>
+            <p className="text-sm text-gray-500 mt-4">
+              Application will close automatically in {countdown} seconds...
+            </p>
+          </CardContent>
+          <CardFooter className="mt-2">
+            <Button
+              variant="default"
+              className="w-full bg-red-400 hover:bg-red-500"
+              onClick={() => window.close()}
+            >
+              Close Now
+            </Button>
+          </CardFooter>
+        </Card>
+        <ToastContainer />
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-4 border-transparent">
       <Card className="w-full max-w-md mx-auto border-transparent relative">
@@ -247,7 +311,7 @@ const handleDelete = async (recipe) => {
           <div className="flex items-center justify-center">
             <ChefHat className="h-12 w-12 text-primary headerItems" />
             <h1 className="text-3xl font-bold ml-2 headerItems">Cook-IT</h1>
-            {isOffline && (
+            {showOfflineIcon && (
               <div className="absolute right-4 transition-opacity duration-300">
                 <WifiOff className="h-5 w-5 text-amber-500" title="Offline Mode" />
               </div>

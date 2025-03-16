@@ -105,10 +105,19 @@ class CookITLogic:
             print(f"Error saving local file: {str(e)}", file=sys.stderr)
             raise
 
-    def get_google_drive_service(self):
+    def get_google_drive_service(self, timeout=5):
+        """Initialize Google Drive service with timeout to detect offline state."""
         creds = None
 
         try:
+            # Check internet connectivity first with timeout
+            try:
+                import socket
+                socket.create_connection(("www.google.com", 443), timeout=timeout)
+            except (socket.timeout, socket.error):
+                print("Internet connectivity check failed.", file=sys.stderr)
+                return False
+
             # Load credentials from token.json if available
             if os.path.exists('token.json'):
                 creds = Credentials.from_authorized_user_file('token.json', SCOPES)
@@ -138,11 +147,11 @@ class CookITLogic:
             # Build and return the Google Drive service
             self.service = build('drive', 'v3', credentials=creds)
             print("Google Drive service initialized.", file=sys.stderr)
-            return self.service
+            return True
 
         except Exception as e:
             print(f"Error during initialization: {e}", file=sys.stderr)
-            raise
+            return False
 
     def merge_local_changes(self):
         try:

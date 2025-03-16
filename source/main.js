@@ -132,7 +132,50 @@ ipcMain.handle('initialize', async () => {
     });
   }
 
+  // If status is pending, set up a listener for status updates from Python
+  if (result.statusPending) {
+    // Set up status update listener on Python process stdout
+    setupStatusUpdateListener();
+  }
+
   return result;
+});
+
+// Add new function to set up status listener
+function setupStatusUpdateListener() {
+  const statusUpdateHandler = (data) => {
+    const text = data.toString().trim();
+
+    // Look for status update messages from Python
+    if (text.startsWith('STATUS_UPDATE:')) {
+      try {
+        // Extract and parse the JSON part after the prefix
+        const jsonPart = text.substring('STATUS_UPDATE:'.length);
+        const status = JSON.parse(jsonPart);
+
+        logger.log('Received status update:', status);
+
+        // Broadcast to all windows
+        BrowserWindow.getAllWindows().forEach(window => {
+          window.webContents.send('connection-status-update', status);
+        });
+      } catch (error) {
+        logger.error('Error parsing status update:', error);
+      }
+    }
+  };
+
+  pythonProcess.stdout.on('data', statusUpdateHandler);
+}
+
+// Add new handler to register for status updates
+ipcMain.handle('register-for-status-updates', async () => {
+  return sendToPython({ action: 'register-for-status-updates' });
+});
+
+// Add new handler to check current status
+ipcMain.handle('get-connection-status', async () => {
+  return sendToPython({ action: 'get-connection-status' });
 });
 
 app.whenReady().then(createWindow);

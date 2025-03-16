@@ -14,7 +14,6 @@ class AsyncCookITBridge:
         self.queue_thread = None
         self.offline_mode = False
 
-
     def start_queue_consumer(self):
         def queue_worker():
             while True:
@@ -36,16 +35,28 @@ class AsyncCookITBridge:
     def start_drive_thread(self):
         def drive_worker():
             try:
-                self.logic.get_google_drive_service()
                 self.logic._handle_remote_sync()
                 self.offline_mode = False
+                # Notify about successful connection via stdout with special prefix
+                self.send_status_update({"type": "connection_status", "offline": False})
             except Exception as e:
                 self.offline_mode = True
                 print(f"Drive thread error: {e}", file=sys.stderr)
+                # Notify about offline status
+                self.send_status_update({"type": "connection_status", "offline": True})
 
         self.drive_thread = threading.Thread(target=drive_worker, daemon=True)
         self.drive_thread.start()
         self.start_queue_consumer()
+
+    def send_status_update(self, status):
+        """Send a status update via stdout with a special prefix"""
+        try:
+            status_json = json.dumps(status)
+            # Use a special prefix that Electron will recognize
+            print(f"STATUS_UPDATE:{status_json}", flush=True)
+        except Exception as e:
+            print(f"Error sending status update: {e}", file=sys.stderr)
 
     def handle_request(self, request):
         try:
@@ -54,21 +65,41 @@ class AsyncCookITBridge:
             if action == 'initialize':
                 if not self.drive_thread:
                     # Always try to load local file first
-                    local_loaded = self.logic.load_local_file()
+                    local_file_exists = self.logic.load_local_file()
 
-                    try:
-                        # Try to start the drive thread
-                        self.start_drive_thread()
-                    except Exception as e:
-                        self.offline_mode = True
-                        # If we couldn't connect but loaded local file, continue in offline mode
-                        if not local_loaded:
-                            # No local file and couldn't connect
-                            return {"error": str(e), "offline": True}
+                    # Quick check for connectivity and valid credentials
+                    self.offline_mode = not self.logic.get_google_drive_service()
+
+                    if self.offline_mode and not local_file_exists:
+                        # Critical error: No connectivity, no credentials AND no local file
+                        return {
+                            "error": "No internet connection and no local recipe book found.",
+                        }
+
+                    if not self.offline_mode:
+                        # Only start background sync if drive service is available
+                        try:
+                            self.start_drive_thread()
+                        except Exception as e:
+                            print(f"Failed to start drive thread: {e}", file=sys.stderr)
+                            self.offline_mode = True
+                            # Continue in offline mode with local file
+
 
                     self.initialized = True
-                print(f"{self.offline_mode}", flush=True)
+                    print(f"{self.offline_mode}", file=sys.stderr, flush=True)
+
+                    # Return initial status, but background thread will update later if needed
+                    return {
+                        "success": True,
+                        "offline": self.offline_mode,
+                        "statusPending": not self.offline_mode
+                    }
+
                 return {"success": True, "offline": self.offline_mode}
+
+            if action == 'get-connection-status':
+                return {"offline": self.offline_mode}
 
             if action == 'choose-recipe':
                 if not self.initialized:
