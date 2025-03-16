@@ -198,16 +198,17 @@ const CookITApp = () => {
 
       // Perform save operations
       await window.electronAPI.updateRecency(Array.from(cookedRecipes.values()));
+      await window.electronAPI.quit();
 
-      // Dismiss toast and fade out
+      // Reset quitting state
+      setIsQuitting(false);
+
       toast.dismiss(savingToast);
-      document.body.style.opacity = '0';
-      document.body.style.transition = 'opacity 0.75s ease';
-
-      // Wait for fade animation and then quit
-      setTimeout(async () => {
-        await window.electronAPI.quit();
-      }, 750);
+      // Use setTimeout to delay the final close
+      showToast("Changes saved to Drive", "success", () => {
+          document.body.style.opacity = '0';
+          window.close();
+      });
 
     } catch (error) {
       console.error('Error saving changes:', error);
