@@ -9,7 +9,7 @@ import {
 import { Button } from './button';
 import { Label } from './label';
 import { Input } from './input';
-import { ChefHat, ArrowRight, Pencil, Trash2, ThumbsUp } from 'lucide-react';
+import { ChefHat, ArrowRight, Pencil, PenLine, Trash2, ThumbsUp, RefreshCcw } from 'lucide-react';
 
 const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUncook, onCommentChange, onDelete }) => {
   const [isEditingComment, setIsEditingComment] = useState(false);
@@ -59,10 +59,6 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
     onNext && onNext();
   };
 
-  const handleLikedRecipe = () => {
-    setIsOpen(false);
-  };
-
   const handleCommentClick = () => {
     setIsEditingComment(true);
     setTimeout(() => {
@@ -96,15 +92,20 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
           </DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right font-medium">Name</Label>
-            <div className="col-span-3 text-sm">
+          <div className="grid grid-cols-12 items-center gap-4">
+            <Label className="col-span-3 text-right font-medium">Name</Label>
+            <div className="col-span-8 text-sm pr-2 break-words">
               {recipe.name}
             </div>
+            <div className="col-span-1 flex justify-end">
+              <div onClick={handleDelete} className="cursor-pointer hover:bg-[#f7f0e2] p-2 rounded-md flex items-center group">
+              <div className="group-hover:rotate-12 transition-all">🗑️</div>
+            </div>
+            </div>
           </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right font-medium">Comment</Label>
-            <div className="col-span-3">
+          <div className="grid grid-cols-12 items-center gap-4">
+            <Label className="col-span-3 text-right font-medium">Comment</Label>
+            <div className="col-span-9 -ml-2">
               {isEditingComment ? (
                 <div className="flex gap-2">
                   <Input
@@ -119,17 +120,20 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
                   />
                 </div>
               ) : (
-                <div
-                  onClick={handleCommentClick}
-                  className="text-sm cursor-pointer hover:bg-[#f7f0e2] p-2 rounded-md flex items-center gap-2 group"
-                >
-                  <div className="flex-grow">
-                    {commentText || (
-                      <span className="text-gray-400">Click to add comment...</span>
-                    )}
-                  </div>
-                  <Pencil className="h-4 w-4 text-gray-400 group-hover:text-gray-600" />
+              <div
+                onClick={handleCommentClick}
+                className="text-sm cursor-pointer hover:bg-[#f7f0e2] p-2 rounded-md flex items-center gap-2 group"
+              >
+                <div className="flex-grow overflow-hidden">
+                  {commentText || (
+                    <span className="text-gray-400">Click to add comment...</span>
+                  )}
                 </div>
+                <div className="flex-shrink-0">
+                  <div className="group-hover:hidden">✏️</div>
+                  <div className="hidden group-hover:block">✍️</div>
+                </div>
+              </div>
               )}
             </div>
           </div>
@@ -157,31 +161,14 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
               </Button>
             </>
           ) : (
-            <div className="grid grid-cols-2 gap-2 w-full">
-              <Button
-                variant="outline"
-                onClick={handleChangeMind}
-                className="col-span-2 border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2] flex items-center gap-2"
-              >
-                I changed my mind
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-              <Button
-                onClick={handleLikedRecipe}
-                className="bg-gray-200 hover:bg-gray-300 text-gray-700 flex items-center justify-center gap-1 whitespace-nowrap text-xs md:text-sm"
-              >
-                <ThumbsUp className="h-4 w-4" />
-                I liked it!
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleDelete}
-                className="bg-red-400 hover:bg-red-500 flex items-center justify-center gap-1 whitespace-nowrap text-xs md:text-sm"
-              >
-                <Trash2 className="h-4 w-4" />
-                I did not like it
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              onClick={handleChangeMind}
+              className="col-span-2 border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2] flex items-center gap-2"
+            >
+              I changed my mind
+              <RefreshCcw className="h-4 w-4" />
+            </Button>
           )}
         </DialogFooter>
       </DialogContent>
