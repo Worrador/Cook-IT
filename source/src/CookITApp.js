@@ -1,10 +1,7 @@
-import React, { useState, useEffect, useRef  } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Card, CardHeader, CardContent, CardFooter } from './components/card.jsx';
 import { Button } from './components/button.jsx';
 import { Input } from './components/input.jsx';
-import RecipeDetailsDialog from './components/RecipeDetailsDialog.jsx';
-import HelpDialog from './components/HelpDialog.jsx';
-import BuyCoffeeDialog from './components/BuyCoffeeDialog.jsx';
 import { Loader2, ChefHat, PlusCircle, X, BookOpen, HelpCircle, Coffee, WifiOff, BookX } from 'lucide-react';
 import {
   Dialog,
@@ -19,23 +16,36 @@ import './CookITApp.css';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+// Lazily load components that aren't needed on initial render
+const RecipeDetailsDialog = lazy(() => import('./components/RecipeDetailsDialog.jsx'));
+const HelpDialog = lazy(() => import('./components/HelpDialog.jsx'));
+const BuyCoffeeDialog = lazy(() => import('./components/BuyCoffeeDialog.jsx'));
 
 const showToast = (message, type = 'info', onCloseCallback = () => {}) => {
   const duration = Math.max(message.length * 60 + 300, 1000);
   toast[type](message, {
     autoClose: duration,
-    onClose: onCloseCallback, // Trigger the callback when the toast is closed
+    onClose: onCloseCallback,
   });
 };
 
+// Loading fallback component for Suspense
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center p-4">
+    <Loader2 className="mr-2 h-6 w-6 animate-spin" />
+    <p>Loading...</p>
+  </div>
+);
+
 const CookITApp = () => {
+  // State declarations remain unchanged
   const [isLoading, setIsLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
   const [isAddRecipeOpen, setIsAddRecipeOpen] = useState(false);
   const [newRecipe, setNewRecipe] = useState({ name: '', url: '', comment: '' });
   const [isRecipeDetailsOpen, setIsRecipeDetailsOpen] = useState(false);
   const [chosenRecipe, setChosenRecipe] = useState(null);
-  const firstInputRef = useRef(null); // Ref for the first input
+  const firstInputRef = useRef(null);
   const [cookedRecipes, setCookedRecipes] = useState(new Map());
   const [showHelp, setShowHelp] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -452,39 +462,50 @@ const handleDelete = async (recipe) => {
         </CardFooter>
       </Card>
 
-    <RecipeDetailsDialog
-      recipe={chosenRecipe}
-      isOpen={isRecipeDetailsOpen}
-      setIsOpen={setIsRecipeDetailsOpen}
-      onNext={handleNext}
-      onCook={handleCook}
-      onUncook={handleUncook}
-      onCommentChange={handleCommentChange}
-      onDelete={handleDelete}
-    />
-    <ToastContainer
-      toastClassName="toast-rounded"
-      position="top-center"
-      autoClose={4000}  // Set a longer default duration - 4 seconds
-      hideProgressBar={true}
-      newestOnTop={false}
-      closeOnClick
-      rtl={false}
-      pauseOnFocusLoss
-      draggable
-      pauseOnHover
-      closeButton={false}
-      style={{
-        zIndex: 9999,
-        top: '10%',
-        maxWidth: '300px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-      }}
-      className="toast-animation"
-    />
-    <HelpDialog isOpen={isHelpOpen} setIsOpen={setIsHelpOpen} />
-    <BuyCoffeeDialog isOpen={isBuyCoffeeOpen} setIsOpen={setIsBuyCoffeeOpen} />
+      <Suspense fallback={<LoadingFallback />}>
+        {isRecipeDetailsOpen && (
+          <RecipeDetailsDialog
+            recipe={chosenRecipe}
+            isOpen={isRecipeDetailsOpen}
+            setIsOpen={setIsRecipeDetailsOpen}
+            onNext={handleNext}
+            onCook={handleCook}
+            onUncook={handleUncook}
+            onCommentChange={handleCommentChange}
+            onDelete={handleDelete}
+          />
+        )}
+      </Suspense>
+
+      <ToastContainer
+        toastClassName="toast-rounded"
+        position="top-center"
+        autoClose={4000}
+        hideProgressBar={true}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        closeButton={false}
+        style={{
+          zIndex: 9999,
+          top: '10%',
+          maxWidth: '300px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+        }}
+        className="toast-animation"
+      />
+
+      <Suspense fallback={<LoadingFallback />}>
+        {isHelpOpen && <HelpDialog isOpen={isHelpOpen} setIsOpen={setIsHelpOpen} />}
+      </Suspense>
+
+      <Suspense fallback={<LoadingFallback />}>
+        {isBuyCoffeeOpen && <BuyCoffeeDialog isOpen={isBuyCoffeeOpen} setIsOpen={setIsBuyCoffeeOpen} />}
+      </Suspense>
     </div>
   );
 };
