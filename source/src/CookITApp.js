@@ -101,17 +101,16 @@ const CookITApp = () => {
         if (cleanErrorMessage.includes("Error:")) {
           cleanErrorMessage = cleanErrorMessage.split("Error:")[1].trim();
         }
-
         setErrorMessage(cleanErrorMessage);
         setCriticalError(true);
-        setCountdown(1000);
+        setCountdown(30);
       }
 
       // Load the tutorial counter from localStorage
       const savedTutorialCount = localStorage.getItem('cookItTutorialCount');
 
-      // If it doesn't exist yet or is less than 40, we should show the help button
-      if (savedTutorialCount === null || parseInt(savedTutorialCount) < 140) {
+      // If it doesn't exist yet or is less than 5, we should show the help button
+      if (savedTutorialCount === null || parseInt(savedTutorialCount) < 5) {
         setShowHelp(true);
 
         // Initialize or increment the counter
@@ -205,7 +204,7 @@ const CookITApp = () => {
 
       toast.dismiss(savingToast);
       // Use setTimeout to delay the final close
-      showToast("Changes saved to Drive", "success", () => {
+      showToast("Changes saved!", "success", () => {
           document.body.style.opacity = '0';
           window.close();
       });

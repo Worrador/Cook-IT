@@ -116,40 +116,46 @@ async function createWindow() {
   });
 }
 
-// Modified initialize handler to measure Python initialization
 ipcMain.handle('initialize', async () => {
-  const result = await sendToPython({ action: 'initialize' });
-  startupMetrics.pythonInitialized = performance.now();
-  startupMetrics.totalStartupTime = startupMetrics.pythonInitialized - startupMetrics.appStart;
 
-  // Log startup metrics only in development
-  if (isDev) {
-    logger.log('Startup Metrics:', {
-      'Total Startup Time': `${startupMetrics.totalStartupTime.toFixed(2)}ms`,
-      'Window Creation Time': `${(startupMetrics.windowCreated - startupMetrics.appStart).toFixed(2)}ms`,
-      'Python Process Start Time': `${(startupMetrics.pythonProcessStarted - startupMetrics.windowCreated).toFixed(2)}ms`,
-      'Python Initialization Time': `${(startupMetrics.pythonInitialized - startupMetrics.pythonProcessStarted).toFixed(2)}ms`
-    });
+  setupStatusUpdateListener();
+
+  try {
+    const result = await sendToPython({ action: 'initialize' });
+
+    // Remove listener if status is not pending, we do not need it
+    if (!result.statusPending) {
+      removeStatusUpdateListener();
+    }
+
+    startupMetrics.pythonInitialized = performance.now();
+    startupMetrics.totalStartupTime = startupMetrics.pythonInitialized - startupMetrics.appStart;
+
+    if (isDev) {
+      logger.log('Startup Metrics:', {
+        'Total Startup Time': `${startupMetrics.totalStartupTime.toFixed(2)}ms`,
+        'Window Creation Time': `${(startupMetrics.windowCreated - startupMetrics.appStart).toFixed(2)}ms`,
+        'Python Process Start Time': `${(startupMetrics.pythonProcessStarted - startupMetrics.windowCreated).toFixed(2)}ms`,
+        'Python Initialization Time': `${(startupMetrics.pythonInitialized - startupMetrics.pythonProcessStarted).toFixed(2)}ms`
+      });
+    }
+
+    return result;
+  } catch (error) {
+    logger.error('Initialization error:', error);
+    throw error;
   }
-
-  // If status is pending, set up a listener for status updates from Python
-  if (result.statusPending) {
-    // Set up status update listener on Python process stdout
-    setupStatusUpdateListener();
-  }
-
-  return result;
 });
 
-// Add new function to set up status listener
 function setupStatusUpdateListener() {
-  const statusUpdateHandler = (data) => {
+  // Remove any existing listener first
+  removeStatusUpdateListener();
+
+  pythonProcess._statusUpdateHandler = (data) => {
     const text = data.toString().trim();
 
-    // Look for status update messages from Python
     if (text.startsWith('STATUS_UPDATE:')) {
       try {
-        // Extract and parse the JSON part after the prefix
         const jsonPart = text.substring('STATUS_UPDATE:'.length);
         const status = JSON.parse(jsonPart);
 
@@ -159,13 +165,23 @@ function setupStatusUpdateListener() {
         BrowserWindow.getAllWindows().forEach(window => {
           window.webContents.send('connection-status-update', status);
         });
+
+        // Any status update means we're done with the listener
+        removeStatusUpdateListener();
       } catch (error) {
         logger.error('Error parsing status update:', error);
       }
     }
   };
 
-  pythonProcess.stdout.on('data', statusUpdateHandler);
+  pythonProcess.stdout.on('data', pythonProcess._statusUpdateHandler);
+}
+
+function removeStatusUpdateListener() {
+  if (pythonProcess && pythonProcess._statusUpdateHandler) {
+    pythonProcess.stdout.removeListener('data', pythonProcess._statusUpdateHandler);
+    pythonProcess._statusUpdateHandler = null;
+  }
 }
 
 // Add new handler to register for status updates
@@ -210,30 +226,36 @@ ipcMain.handle('delete-recipe', async (event, recipe) => {
 
 function sendToPython(message) {
   return new Promise((resolve, reject) => {
-    // Buffer to collect partial JSON data
     let buffer = '';
 
     const responseHandler = (data) => {
       const text = data.toString();
 
-      // Check if this is a JSON response line
-      if (text.trim().startsWith('{') && text.trim().endsWith('}')) {
+      // Skip status update messages
+      if (text.includes('STATUS_UPDATE:')) {
+        return;
+      }
+
+      // Handle case where the OAuth URL and JSON are in the same message
+      const jsonMatches = text.match(/(\{.*\})/g);
+
+      if (jsonMatches && jsonMatches.length > 0) {
         try {
-          const response = JSON.parse(text);
+          const response = JSON.parse(jsonMatches[jsonMatches.length - 1]);
+
           if (response.error) {
             reject(new Error(response.error));
           } else {
             resolve(response);
           }
-          pythonProcess.stdout.removeListener('data', responseHandler);
+
         } catch (error) {
-          // This looks like JSON but isn't valid - probably incomplete
+          logger.error('JSON parse error:', error);
           buffer += text;
-          logger.log('Buffering partial JSON response:', buffer);
+          logger.error('Buffering partial response:', buffer);
         }
       } else {
-        // This is just debug output, log it but don't try to parse it
-        // logger.log('Backend output:', text);
+        logger.log('Non-JSON output:', text);
       }
     };
 

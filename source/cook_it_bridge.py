@@ -63,40 +63,38 @@ class AsyncCookITBridge:
             action = request['action']
 
             if action == 'initialize':
-                if not self.drive_thread:
-                    # Always try to load local file first
-                    local_file_exists = self.logic.load_local_file()
+                # Always try to load local file first
+                local_file_exists = self.logic.load_local_file()
 
-                    # Quick check for connectivity and valid credentials
-                    self.offline_mode = not self.logic.get_google_drive_service()
+                # Quick check for connectivity and valid credentials
+                self.offline_mode = not self.logic.get_google_drive_service()
+                print("returned from get_google_drive_service IN PYTHON", file=sys.stderr, flush=True)
 
-                    if self.offline_mode and not local_file_exists:
-                        # Critical error: No connectivity, no credentials AND no local file
-                        return {
-                            "error": "No internet connection and no local recipe book found.",
-                        }
-
-                    if not self.offline_mode:
-                        # Only start background sync if drive service is available
-                        try:
-                            self.start_drive_thread()
-                        except Exception as e:
-                            print(f"Failed to start drive thread: {e}", file=sys.stderr)
-                            self.offline_mode = True
-                            # Continue in offline mode with local file
-
-
-                    self.initialized = True
-                    print(f"{self.offline_mode}", file=sys.stderr, flush=True)
-
-                    # Return initial status, but background thread will update later if needed
+                if self.offline_mode and not local_file_exists:
+                    # Critical error: No connectivity, no credentials AND no local file
                     return {
-                        "success": True,
-                        "offline": self.offline_mode,
-                        "statusPending": not self.offline_mode
+                        "error": "No internet connection and no local recipe book found.",
                     }
 
-                return {"success": True, "offline": self.offline_mode}
+                # Start background thread only if we're online
+                drive_thread_started = False
+                if not self.offline_mode:
+                    try:
+                        self.start_drive_thread()
+                        drive_thread_started = True
+                    except Exception as e:
+                        print(f"Failed to start drive thread: {e}", file=sys.stderr)
+                        self.offline_mode = True
+                        # Continue in offline mode with local file
+
+                self.initialized = True
+
+                # Return a more explicit status response
+                return {
+                    "success": True,
+                    "offline": self.offline_mode,
+                    "statusPending": drive_thread_started  # Only pending if thread started
+                }
 
             if action == 'get-connection-status':
                 return {"offline": self.offline_mode}

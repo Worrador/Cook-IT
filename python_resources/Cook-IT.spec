@@ -5,7 +5,6 @@ from PyInstaller.utils.hooks import collect_submodules
 # Get paths
 current_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
 source_dir = os.path.join(current_dir, '../source/')
-
 block_cipher = None
 
 # Analyze the script
@@ -16,7 +15,7 @@ a = Analysis(
     datas=[
         (os.path.join(source_dir, 'credentials.json'), '.'),
         (os.path.join(source_dir, 'Cook_IT.py'), '.'),
-        ('..\\resource\\Cook-IT.ico', 'resource')
+        ('..\\python_resources\\Cook-IT.ico', 'resource')
     ],
     # Only include what's needed based on imports analysis
     hiddenimports=[
@@ -24,12 +23,28 @@ a = Analysis(
         'google_auth_oauthlib.flow',
         'googleapiclient.discovery',
         'googleapiclient.http',
-        # Only import pandas modules we actually need
+        'google.auth.transport.requests',
+        'googleapiclient.errors',
+        'google.oauth2.service_account',
+        # pandas modules
         'pandas.core.frame',
         'pandas.io.excel',
         'pandas.io.formats.excel',
+        'pandas.io.excel._openpyxl',
         'openpyxl',
+        'openpyxl.cell',
+        'openpyxl.workbook',
         'numpy.core',
+        # Other imports used in the code
+        'io',
+        'webbrowser',
+        'locale',
+        'json',
+        'contextlib',
+        'queue',
+        'threading',
+        'socket',
+        'random',
     ],
     hookspath=[],
     hooksconfig={},
