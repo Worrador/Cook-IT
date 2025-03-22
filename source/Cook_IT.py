@@ -239,7 +239,17 @@ class CookITLogic:
                 media = MediaIoBaseUpload(file,
                                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                         resumable=True)
-                self.service.files().update(fileId=self.file_id, media_body=media).execute()
+
+                # If file_id exists, update the file
+                if self.file_id:
+                    self.service.files().update(fileId=self.file_id, media_body=media).execute()
+                # Otherwise create a new file
+                else:
+                    file_metadata = {'name': FILE_NAME}
+                    file = self.service.files().create(body=file_metadata,
+                                                    media_body=media,
+                                                    fields='id').execute()
+                    self.file_id = file.get('id')
 
         except Exception as e:
             print(f"Error in save_and_upload: {str(e)}", file=sys.stderr)

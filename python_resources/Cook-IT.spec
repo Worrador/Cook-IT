@@ -1,23 +1,30 @@
 import sys
 import os
 from PyInstaller.utils.hooks import collect_submodules
+import PyInstaller
 
 # Get paths
 current_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
 source_dir = os.path.join(current_dir, '../source/')
+python_dir = os.path.dirname(sys.executable)  # Add this to find Python DLLs
 block_cipher = None
+
+# Collect Python DLLs based on your Python version
+python_dlls = []
+for file in os.listdir(python_dir):
+    if file.lower().startswith('python3') and file.lower().endswith('.dll'):
+        python_dlls.append((os.path.join(python_dir, file), '.'))
 
 # Analyze the script
 a = Analysis(
     [os.path.join(source_dir, 'cook_it_bridge.py')],
-    pathex=[source_dir],
-    binaries=[],
+    pathex=[source_dir, python_dir],  # Add Python dir to path
+    binaries=python_dlls,  # Add Python DLLs explicitly
     datas=[
         (os.path.join(source_dir, 'credentials.json'), '.'),
         (os.path.join(source_dir, 'Cook_IT.py'), '.'),
         ('..\\python_resources\\Cook-IT.ico', 'resource')
     ],
-    # Only include what's needed based on imports analysis
     hiddenimports=[
         'google.oauth2.credentials',
         'google_auth_oauthlib.flow',
@@ -26,7 +33,6 @@ a = Analysis(
         'google.auth.transport.requests',
         'googleapiclient.errors',
         'google.oauth2.service_account',
-        # pandas modules
         'pandas.core.frame',
         'pandas.io.excel',
         'pandas.io.formats.excel',
@@ -35,7 +41,6 @@ a = Analysis(
         'openpyxl.cell',
         'openpyxl.workbook',
         'numpy.core',
-        # Other imports used in the code
         'io',
         'webbrowser',
         'locale',
@@ -49,7 +54,6 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # Exclude large unused libraries
     excludes=[
         'matplotlib', 'PyQt5', 'PySide2', 'tkinter', 'PIL',
         'scipy', 'scrapy', 'sphinx', 'sqlalchemy',
@@ -59,7 +63,6 @@ a = Analysis(
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
-    # Enable tree shaking to remove unused modules
     tree_shaking=True
 )
 
@@ -76,10 +79,11 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=True,
     upx=True,
-    # Exclude files that don't compress well with UPX
-    upx_exclude=['vcruntime140.dll', 'python3.dll', 'VCRUNTIME140.dll'],
+    upx_exclude=['vcruntime140.dll', 'python3.dll', 'VCRUNTIME140.dll', 'python312.dll'],  # Added python312.dll
+    runtime_tmpdir=None,
     console=False,
     windowed=True,
-    icon=['.\\Cook-IT.ico'],
-    cipher=block_cipher
+    icon='..\\python_resources\\Cook-IT.ico',
+    cipher=block_cipher,
+    onefile=True
 )

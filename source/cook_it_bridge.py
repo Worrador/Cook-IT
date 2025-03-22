@@ -68,7 +68,6 @@ class AsyncCookITBridge:
 
                 # Quick check for connectivity and valid credentials
                 self.offline_mode = not self.logic.get_google_drive_service()
-                print("returned from get_google_drive_service IN PYTHON", file=sys.stderr, flush=True)
 
                 if self.offline_mode and not local_file_exists:
                     # Critical error: No connectivity, no credentials AND no local file

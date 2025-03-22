@@ -85,8 +85,7 @@ async function createWindow() {
       ...process.env,
       PYTHONIOENCODING: 'utf-8',
       PYTHONUNBUFFERED: '1'
-    },
-    shell: process.platform === 'win32' // Use shell on Windows
+    }
   });
 
   pythonProcess.on('error', (err) => {

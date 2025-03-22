@@ -77,12 +77,8 @@ const CookITApp = () => {
 
   useEffect(() => {
     const initApp = async () => {
-      let initialOfflineMode = false;
       try {
         const response = await window.electronAPI.initialize();
-
-        // Set initial offline state
-        initialOfflineMode = response && response.offline;
 
         // Register for status updates if status is pending
         if (response && response.statusPending) {
@@ -133,14 +129,6 @@ const CookITApp = () => {
 
       // Set loading to false before showing offline toast
       setIsLoading(false);
-
-      if (initialOfflineMode) {
-        showToast("No internet connection. Working with local recipes only.", "warning", () => {
-          // Only show offline icon after toast notification completes
-          setIsOffline(true);
-          setShowOfflineIcon(true);
-        });
-      }
     };
     initApp();
   }, []);
