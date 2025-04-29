@@ -57,6 +57,8 @@ const CookITApp = () => {
   const [criticalError, setCriticalError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [countdown, setCountdown] = useState(10);
+  const [suggestedRecipes, setSuggestedRecipes] = useState(new Set());
+  const [allRecipesShown, setAllRecipesShown] = useState(false);
 
   useEffect(() => {
     if (criticalError && countdown > 0) {
@@ -133,15 +135,25 @@ const CookITApp = () => {
     initApp();
   }, []);
 
+  useEffect(() => {
+    if (allRecipesShown) {
+      showToast("You've seen all recipes! Starting fresh...", "info", () => {
+        setSuggestedRecipes(new Set());
+        setAllRecipesShown(false);
+      });
+    }
+  }, [allRecipesShown]);
+
   const handleChooseRecipe = async () => {
     try {
-      const recipe = await window.electronAPI.chooseRecipe();
+      const recipe = await window.electronAPI.chooseRecipe(Array.from(suggestedRecipes));
       if (recipe.empty) {
-        showToast("Recipe book is empty, please add a few recipes first!", "info", () => {
+        showToast("No more recipes available! Please add more recipes or restart the app.", "info", () => {
           setShowHelp(true);
         });
         return;
       }
+      setSuggestedRecipes(prev => new Set([...prev, recipe.name]));
       setChosenRecipe(recipe);
       setIsRecipeDetailsOpen(true);
     } catch (error) {
@@ -461,6 +473,7 @@ const handleDelete = async (recipe) => {
             onUncook={handleUncook}
             onCommentChange={handleCommentChange}
             onDelete={handleDelete}
+            onAllRecipesShown={() => setAllRecipesShown(true)}
           />
         )}
       </Suspense>

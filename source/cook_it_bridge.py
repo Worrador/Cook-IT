@@ -102,7 +102,10 @@ class AsyncCookITBridge:
                 if not self.initialized:
                     return {"waiting": True}
 
-                recipe_name, url, comment, _ = self.logic.choose_recipe()
+                # Get suggested recipes from request
+                suggested_recipes = request.get('suggested_recipes', [])
+
+                recipe_name, url, comment, _ = self.logic.choose_recipe(suggested_recipes)
                 if recipe_name is None:
                     return {"empty": True}
 

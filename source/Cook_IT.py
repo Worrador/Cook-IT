@@ -15,7 +15,7 @@ import locale
 # Get the system's default encoding
 SYSTEM_ENCODING = locale.getpreferredencoding()
 
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
+SCOPES = ['https://www.googleapis.com/auth/drive']
 FILE_NAME = 'Recipes.xlsx'
 
 if getattr(sys, 'frozen', False):
@@ -44,6 +44,11 @@ class CookITLogic:
         self.file_id = None
         self.sync_complete = False
 
+    @property
+    def recipe_count(self):
+        """Return the number of recipes in the DataFrame."""
+        return len(self.df_recipes) if self.df_recipes is not None else 0
+
     def load_local_file(self):
         if os.path.exists(FILE_NAME):
             try:
@@ -60,6 +65,9 @@ class CookITLogic:
             results = self.service.files().list(
                 q=f"name='{FILE_NAME}' and trashed=false",
                 spaces='drive',
+                # Add 'sharedWithMe' to include files shared with the user
+                includeItemsFromAllDrives=True,
+                supportsAllDrives=True,
                 fields="files(id, name)").execute()
             items = results.get('files', [])
 
@@ -271,13 +279,22 @@ class CookITLogic:
             print(f"Error downloading file: {str(e)}", file=sys.stderr)
             raise
 
-    def choose_recipe(self):
+    def choose_recipe(self, suggested_recipes=None):
         # Filter recipes and select based on recency
         if len(self.df_recipes) < 1:
             return None, None, None, None
 
+        if suggested_recipes is None:
+            suggested_recipes = []
+
+        # Create a list of available recipes (not in suggested_recipes)
+        available_recipes = self.df_recipes[~self.df_recipes['Recipe Name'].isin(suggested_recipes)]
+
+        if len(available_recipes) == 0:
+            return None, None, None, None
+
         while True:
-            random_recipe = self.df_recipes.sample()
+            random_recipe = available_recipes.sample()
             recency_value = random_recipe['Recency'].values[0]
 
             if recency_value < random.randint(1, 101):
