@@ -146,16 +146,28 @@ const CookITApp = () => {
 
   const handleChooseRecipe = async () => {
     try {
-      const recipe = await window.electronAPI.chooseRecipe(Array.from(suggestedRecipes));
-      if (recipe.empty) {
-        showToast("No more recipes available! Please add more recipes or restart the app.", "info", () => {
-          setShowHelp(true);
-        });
-        return;
+      let attempts = 0;
+      let recipe = null;
+
+      while (attempts < 10) {
+        recipe = await window.electronAPI.chooseRecipe(Array.from(suggestedRecipes));
+
+        // If we got a recipe and it hasn't been shown before, use it
+        if (recipe && !recipe.empty && !suggestedRecipes.has(recipe.name)) {
+          setSuggestedRecipes(prev => new Set([...prev, recipe.name]));
+          setChosenRecipe(recipe);
+          setIsRecipeDetailsOpen(true);
+          return;
+        }
+
+        attempts++;
       }
-      setSuggestedRecipes(prev => new Set([...prev, recipe.name]));
-      setChosenRecipe(recipe);
-      setIsRecipeDetailsOpen(true);
+
+      // If we've tried 10 times and still haven't found a new recipe
+      setSuggestedRecipes(new Set()); // Reset the set of seen recipes
+      showToast("No more recipes available! Starting fresh...", "info", () => {
+        setShowHelp(true);
+      });
     } catch (error) {
       console.error('Error choosing recipe:', error);
       showToast('Error choosing recipe: ' + error.message, "error");

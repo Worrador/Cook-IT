@@ -43,6 +43,8 @@ class CookITLogic:
         self.df_recipes = None
         self.file_id = None
         self.sync_complete = False
+        # Add default columns if they don't exist
+        self.default_columns = ['Recipe Name', 'URL', 'Comment', 'Last Shown']
 
     @property
     def recipe_count(self):
@@ -54,6 +56,15 @@ class CookITLogic:
             try:
                 self.df_recipes = pd.read_excel(FILE_NAME)
                 self.df_recipes = self.df_recipes.fillna("")
+
+                # Ensure all required columns exist
+                for col in self.default_columns:
+                    if col not in self.df_recipes.columns:
+                        if col == 'Last Shown':
+                            self.df_recipes[col] = pd.NaT  # Use NaT (Not a Time) for new recipes
+                        else:
+                            self.df_recipes[col] = 0
+
                 return True
             except Exception as e:
                 print(f"Error loading local file: {e}", file=sys.stderr)
@@ -104,9 +115,11 @@ class CookITLogic:
             with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
                 self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
 
+                # Hide both Recency and Last Shown columns
                 if 'Recency' in self.df_recipes.columns:
-                    col_letter = 'D'  # Adjust if needed based on column position
-                    writer.sheets['Recipes'].column_dimensions[col_letter].hidden = True
+                    writer.sheets['Recipes'].column_dimensions['D'].hidden = True
+                if 'Last Shown' in self.df_recipes.columns:
+                    writer.sheets['Recipes'].column_dimensions['E'].hidden = True
 
             return True
         except Exception as e:
@@ -238,9 +251,11 @@ class CookITLogic:
             with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
                 self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
 
+                # Hide both Recency and Last Shown columns
                 if 'Recency' in self.df_recipes.columns:
-                    col_letter = 'D'  # Adjust if needed based on column position
-                    writer.sheets['Recipes'].column_dimensions[col_letter].hidden = True
+                    writer.sheets['Recipes'].column_dimensions['D'].hidden = True
+                if 'Last Shown' in self.df_recipes.columns:
+                    writer.sheets['Recipes'].column_dimensions['E'].hidden = True
 
             # Upload to Drive
             with open(FILE_NAME, 'rb') as file:
@@ -279,6 +294,23 @@ class CookITLogic:
             print(f"Error downloading file: {str(e)}", file=sys.stderr)
             raise
 
+    def calculate_recency(self, last_shown):
+        """Calculate recency (0-100) based on time since last shown"""
+        if pd.isna(last_shown):
+            return 0
+
+        current_time = pd.Timestamp.now()
+        time_diff = (current_time - last_shown).total_seconds() / 3600  # hours
+
+        # Calculate decay based on time difference
+        decay = 0.2 * time_diff
+
+        # Cap the decay at 80 (to keep recipes highly relevant)
+        decay = min(decay, 80)
+
+        # Recency is 100 minus decay
+        return max(100 - decay, 0)
+
     def choose_recipe(self, suggested_recipes=None):
         # Filter recipes and select based on recency
         if len(self.df_recipes) < 1:
@@ -293,32 +325,46 @@ class CookITLogic:
         if len(available_recipes) == 0:
             return None, None, None, None
 
-        while True:
-            random_recipe = available_recipes.sample()
-            recency_value = random_recipe['Recency'].values[0]
+        try:
+            # Calculate weights based on recency
+            weights = available_recipes['Last Shown'].apply(self.calculate_recency)
 
-            if recency_value < random.randint(1, 101):
-                return (
-                    random_recipe['Recipe Name'].values[0],
-                    random_recipe['URL'].values[0],
-                    random_recipe['Comment'].values[0],
-                    random_recipe.index[0] + 2  # +2 to match previous 1-based indexing
-                )
+            # Normalize weights to sum to 1
+            weights = weights / weights.sum()
+
+            # Select a recipe using the weights
+            random_recipe = available_recipes.sample(weights=weights)
+
+            # Update the last shown time for the selected recipe
+            self.df_recipes.loc[random_recipe.index, 'Last Shown'] = pd.Timestamp.now()
+            self.df_recipes.to_excel(FILE_NAME, index=False)
+
+            return (
+                random_recipe['Recipe Name'].values[0],
+                random_recipe['URL'].values[0],
+                random_recipe['Comment'].values[0],
+                random_recipe.index[0] + 2  # +2 to match previous 1-based indexing
+            )
+        except Exception as e:
+            print(f"Error in choose_recipe: {e}", file=sys.stderr)
+            # Fallback to simple random selection if weight calculation fails
+            random_recipe = available_recipes.sample(n=1)
+            return (
+                random_recipe['Recipe Name'].values[0],
+                random_recipe['URL'].values[0],
+                random_recipe['Comment'].values[0],
+                random_recipe.index[0] + 2
+            )
 
     def update_recency(self, cooked_recipe_names):
+        current_time = pd.Timestamp.now()
+
         for recipe_name in cooked_recipe_names:
             # Find index of recipe
             mask = self.df_recipes['Recipe Name'] == recipe_name
 
-            # Update recency for matched recipe
-            self.df_recipes.loc[mask, 'Recency'] = 100
-
-            # Decrease other recipes' recency
-            other_mask = ~mask
-            self.df_recipes.loc[other_mask, 'Recency'] = np.maximum(
-                self.df_recipes.loc[other_mask, 'Recency'] - 5,
-                0
-            )
+            # Update last shown time for matched recipe
+            self.df_recipes.loc[mask, 'Last Shown'] = current_time
 
         self.df_recipes.to_excel(FILE_NAME, index=False)
         return True
@@ -337,7 +383,7 @@ class CookITLogic:
             'Recipe Name': [name.encode(SYSTEM_ENCODING).decode('utf-8')],
             'URL': [url],
             'Comment': [comment.encode(SYSTEM_ENCODING).decode('utf-8')],
-            'Recency': [0]
+            'Last Shown': [pd.NaT]  # Initialize as NaT (Not a Time)
         })
 
         self.df_recipes = pd.concat([self.df_recipes, new_recipe], ignore_index=True)
