@@ -59,6 +59,7 @@ const CookITApp = () => {
   const [countdown, setCountdown] = useState(10);
   const [suggestedRecipes, setSuggestedRecipes] = useState(new Set());
   const [allRecipesShown, setAllRecipesShown] = useState(false);
+  const [lastSavedRecipe, setLastSavedRecipe] = useState(null);
 
   useEffect(() => {
     if (criticalError && countdown > 0) {
@@ -287,6 +288,11 @@ const handleDelete = async (recipe) => {
   }
 };
 
+  const handleSaveToHomescreen = (recipe) => {
+    setLastSavedRecipe(recipe);
+    showToast('Recipe saved to homescreen!', "success");
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -340,13 +346,30 @@ const handleDelete = async (recipe) => {
             )}
           </div>
         </CardHeader>
-        <CardContent className="space-y-4 mb-5">
+        <CardContent className="space-y-8 mb-5">
           <Button className="w-full cardButtonBg text-white transition-colors group" variant="default" onClick={handleChooseRecipe}>
             <div className="flex items-center transition-transform group-hover:scale-110">
               <BookOpen className="mr-2 h-5 w-5" />
               <span>Choose Recipe</span>
             </div>
           </Button>
+          {lastSavedRecipe && (
+            <Button
+              className="absolute flex items-center justify-center cursor-pointer z-20 group bg-transparent border-none"
+              style={{ top: "40%", left: "50%", transform: "translate(-50%, -50%)"}}
+              onClick={() => {
+                setChosenRecipe(lastSavedRecipe);
+                setIsRecipeDetailsOpen(true);
+              }}
+            >
+              <div className="flex items-end gap-1 text-[#6B4F37] transition-colors group-hover:text-[#A37B58]">
+                <BookOpen className="h-3 w-3 font-bold text-[#6B4F37] group-hover:text-[#A37B58]" />
+                <span className="text-[9px] font-bold leading-none flex items-end" style={{ transform: 'translateY(-2px)' }}>
+                  Last Saved Recipe
+                </span>
+              </div>
+            </Button>
+          )}
           <Dialog
             open={isAddRecipeOpen}
             onOpenChange={(open) => {
@@ -486,6 +509,7 @@ const handleDelete = async (recipe) => {
             onCommentChange={handleCommentChange}
             onDelete={handleDelete}
             onAllRecipesShown={() => setAllRecipesShown(true)}
+            onSaveToHomescreen={handleSaveToHomescreen}
           />
         )}
       </Suspense>

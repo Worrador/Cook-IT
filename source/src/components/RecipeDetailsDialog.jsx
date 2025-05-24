@@ -11,7 +11,7 @@ import { Label } from './label';
 import { Input } from './input';
 import { ChefHat, ArrowRight, Pencil, PenLine, Trash2, ThumbsUp, RefreshCcw } from 'lucide-react';
 
-const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUncook, onCommentChange, onDelete, onAllRecipesShown }) => {
+const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUncook, onCommentChange, onDelete, onAllRecipesShown, onSaveToHomescreen }) => {
   const [isEditingComment, setIsEditingComment] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [hasClickedCook, setHasClickedCook] = useState(false);
@@ -174,14 +174,26 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
               </Button>
             </>
           ) : (
-            <Button
-              variant="outline"
-              onClick={handleChangeMind}
-              className="col-span-2 border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2] flex items-center gap-2"
-            >
-              I changed my mind
-              <RefreshCcw className="h-4 w-4" />
-            </Button>
+            <>
+              <Button
+                className="w-full cardButtonBg2 text-white transition-colors group"
+                variant="default"
+                onClick={() => onSaveToHomescreen(recipe)}
+              >
+                <div className="flex items-center transition-transform group-hover:scale-110 gap-2">
+                  <ThumbsUp className="h-4 w-4" />
+                  Save recipe to homescreen
+                </div>
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleChangeMind}
+                className="col-span-2 border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2] flex items-center gap-2"
+              >
+                I changed my mind
+                <RefreshCcw className="h-4 w-4" />
+              </Button>
+            </>
           )}
         </DialogFooter>
       </DialogContent>
