@@ -188,11 +188,32 @@
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #e4d9c9;
   border-radius: 10px;
-
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   border-radius: 10px;
   background: #A37B58;
   cursor: pointer;
+}
+
+/* Add new styles for vertical scrolling */
+.custom-scrollbar.recipe-name {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  max-height: 38px !important;
+}
+
+/* Specific style for recipe name */
+.custom-scrollbar.recipe-name {
+  max-width: calc(100% - 7px) !important;
+  padding-right: 8px !important;
+  margin-right: -7px !important;
+}
+
+/* Specific style for recipe comment */
+.custom-scrollbar.recipe-comment {
+  max-height: 46px !important;
+  padding-right: 8px !important;
 }

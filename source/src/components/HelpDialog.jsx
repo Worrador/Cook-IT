@@ -12,7 +12,7 @@ import { ChefHat, Lock } from 'lucide-react';
 const HelpDialog = ({ isOpen, setIsOpen }) => {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-[425px] max-h-[75vh] overflow-y-auto bg-[#fbf7f0] custom-scrollbar" hideCloseButton>
+      <DialogContent className="sm:max-w-[425px] max-h-[78vh] overflow-y-auto bg-[#fbf7f0] custom-scrollbar" hideCloseButton>
         <DialogHeader>
           <DialogTitle className="flex items-center justify-center gap-2 text-xl text-[#181818] font-bold">
             <ChefHat className="h-8 w-8 text-[#181818]" />

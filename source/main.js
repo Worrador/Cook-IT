@@ -61,8 +61,8 @@ function getPythonPath() {
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 450,
-    height: 384,
+    width: 445,
+    height: 385,
     frame: false,
     transparent: true,
     backgroundColor: 'rgba(0, 0, 0, 0)',
@@ -221,6 +221,10 @@ ipcMain.handle('update-recency', async (event, cookedRecipes) => {
 
 ipcMain.handle('delete-recipe', async (event, recipe) => {
   return sendToPython({ action: 'delete-recipe', recipe });
+});
+
+ipcMain.handle('open-recipe-book', async () => {
+  return sendToPython({ action: 'open-recipe-book' });
 });
 
 function sendToPython(message) {

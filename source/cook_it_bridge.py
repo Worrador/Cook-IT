@@ -137,6 +137,30 @@ class AsyncCookITBridge:
                 webbrowser.open(request['url'])
                 return {"success": True}
 
+            if action == 'open-recipe-book':
+                try:
+                    if not self.offline_mode:
+                        # In online mode, open the Google Drive file
+                        file_url = f"https://drive.google.com/file/d/{self.logic.file_id}/view"
+                        webbrowser.open(file_url)
+                    else:
+                        # In offline mode, open the local file
+                        import os
+                        import subprocess
+                        file_path = os.path.abspath("Recipes.xlsx")
+                        if os.path.exists(file_path):
+                            if sys.platform == 'win32':
+                                os.startfile(file_path)
+                            elif sys.platform == 'darwin':  # macOS
+                                subprocess.run(['open', file_path])
+                            else:  # Linux
+                                subprocess.run(['xdg-open', file_path])
+                        else:
+                            return {"error": "Local recipe book not found"}
+                    return {"success": True}
+                except Exception as e:
+                    return {"error": str(e)}
+
             if action == 'update-recency':
                 recipe_names = [r['name'] for r in request['cookedRecipes']]
                 def update():

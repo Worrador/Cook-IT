@@ -105,12 +105,12 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
           <div className="grid grid-cols-12 items-center gap-4">
             <Label className="col-span-3 text-right font-medium">Name</Label>
             <div className="col-span-8 flex items-center">
-              <div className="text-sm overflow-x-auto whitespace-nowrap custom-scrollbar max-w-[calc(100%-8px)] h-[38px] pt-2">
+              <div className="text-sm custom-scrollbar recipe-name max-w-[calc(100%-8px)] h-[38px] pt-2">
                 {recipe.name}
               </div>
             </div>
             <div className="col-span-1 flex justify-end">
-              <div onClick={handleDelete} className="cursor-pointer hover:bg-[#f7f0e2] p-2 rounded-md flex items-center group">
+              <div onClick={handleDelete} className="cursor-pointer hover:bg-[#f7f0e2] p-1 mr-0.5 rounded-md flex items-center group">
                 <div className="group-hover:rotate-12 transition-all">🗑️</div>
               </div>
             </div>
@@ -136,7 +136,7 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
                   onClick={handleCommentClick}
                   className="text-sm cursor-pointer hover:bg-[#f7f0e2] p-2 rounded-md flex w-full h-[46px]"
                 >
-                  <div className="overflow-x-auto whitespace-nowrap custom-scrollbar flex-grow flex items-center overflow-y-hidden mr-2">
+                  <div className="custom-scrollbar recipe-comment flex-grow flex items-center overflow-y-hidden mr-2">
                     {commentText || (
                       <span className="text-gray-400">Click to add comment...</span>
                     )}

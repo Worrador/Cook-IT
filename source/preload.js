@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateRecency: (cookedRecipes) => ipcRenderer.invoke('update-recency', cookedRecipes),
   deleteRecipe: (recipe) => ipcRenderer.invoke('delete-recipe', recipe),
   quit: () => ipcRenderer.invoke('quit'),
+  openRecipeBook: () => ipcRenderer.invoke('open-recipe-book'),
   getConnectionStatus: () => ipcRenderer.invoke('get-connection-status'),
   onConnectionStatusUpdate: (callback) => {
     // Remove any existing listeners to prevent duplicates
