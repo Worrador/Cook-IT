@@ -107,6 +107,9 @@ class AsyncCookITBridge:
 
                 recipe_name, url, comment, _ = self.logic.choose_recipe(suggested_recipes)
                 if recipe_name is None:
+                    # Check if the recipe book is empty
+                    if self.logic.recipe_count == 0:
+                        return {"empty": True, "no_recipes": True}
                     return {"empty": True}
 
                 return {
@@ -121,6 +124,17 @@ class AsyncCookITBridge:
                     self.logic.add_recipe(recipe['name'], recipe['url'], recipe['comment'])
                 self.drive_queue.put(add)
                 return {"success": True}
+
+            if action == 'add-sample-recipes':
+                try:
+                    def add_samples():
+                        self.logic.add_sample_recipes()
+                    # Execute immediately instead of queuing
+                    add_samples()
+                    return {"success": True}
+                except Exception as e:
+                    print(f"Error adding sample recipes: {e}", file=sys.stderr)
+                    return {"error": str(e)}
 
             if action == 'update-comment':
                 recipe = request['recipe']

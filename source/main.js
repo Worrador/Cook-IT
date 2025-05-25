@@ -227,6 +227,10 @@ ipcMain.handle('open-recipe-book', async () => {
   return sendToPython({ action: 'open-recipe-book' });
 });
 
+ipcMain.handle('add-sample-recipes', async () => {
+  return sendToPython({ action: 'add-sample-recipes' });
+});
+
 function sendToPython(message) {
   return new Promise((resolve, reject) => {
     let buffer = '';

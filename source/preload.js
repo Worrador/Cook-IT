@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners('connection-status-update');
     };
   },
+  addSampleRecipes: () => ipcRenderer.invoke('add-sample-recipes'),
 
   // Performance monitoring API
   getStartupMetrics: () => ipcRenderer.invoke('get-startup-metrics')

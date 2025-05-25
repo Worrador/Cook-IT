@@ -11,7 +11,7 @@ import { Label } from './label';
 import { Input } from './input';
 import { ChefHat, ArrowRight, Pencil, PenLine, Trash2, Pin, RefreshCcw } from 'lucide-react';
 
-const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUncook, onCommentChange, onDelete, onAllRecipesShown, onSaveToHomescreen }) => {
+const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUncook, onCommentChange, onDelete, onAllRecipesShown, onSaveToHomescreen, isSavedRecipe }) => {
   const [isEditingComment, setIsEditingComment] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [hasClickedCook, setHasClickedCook] = useState(false);
@@ -51,8 +51,11 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
 
   const handleCook = () => {
     window.electronAPI.openUrl(recipe.url);
-    setHasClickedCook(true);
-    onCook(recipe);
+    // Only update cooking state if it's not a saved recipe
+    if (!isSavedRecipe) {
+      setHasClickedCook(true);
+      onCook(recipe);
+    }
   };
 
   const handleNext = async () => {
@@ -94,11 +97,11 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-[425px] h-[300px] bg-[#fbf7f0]">
+      <DialogContent className={`sm:max-w-[425px] ${isSavedRecipe ? 'h-[250px]' : 'h-[300px]'} bg-[#fbf7f0]`}>
         <DialogHeader>
           <DialogTitle className="flex items-center justify-center gap-2 text-xl">
             <span className="text-lg">📜</span>
-            How about this recipe?
+            {isSavedRecipe ? "Last saved recipe" : "How about this recipe?"}
           </DialogTitle>
         </DialogHeader>
         <div className="grid gap-3 py-4">
@@ -160,25 +163,30 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
               >
                 <div className="flex items-center transition-transform group-hover:scale-110 gap-2">
                   <ChefHat className="h-4 w-4" />
-                  I will Cook IT!
+                  {isSavedRecipe ? "Open recipe" : "I will Cook IT!"}
                 </div>
               </Button>
-              <Button
-                variant="outline"
-                onClick={handleNext}
-                className="border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2] flex items-center gap-2"
-                disabled={noMoreRecipes}
-              >
-                {noMoreRecipes ? "No more recipes" : "Next"}
-                {!noMoreRecipes && <ArrowRight className="h-4 w-4" />}
-              </Button>
+              {!isSavedRecipe && (
+                <Button
+                  variant="outline"
+                  onClick={handleNext}
+                  className="border-[#3c2f1a] text-[#3c2f1a] hover:bg-[#f7f0e2] flex items-center gap-2"
+                  disabled={noMoreRecipes}
+                >
+                  {noMoreRecipes ? "No more recipes" : "Next"}
+                  {!noMoreRecipes && <ArrowRight className="h-4 w-4" />}
+                </Button>
+              )}
             </>
           ) : (
             <>
               <Button
                 className="w-full cardButtonBg2 text-white transition-colors group"
                 variant="default"
-                onClick={() => onSaveToHomescreen(recipe)}
+                onClick={() => {
+                  onSaveToHomescreen(recipe);
+                  setIsOpen(false);
+                }}
               >
                 <div className="flex items-center transition-transform group-hover:scale-110 gap-2">
                   <Pin className="h-[17px] w-[17px]" />

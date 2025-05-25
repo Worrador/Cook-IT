@@ -60,6 +60,7 @@ const CookITApp = () => {
   const [suggestedRecipes, setSuggestedRecipes] = useState(new Set());
   const [allRecipesShown, setAllRecipesShown] = useState(false);
   const [lastSavedRecipe, setLastSavedRecipe] = useState(null);
+  const [isRecipeBookEmpty, setIsRecipeBookEmpty] = useState(false);
 
   useEffect(() => {
     if (criticalError && countdown > 0) {
@@ -82,6 +83,10 @@ const CookITApp = () => {
     const initApp = async () => {
       try {
         const response = await window.electronAPI.initialize();
+
+        // Check if recipe book is empty
+        const recipe = await window.electronAPI.chooseRecipe([]);
+        setIsRecipeBookEmpty(recipe && recipe.empty && recipe.no_recipes);
 
         // Load the last saved recipe from localStorage
         const savedRecipe = localStorage.getItem('lastSavedRecipe');
@@ -164,6 +169,7 @@ const CookITApp = () => {
           setSuggestedRecipes(prev => new Set([...prev, recipe.name]));
           setChosenRecipe(recipe);
           setIsRecipeDetailsOpen(true);
+          setIsRecipeBookEmpty(false);
           return;
         }
 
@@ -172,9 +178,19 @@ const CookITApp = () => {
 
       // If we've tried 10 times and still haven't found a new recipe
       setSuggestedRecipes(new Set()); // Reset the set of seen recipes
-      showToast("No more recipes available! Starting fresh...", "info", () => {
-        setShowHelp(true);
-      });
+
+      // Check if the recipe book is empty
+      if (recipe && recipe.empty && recipe.no_recipes) {
+        setIsRecipeBookEmpty(true);
+        showToast("Your recipe book is empty! Add some recipes first.", "warning", () => {
+          setShowHelp(true);
+        });
+      } else {
+        setIsRecipeBookEmpty(false);
+        showToast("You've seen all recipes! Starting fresh...", "info", () => {
+          setShowHelp(true);
+        });
+      }
     } catch (error) {
       console.error('Error choosing recipe:', error);
       showToast('Error choosing recipe: ' + error.message, "error");
@@ -360,7 +376,7 @@ const handleDelete = async (recipe) => {
               <span>Choose Recipe</span>
             </div>
           </Button>
-          {lastSavedRecipe && (
+          {lastSavedRecipe && !isRecipeBookEmpty && localStorage.getItem('lastSavedRecipe') && (
             <Button
               className="absolute flex items-center justify-center cursor-pointer pt-0.5 group bg-transparent border-none"
               style={{ top: "40%", left: "50%", transform: "translate(-50%, -50%)"}}
@@ -382,10 +398,9 @@ const handleDelete = async (recipe) => {
             onOpenChange={(open) => {
               setIsAddRecipeOpen(open);
               if (open) {
-                // Ensure focus is set when dialog opens
                 setTimeout(() => {
                   firstInputRef.current?.focus();
-                }, 0); // Use a timeout to wait for the dialog to fully render
+                }, 0);
               } else {
                 setNewRecipe({ name: '', url: '', comment: '' });
               }
@@ -409,7 +424,7 @@ const handleDelete = async (recipe) => {
                   </Label>
                   <Input
                     id="name"
-                    ref={firstInputRef} // Attach the ref here
+                    ref={firstInputRef}
                     value={newRecipe.name}
                     onChange={(e) => setNewRecipe({ ...newRecipe, name: e.target.value })}
                     className={`col-span-3 border-transparent focus:outline-none focus:ring-0 focus:border-orange-500 border-2 addRecipeInputColor ${
@@ -458,18 +473,20 @@ const handleDelete = async (recipe) => {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Button
-            className="absolute flex items-center justify-center cursor-pointer  group bg-transparent border-none"
-            style={{ bottom: "96px", left: "50%", transform: "translateX(-50%)"}}
-            onClick={() => window.electronAPI.openRecipeBook()}
-          >
-            <div className="flex items-end gap-1 text-[#6B4F37] transition-colors group-hover:text-[#A37B58]">
-              <BookOpen className="h-3 w-3 font-bold text-[#6B4F37] group-hover:text-[#A37B58]" />
-              <span className="text-[9px] font-bold leading-none flex items-end" style={{ transform: 'translateY(-2px)' }}>
-                Open Recipe Book
-              </span>
-            </div>
-          </Button>
+          {!isRecipeBookEmpty && (
+            <Button
+              className="absolute flex items-center justify-center cursor-pointer group bg-transparent border-none"
+              style={{ bottom: "96px", left: "50%", transform: "translateX(-50%)"}}
+              onClick={() => window.electronAPI.openRecipeBook()}
+            >
+              <div className="flex items-end gap-1 text-[#6B4F37] transition-colors group-hover:text-[#A37B58]">
+                <BookOpen className="h-3 w-3 font-bold text-[#6B4F37] group-hover:text-[#A37B58]" />
+                <span className="text-[9px] font-bold leading-none flex items-end" style={{ transform: 'translateY(-2px)' }}>
+                  Open Recipe Book
+                </span>
+              </div>
+            </Button>
+          )}
         </CardContent>
         {showHelp && (
           <Button
@@ -529,6 +546,7 @@ const handleDelete = async (recipe) => {
             onDelete={handleDelete}
             onAllRecipesShown={() => setAllRecipesShown(true)}
             onSaveToHomescreen={handleSaveToHomescreen}
+            isSavedRecipe={chosenRecipe === lastSavedRecipe}
           />
         )}
       </Suspense>
@@ -556,7 +574,14 @@ const handleDelete = async (recipe) => {
       />
 
       <Suspense fallback={<LoadingFallback />}>
-        {isHelpOpen && <HelpDialog isOpen={isHelpOpen} setIsOpen={setIsHelpOpen} />}
+        {isHelpOpen && (
+          <HelpDialog
+            isOpen={isHelpOpen}
+            setIsOpen={setIsHelpOpen}
+            isRecipeBookEmpty={isRecipeBookEmpty}
+            onSampleRecipesAdded={() => setIsRecipeBookEmpty(false)}
+          />
+        )}
       </Suspense>
 
       <Suspense fallback={<LoadingFallback />}>

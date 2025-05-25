@@ -297,7 +297,7 @@ class CookITLogic:
     def calculate_recency(self, last_shown):
         """Calculate recency (0-100) based on time since last shown"""
         if pd.isna(last_shown):
-            return 0
+            return 0  # Never shown recipes get lowest priority
 
         current_time = pd.Timestamp.now()
         time_diff = (current_time - last_shown).total_seconds() / 3600  # hours
@@ -312,6 +312,11 @@ class CookITLogic:
         return max(100 - decay, 0)
 
     def choose_recipe(self, suggested_recipes=None):
+        # Initialize DataFrame if it doesn't exist
+        if self.df_recipes is None:
+            self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Last Shown'])
+            return None, None, None, None
+
         # Filter recipes and select based on recency
         if len(self.df_recipes) < 1:
             return None, None, None, None
@@ -357,6 +362,7 @@ class CookITLogic:
             )
 
     def update_recency(self, cooked_recipe_names):
+        """Update Last Shown time for cooked recipes"""
         current_time = pd.Timestamp.now()
 
         for recipe_name in cooked_recipe_names:
@@ -366,6 +372,7 @@ class CookITLogic:
             # Update last shown time for matched recipe
             self.df_recipes.loc[mask, 'Last Shown'] = current_time
 
+        # Save changes to file
         self.df_recipes.to_excel(FILE_NAME, index=False)
         return True
 
@@ -417,3 +424,122 @@ class CookITLogic:
             return True
 
         return False
+
+    def add_sample_recipes(self):
+        try:
+            # Initialize DataFrame if it doesn't exist
+            if self.df_recipes is None:
+                self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Last Shown'])
+
+            sample_recipes = [
+                {
+                    'name': 'Classic Margherita Pizza',
+                    'url': 'https://www.allrecipes.com/recipe/240376/homemade-margherita-pizza/',
+                    'comment': 'Perfect for a quick dinner. Try adding fresh basil leaves after baking.'
+                },
+                {
+                    'name': 'Chicken Tikka Masala',
+                    'url': 'https://www.allrecipes.com/recipe/239867/authentic-chicken-tikka-masala/',
+                    'comment': 'Serve with basmati rice and naan bread.'
+                },
+                {
+                    'name': 'Beef Bourguignon',
+                    'url': 'https://www.allrecipes.com/recipe/228654/classic-beef-bourguignon/',
+                    'comment': 'Best made a day ahead. Serve with crusty bread.'
+                },
+                {
+                    'name': 'Vegetable Stir Fry',
+                    'url': 'https://www.allrecipes.com/recipe/24074/quick-and-easy-vegetable-stir-fry/',
+                    'comment': 'Use any vegetables you have on hand.'
+                },
+                {
+                    'name': 'Chocolate Chip Cookies',
+                    'url': 'https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/',
+                    'comment': 'Add a pinch of sea salt on top before baking.'
+                },
+                {
+                    'name': 'Greek Salad',
+                    'url': 'https://www.allrecipes.com/recipe/214931/authentic-greek-salad/',
+                    'comment': 'Use high-quality feta cheese for best results.'
+                },
+                {
+                    'name': 'Pad Thai',
+                    'url': 'https://www.allrecipes.com/recipe/42968/pad-thai/',
+                    'comment': 'Don\'t skip the peanuts and lime!'
+                },
+                {
+                    'name': 'Beef Tacos',
+                    'url': 'https://www.allrecipes.com/recipe/239023/authentic-beef-tacos/',
+                    'comment': 'Serve with fresh salsa and guacamole.'
+                },
+                {
+                    'name': 'Vegetable Soup',
+                    'url': 'https://www.allrecipes.com/recipe/12982/vegetable-soup/',
+                    'comment': 'Freezes well. Add pasta just before serving.'
+                },
+                {
+                    'name': 'Chicken Curry',
+                    'url': 'https://www.allrecipes.com/recipe/212721/indian-chicken-curry-murgh-kari/',
+                    'comment': 'Adjust spice level to taste.'
+                },
+                {
+                    'name': 'Pasta Carbonara',
+                    'url': 'https://www.allrecipes.com/recipe/245775/spaghetti-alla-carbonara/',
+                    'comment': 'Use fresh eggs and good quality pancetta.'
+                },
+                {
+                    'name': 'Fish and Chips',
+                    'url': 'https://www.allrecipes.com/recipe/254365/fish-and-chips/',
+                    'comment': 'Serve with malt vinegar and tartar sauce.'
+                },
+                {
+                    'name': 'Chocolate Cake',
+                    'url': 'https://www.allrecipes.com/recipe/17981/one-bowl-chocolate-cake-iii/',
+                    'comment': 'Top with ganache for extra richness.'
+                },
+                {
+                    'name': 'Caesar Salad',
+                    'url': 'https://www.allrecipes.com/recipe/229064/classic-caesar-salad/',
+                    'comment': 'Make your own croutons for best results.'
+                },
+                {
+                    'name': 'Beef Stew',
+                    'url': 'https://www.allrecipes.com/recipe/14685/slow-cooker-beef-stew-i/',
+                    'comment': 'Perfect for cold winter days.'
+                },
+                {
+                    'name': 'Shrimp Scampi',
+                    'url': 'https://www.allrecipes.com/recipe/229960/shrimp-scampi-with-pasta/',
+                    'comment': 'Use fresh garlic and parsley.'
+                },
+                {
+                    'name': 'Apple Pie',
+                    'url': 'https://www.allrecipes.com/recipe/12682/apple-pie-by-grandma-ople/',
+                    'comment': 'Serve warm with vanilla ice cream.'
+                },
+                {
+                    'name': 'Chicken Noodle Soup',
+                    'url': 'https://www.allrecipes.com/recipe/26460/quick-and-easy-chicken-noodle-soup/',
+                    'comment': 'Add fresh herbs at the end.'
+                },
+                {
+                    'name': 'Beef Stir Fry',
+                    'url': 'https://www.allrecipes.com/recipe/228823/quick-beef-stir-fry/',
+                    'comment': 'Slice beef thinly against the grain.'
+                },
+                {
+                    'name': 'Chocolate Mousse',
+                    'url': 'https://www.allrecipes.com/recipe/25678/chocolate-mousse/',
+                    'comment': 'Chill for at least 2 hours before serving.'
+                }
+            ]
+
+            for recipe in sample_recipes:
+                self.add_recipe(recipe['name'], recipe['url'], recipe['comment'])
+
+            # Save the file after adding all recipes
+            self.df_recipes.to_excel(FILE_NAME, index=False)
+            return True
+        except Exception as e:
+            print(f"Error adding sample recipes: {e}", file=sys.stderr)
+            raise
