@@ -83,6 +83,12 @@ const CookITApp = () => {
       try {
         const response = await window.electronAPI.initialize();
 
+        // Load the last saved recipe from localStorage
+        const savedRecipe = localStorage.getItem('lastSavedRecipe');
+        if (savedRecipe) {
+          setLastSavedRecipe(JSON.parse(savedRecipe));
+        }
+
         // Register for status updates if status is pending
         if (response && response.statusPending) {
           window.electronAPI.onConnectionStatusUpdate((status) => {
@@ -290,6 +296,7 @@ const handleDelete = async (recipe) => {
 
   const handleSaveToHomescreen = (recipe) => {
     setLastSavedRecipe(recipe);
+    localStorage.setItem('lastSavedRecipe', JSON.stringify(recipe));
     showToast('Recipe saved to homescreen!', "success");
   };
 
@@ -355,15 +362,15 @@ const handleDelete = async (recipe) => {
           </Button>
           {lastSavedRecipe && (
             <Button
-              className="absolute flex items-center justify-center cursor-pointer z-20 group bg-transparent border-none"
+              className="absolute flex items-center justify-center cursor-pointer pt-0.5 group bg-transparent border-none"
               style={{ top: "40%", left: "50%", transform: "translate(-50%, -50%)"}}
               onClick={() => {
                 setChosenRecipe(lastSavedRecipe);
                 setIsRecipeDetailsOpen(true);
               }}
             >
-              <div className="flex items-end gap-1 text-[#6B4F37] transition-colors group-hover:text-[#A37B58]">
-                <History className="h-3 w-3 font-bold text-[#6B4F37] group-hover:text-[#A37B58]" />
+              <div className="flex items-end gap-1 text-[#d15521] transition-colors group-hover:text-[#e5855d]">
+                <History className="h-3 w-3 font-bold text-[#d15521] group-hover:text-[#e5855d]" />
                 <span className="text-[9px] font-bold leading-none flex items-end" style={{ transform: 'translateY(-2px)' }}>
                   Last Saved Recipe
                 </span>
@@ -452,8 +459,8 @@ const handleDelete = async (recipe) => {
             </DialogContent>
           </Dialog>
           <Button
-            className="absolute flex items-center justify-center cursor-pointer z-10 group bg-transparent border-none"
-            style={{ bottom: "95px", left: "50%", transform: "translateX(-50%)"}}
+            className="absolute flex items-center justify-center cursor-pointer  group bg-transparent border-none"
+            style={{ bottom: "96px", left: "50%", transform: "translateX(-50%)"}}
             onClick={() => window.electronAPI.openRecipeBook()}
           >
             <div className="flex items-end gap-1 text-[#6B4F37] transition-colors group-hover:text-[#A37B58]">
