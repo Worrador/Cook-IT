@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Card, CardHeader, CardContent, CardFooter } from './components/card.jsx';
 import { Button } from './components/button.jsx';
 import { Input } from './components/input.jsx';
-import { Loader2, ChefHat, PlusCircle, X, BookOpen, HelpCircle, Coffee, WifiOff, BookX } from 'lucide-react';
+import { Loader2, ChefHat, PlusCircle, X, BookOpen, HelpCircle, Coffee, WifiOff, BookX, Utensils, History, Pin } from 'lucide-react';
 import {
   Dialog,
   DialogTrigger,
@@ -349,7 +349,7 @@ const handleDelete = async (recipe) => {
         <CardContent className="space-y-8 mb-5">
           <Button className="w-full cardButtonBg text-white transition-colors group" variant="default" onClick={handleChooseRecipe}>
             <div className="flex items-center transition-transform group-hover:scale-110">
-              <BookOpen className="mr-2 h-5 w-5" />
+              <Utensils className="mr-2 h-5 w-5" />
               <span>Choose Recipe</span>
             </div>
           </Button>
@@ -363,7 +363,7 @@ const handleDelete = async (recipe) => {
               }}
             >
               <div className="flex items-end gap-1 text-[#6B4F37] transition-colors group-hover:text-[#A37B58]">
-                <BookOpen className="h-3 w-3 font-bold text-[#6B4F37] group-hover:text-[#A37B58]" />
+                <History className="h-3 w-3 font-bold text-[#6B4F37] group-hover:text-[#A37B58]" />
                 <span className="text-[9px] font-bold leading-none flex items-end" style={{ transform: 'translateY(-2px)' }}>
                   Last Saved Recipe
                 </span>

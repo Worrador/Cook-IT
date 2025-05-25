@@ -9,7 +9,7 @@ import {
 import { Button } from './button';
 import { Label } from './label';
 import { Input } from './input';
-import { ChefHat, ArrowRight, Pencil, PenLine, Trash2, ThumbsUp, RefreshCcw } from 'lucide-react';
+import { ChefHat, ArrowRight, Pencil, PenLine, Trash2, Pin, RefreshCcw } from 'lucide-react';
 
 const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUncook, onCommentChange, onDelete, onAllRecipesShown, onSaveToHomescreen }) => {
   const [isEditingComment, setIsEditingComment] = useState(false);
@@ -94,7 +94,7 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-[425px] h-[285px] bg-[#fbf7f0]">
+      <DialogContent className="sm:max-w-[425px] h-[300px] bg-[#fbf7f0]">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-center gap-2 text-xl">
             <span className="text-lg">📜</span>
@@ -181,7 +181,7 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
                 onClick={() => onSaveToHomescreen(recipe)}
               >
                 <div className="flex items-center transition-transform group-hover:scale-110 gap-2">
-                  <ThumbsUp className="h-4 w-4" />
+                  <Pin className="h-[17px] w-[17px]" />
                   Save recipe to homescreen
                 </div>
               </Button>
