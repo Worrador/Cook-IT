@@ -200,20 +200,15 @@
 .custom-scrollbar.recipe-name {
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  white-space: normal !important;
   word-wrap: break-word !important;
-  max-height: 38px !important;
+  max-height: 40px !important;
 }
 
-/* Specific style for recipe name */
-.custom-scrollbar.recipe-name {
-  max-width: calc(100% - 7px) !important;
-  padding-right: 8px !important;
-  margin-right: -7px !important;
-}
 
-/* Specific style for recipe comment */
 .custom-scrollbar.recipe-comment {
-  max-height: 46px !important;
-  padding-right: 8px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  word-wrap: break-word !important;
+  white-space: normal !important;
+  max-height: 60px !important;
 }

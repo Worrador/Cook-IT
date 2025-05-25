@@ -134,14 +134,14 @@ const RecipeDetailsDialog = ({ recipe, isOpen, setIsOpen, onNext, onCook, onUnco
               ) : (
                 <div
                   onClick={handleCommentClick}
-                  className="text-sm cursor-pointer hover:bg-[#f7f0e2] p-2 rounded-md flex w-full h-[46px]"
+                  className="text-sm cursor-pointer hover:bg-[#f7f0e2] p-2 pt-2 rounded-md flex w-full min-h-[46px] max-h-[60px]"
                 >
-                  <div className="custom-scrollbar recipe-comment flex-grow flex items-center overflow-y-hidden mr-2">
+                  <div className="custom-scrollbar recipe-comment flex-grow flex items-start overflow-y-auto mr-2">
                     {commentText || (
                       <span className="text-gray-400">Click to add comment...</span>
                     )}
                   </div>
-                  <div className="flex-shrink-0 flex items-center">
+                  <div className="flex-shrink-0 flex items-start pt-1">
                     <div className="group-hover:hidden">✏️</div>
                     <div className="hidden group-hover:block">✍️</div>
                   </div>
