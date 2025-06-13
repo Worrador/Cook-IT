@@ -63,7 +63,11 @@ class CookITLogic:
                         if col == 'Last Shown':
                             self.df_recipes[col] = pd.NaT  # Use NaT (Not a Time) for new recipes
                         else:
-                            self.df_recipes[col] = 0
+                            self.df_recipes[col] = ""
+
+                # Convert Last Shown to datetime
+                if 'Last Shown' in self.df_recipes.columns:
+                    self.df_recipes['Last Shown'] = pd.to_datetime(self.df_recipes['Last Shown'], errors='coerce')
 
                 return True
             except Exception as e:
@@ -76,7 +80,6 @@ class CookITLogic:
             results = self.service.files().list(
                 q=f"name='{FILE_NAME}' and trashed=false",
                 spaces='drive',
-                # Add 'sharedWithMe' to include files shared with the user
                 includeItemsFromAllDrives=True,
                 supportsAllDrives=True,
                 fields="files(id, name)").execute()
@@ -100,7 +103,7 @@ class CookITLogic:
             else:
                 # Create new file if not found
                 if self.df_recipes is None:
-                    self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Recency'])
+                    self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Last Shown'])
                 self.save_and_upload()
 
             self.sync_complete = True
@@ -113,13 +116,15 @@ class CookITLogic:
         """Save changes to local file only without attempting to upload to Drive"""
         try:
             with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
+                # Convert Last Shown to datetime format for Excel
+                if 'Last Shown' in self.df_recipes.columns:
+                    self.df_recipes['Last Shown'] = pd.to_datetime(self.df_recipes['Last Shown'])
+
                 self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
 
-                # Hide both Recency and Last Shown columns
-                if 'Recency' in self.df_recipes.columns:
-                    writer.sheets['Recipes'].column_dimensions['D'].hidden = True
+                # Hide Last Shown column
                 if 'Last Shown' in self.df_recipes.columns:
-                    writer.sheets['Recipes'].column_dimensions['E'].hidden = True
+                    writer.sheets['Recipes'].column_dimensions['D'].hidden = True
 
             return True
         except Exception as e:
@@ -194,6 +199,13 @@ class CookITLogic:
 
             remote_df = pd.read_excel(remote_temp)
             remote_df = remote_df.fillna("")
+
+            # Convert Last Shown to datetime in both dataframes
+            if 'Last Shown' in local_df.columns:
+                local_df['Last Shown'] = pd.to_datetime(local_df['Last Shown'], errors='coerce')
+            if 'Last Shown' in remote_df.columns:
+                remote_df['Last Shown'] = pd.to_datetime(remote_df['Last Shown'], errors='coerce')
+
             # Merge logic
             # Use recipe name, URL, and comment as composite key for comparison
             local_keys = set(zip(local_df['Recipe Name'], local_df['URL'], local_df['Comment']))
@@ -203,11 +215,12 @@ class CookITLogic:
             new_local = local_keys - remote_keys
             new_remote = remote_keys - local_keys
             total_diff = len(new_local) + len(new_remote)
+
             if total_diff == 0:
                 os.remove(remote_temp)
                 return local_df
 
-            print(f"Changes found both in remote and local Recipe book, number of differences: {str(total_diff)}", file=sys.stderr)
+            print(f"Changes found both in remote and local Recipe book, number of differences: {str(total_diff)}")
 
             # Create merged dataframe starting with remote data
             merged_df = remote_df.copy()
@@ -218,11 +231,8 @@ class CookITLogic:
             )]
             merged_df = pd.concat([merged_df, new_local_records], ignore_index=True)
 
-            # Update recency values
-            # Keep higher recency value between local and remote for matching recipes
-            merged_df['Recency'] = merged_df['Recency'].apply(lambda x: 0.0 if (x == "" or pd.isna(x)) else float(x))
-            local_df['Recency'] = local_df['Recency'].apply(lambda x: 0.0 if (x == "" or pd.isna(x)) else float(x))
-
+            # Update Last Shown values
+            # Keep the most recent Last Shown value between local and remote for matching recipes
             for idx, row in merged_df.iterrows():
                 key = (row['Recipe Name'], row['URL'], row['Comment'])
                 local_match = local_df[
@@ -232,14 +242,21 @@ class CookITLogic:
                 ]
 
                 if not local_match.empty:
-                    merged_df.at[idx, 'Recency'] = max(
-                        row['Recency'],
-                        local_match.iloc[0]['Recency']
-                    )
+                    local_last_shown = local_match.iloc[0]['Last Shown']
+                    remote_last_shown = row['Last Shown']
+
+                    # If either timestamp is NaT, use the non-NaT one
+                    if pd.isna(local_last_shown) and not pd.isna(remote_last_shown):
+                        merged_df.at[idx, 'Last Shown'] = remote_last_shown
+                    elif not pd.isna(local_last_shown) and pd.isna(remote_last_shown):
+                        merged_df.at[idx, 'Last Shown'] = local_last_shown
+                    # If both are valid timestamps, use the more recent one
+                    elif not pd.isna(local_last_shown) and not pd.isna(remote_last_shown):
+                        merged_df.at[idx, 'Last Shown'] = max(local_last_shown, remote_last_shown)
 
             # Cleanup
             os.remove(remote_temp)
-            print(f"Changes merged. Number of recipes locally before: {str(len(local_keys))}, Number of recipes after merge: {str(len(merged_df))}", file=sys.stderr)
+            print(f"Changes merged. Number of recipes locally before: {str(len(local_keys))}, Number of recipes after merge: {str(len(merged_df))}")
             return merged_df
 
         except Exception as e:
@@ -249,13 +266,15 @@ class CookITLogic:
     def save_and_upload(self):
         try:
             with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
+                # Convert Last Shown to datetime format for Excel
+                if 'Last Shown' in self.df_recipes.columns:
+                    self.df_recipes['Last Shown'] = pd.to_datetime(self.df_recipes['Last Shown'])
+
                 self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
 
-                # Hide both Recency and Last Shown columns
-                if 'Recency' in self.df_recipes.columns:
-                    writer.sheets['Recipes'].column_dimensions['D'].hidden = True
+                # Hide Last Shown column
                 if 'Last Shown' in self.df_recipes.columns:
-                    writer.sheets['Recipes'].column_dimensions['E'].hidden = True
+                    writer.sheets['Recipes'].column_dimensions['D'].hidden = True
 
             # Upload to Drive
             with open(FILE_NAME, 'rb') as file:
@@ -332,17 +351,14 @@ class CookITLogic:
 
         try:
             # Calculate weights based on recency
-            weights = available_recipes['Last Shown'].apply(self.calculate_recency)
+            # For recipes with no Last Shown value, use a high weight to prioritize them
+            weights = available_recipes['Last Shown'].apply(lambda x: 100 if pd.isna(x) else self.calculate_recency(x))
 
             # Normalize weights to sum to 1
             weights = weights / weights.sum()
 
             # Select a recipe using the weights
             random_recipe = available_recipes.sample(weights=weights)
-
-            # Update the last shown time for the selected recipe
-            self.df_recipes.loc[random_recipe.index, 'Last Shown'] = pd.Timestamp.now()
-            self.df_recipes.to_excel(FILE_NAME, index=False)
 
             return (
                 random_recipe['Recipe Name'].values[0],
