@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar } from 'react-native';
-import { Text, Surface, useTheme, IconButton, FAB, Portal, Dialog, Button as PaperButton, Provider as PaperProvider, MD3LightTheme } from 'react-native-paper';
+import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar, AppState } from 'react-native';
+import { Text, Surface, useTheme, IconButton, FAB, Portal, Dialog, Button as PaperButton, Provider as PaperProvider, MD3LightTheme, TextInput } from 'react-native-paper';
 import { Card, CardHeader, CardContent, CardFooter } from './src/components/Card';
 import { Button } from './src/components/Button';
 import { Input } from './src/components/Input';
 import { RecipeDetailsDialog } from './src/components/RecipeDetailsDialog';
-import { HelpDialog } from './src/components/HelpDialog';
+import HelpDialog from './src/components/HelpDialog';
 import { BuyCoffeeDialog } from './src/components/BuyCoffeeDialog';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
@@ -20,23 +20,24 @@ import {
   getPinnedRecipes,
   togglePinnedRecipe,
 } from './src/utils/storage';
+import { BlurView } from 'expo-blur';
 
 // Custom theme configuration
 const theme = {
   ...MD3LightTheme,
   colors: {
     ...MD3LightTheme.colors,
-    // Main colors from original app
-    primary: '#6B4F37', // Brown from headerItems
-    secondary: '#E06D3D', // Orange from cardButtonBg
-    tertiary: '#F2BC42', // Yellow from addNewRecipeBtnDisabled
-    background: '#FBE7A0', // Light yellow from cardBackground
-    surface: '#f7f0e2', // Light beige from commentBackground
-    error: '#d63031', // Red from error toast
+    // Main colors from original app - vibrant version with more muted background
+    primary: '#5A4230', // Slightly darker brown from headerItems
+    secondary: '#D86A3A', // Slightly muted orange from cardButtonBg
+    tertiary: '#F2BC42', // Original vibrant yellow from addNewRecipeBtnDisabled
+    background: '#F0DCA0', // More muted light yellow
+    surface: '#f7f0e2', // Original beige from commentBackground
+    error: '#d63031', // Keeping error red as is
     // Additional colors
-    accent: '#2C3E50', // Dark blue from cardQuitBtn
-    text: '#1F2937', // Dark gray from bg-dark
-    onSurface: '#6B4F37', // Brown for text on light backgrounds
+    accent: '#2C3E50', // Dark blue from cardQuitBtn - keeping this as it's perfect
+    text: '#1F2937', // Dark gray from bg-dark - keeping this as it's perfect
+    onSurface: '#5A4230', // Slightly darker brown for text on light backgrounds
   },
 };
 
@@ -55,20 +56,37 @@ const AppContent = () => {
   const [pinnedRecipes, setPinnedRecipes] = useState([]);
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
   const [fabVisible, setFabVisible] = useState(true);
+  const [appState, setAppState] = useState(AppState.currentState);
+  const [suggestedRecipes, setSuggestedRecipes] = useState(new Set());
+  const [isAnyDialogOpen, setIsAnyDialogOpen] = useState(false);
 
   useEffect(() => {
     // Hide status bar when component mounts
     StatusBar.setHidden(true);
 
+    // Listen for app state changes
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.match(/inactive|background/) && nextAppState === 'active') {
+        // App has come to the foreground
+        StatusBar.setHidden(true);
+      }
+      setAppState(nextAppState);
+    });
+
     // Show status bar when component unmounts
     return () => {
       StatusBar.setHidden(false);
+      subscription.remove();
     };
-  }, []);
+  }, [appState]);
 
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    setIsAnyDialogOpen(showAddModal || showRecipeDetails || showHelp || showBuyCoffee);
+  }, [showAddModal, showRecipeDetails, showHelp, showBuyCoffee]);
 
   const loadInitialData = async () => {
     try {
@@ -150,14 +168,50 @@ const AppContent = () => {
     setRecipes(updatedRecipes);
   };
 
-  const handleChooseRecipe = () => {
+  const handleChooseRecipe = async () => {
     if (recipes.length === 0) {
       Alert.alert('No Recipes', 'Please add some recipes first!');
       return;
     }
-    const randomIndex = Math.floor(Math.random() * recipes.length);
-    setSelectedRecipe(recipes[randomIndex]);
-    setShowRecipeDetails(true);
+
+    try {
+      let attempts = 0;
+      let recipe = null;
+
+      while (attempts < 10) {
+        const randomIndex = Math.floor(Math.random() * recipes.length);
+        recipe = recipes[randomIndex];
+
+        // If we got a recipe and it hasn't been shown before, use it
+        if (recipe && !suggestedRecipes.has(recipe.name)) {
+          setSuggestedRecipes(prev => new Set([...prev, recipe.name]));
+          setSelectedRecipe(recipe);
+          setShowRecipeDetails(true);
+          return;
+        }
+
+        attempts++;
+      }
+
+      // If we've tried 10 times and still haven't found a new recipe
+      setSuggestedRecipes(new Set()); // Reset the set of seen recipes
+      setSelectedRecipe(recipes[Math.floor(Math.random() * recipes.length)]);
+      setShowRecipeDetails(true);
+    } catch (error) {
+      console.error('Error choosing recipe:', error);
+      Alert.alert('Error', 'Failed to choose a recipe');
+    }
+  };
+
+  const handleNextRecipe = async () => {
+    if (suggestedRecipes.size >= recipes.length) {
+      // If we've shown all recipes, reset and start fresh
+      setSuggestedRecipes(new Set());
+      return { empty: true };
+    }
+
+    await handleChooseRecipe();
+    return selectedRecipe;
   };
 
   const handleQuit = () => {
@@ -202,6 +256,9 @@ const AppContent = () => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar backgroundColor={theme.colors.primary} />
+      {isAnyDialogOpen && (
+        <View style={styles.dialogOverlay} />
+      )}
       <Surface style={[styles.header, { backgroundColor: theme.colors.primary }]} elevation={4}>
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
@@ -219,6 +276,12 @@ const AppContent = () => {
               onPress={() => setShowHelp(true)}
             />
             <IconButton
+              icon={showPinnedOnly ? "pin-off" : "pin"}
+              size={24}
+              iconColor={theme.colors.tertiary}
+              onPress={() => setShowPinnedOnly(!showPinnedOnly)}
+            />
+            <IconButton
               icon="coffee"
               size={24}
               iconColor={theme.colors.tertiary}
@@ -229,40 +292,31 @@ const AppContent = () => {
       </Surface>
 
       <View style={styles.mainButtons}>
-        <Surface style={[styles.buttonCard, { backgroundColor: theme.colors.surface }]} elevation={2}>
-          <Button
-            onPress={handleChooseRecipe}
-            style={[styles.mainButton, { backgroundColor: theme.colors.secondary }]}
-            icon="shuffle"
-          >
-            Choose Recipe
-          </Button>
-          <Button
-            onPress={() => setShowAddModal(true)}
-            style={[styles.mainButton, { backgroundColor: theme.colors.primary }]}
-            icon="plus"
-          >
-            Add Recipe
-          </Button>
-          <Button
-            onPress={() => setShowPinnedOnly(!showPinnedOnly)}
-            style={[
-              styles.mainButton,
-              showPinnedOnly ? { backgroundColor: theme.colors.tertiary } : { backgroundColor: theme.colors.primary }
-            ]}
-            icon={showPinnedOnly ? "pin-off" : "pin"}
-          >
-            {showPinnedOnly ? 'Show All' : 'Pinned Recipes'}
-          </Button>
-          <Button
-            onPress={handleQuit}
-            style={[styles.mainButton, { backgroundColor: theme.colors.accent }]}
-            variant="destructive"
-            icon="exit-to-app"
-          >
-            Quit
-          </Button>
-        </Surface>
+        <Button
+          onPress={handleChooseRecipe}
+          style={[styles.mainButton, { backgroundColor: theme.colors.secondary }]}
+          icon="shuffle"
+          labelStyle={styles.mainButtonLabel}
+        >
+          Choose Recipe
+        </Button>
+        <Button
+          onPress={() => setShowAddModal(true)}
+          style={[styles.mainButton, { backgroundColor: theme.colors.primary }]}
+          icon="plus"
+          labelStyle={styles.mainButtonLabel}
+        >
+          Add Recipe
+        </Button>
+        <Button
+          onPress={handleQuit}
+          style={[styles.mainButton, { backgroundColor: theme.colors.accent }]}
+          variant="destructive"
+          icon="exit-to-app"
+          labelStyle={styles.mainButtonLabel}
+        >
+          Quit
+        </Button>
       </View>
 
       <FlatList
@@ -315,38 +369,73 @@ const AppContent = () => {
           visible={showAddModal}
           animationType="slide"
           transparent={true}
+          statusBarTranslucent={true}
         >
           <View style={styles.modalContainer}>
             <Surface style={[styles.modalContent, { backgroundColor: theme.colors.surface }]} elevation={4}>
               <Text style={[styles.modalTitle, { color: theme.colors.onSurface }]}>Add New Recipe</Text>
-              <Input
-                label="Recipe Name"
-                value={newRecipe.name}
-                onChangeText={(text) => setNewRecipe({ ...newRecipe, name: text })}
-                placeholder="Enter recipe name"
-                error={error}
-              />
-              <Input
-                label="Recipe URL"
-                value={newRecipe.url}
-                onChangeText={(text) => setNewRecipe({ ...newRecipe, url: text })}
-                placeholder="Enter recipe URL (optional)"
-              />
-              <Input
-                label="Comments"
-                value={newRecipe.comment}
-                onChangeText={(text) => setNewRecipe({ ...newRecipe, comment: text })}
-                placeholder="Add any comments (optional)"
-                multiline
-                numberOfLines={3}
-              />
+              <View style={styles.inputContainer}>
+                <View style={styles.inputRow}>
+                  <Text style={[styles.inputLabel, { color: theme.colors.onSurface }]}>Name</Text>
+                  <TextInput
+                    value={newRecipe.name}
+                    onChangeText={(text) => setNewRecipe({ ...newRecipe, name: text })}
+                    style={[styles.input, { backgroundColor: theme.colors.background }]}
+                    placeholder="Enter recipe name"
+                    placeholderTextColor={`${theme.colors.primary}66`}
+                    error={!!error}
+                    mode="outlined"
+                    outlineStyle={{ borderRadius: 12 }}
+                  />
+                </View>
+                <View style={styles.inputRow}>
+                  <Text style={[styles.inputLabel, { color: theme.colors.onSurface }]}>URL</Text>
+                  <TextInput
+                    value={newRecipe.url}
+                    onChangeText={(text) => setNewRecipe({ ...newRecipe, url: text })}
+                    style={[styles.input, { backgroundColor: theme.colors.background }]}
+                    placeholder="Enter recipe URL"
+                    placeholderTextColor={`${theme.colors.primary}66`}
+                    keyboardType="url"
+                    autoCapitalize="none"
+                    mode="outlined"
+                    outlineStyle={{ borderRadius: 12 }}
+                  />
+                </View>
+                <View style={styles.inputRow}>
+                  <Text style={[styles.inputLabel, { color: theme.colors.onSurface }]}>Comment</Text>
+                  <TextInput
+                    value={newRecipe.comment}
+                    onChangeText={(text) => setNewRecipe({ ...newRecipe, comment: text })}
+                    style={[styles.input, { backgroundColor: theme.colors.background }]}
+                    placeholder="Add any comments"
+                    placeholderTextColor={`${theme.colors.primary}66`}
+                    multiline
+                    numberOfLines={3}
+                    mode="outlined"
+                    outlineStyle={{ borderRadius: 12 }}
+                    contentStyle={{ textAlignVertical: 'center' }}
+                  />
+                </View>
+              </View>
               <View style={styles.modalButtons}>
                 <PaperButton
                   mode="contained"
                   onPress={handleAddRecipe}
-                  style={[styles.modalButton, { backgroundColor: theme.colors.primary }]}
+                  style={[
+                    styles.modalButton,
+                    {
+                      backgroundColor: (newRecipe.name && newRecipe.url)
+                        ? theme.colors.primary
+                        : theme.colors.background,
+                      opacity: (newRecipe.name && newRecipe.url) ? 1 : 0.7
+                    }
+                  ]}
+                  textColor={(newRecipe.name && newRecipe.url) ? theme.colors.surface : theme.colors.onSurface}
+                  disabled={!newRecipe.name || !newRecipe.url}
+                  disabledTextColor={theme.colors.onSurface}
                 >
-                  Add
+                  Add Recipe
                 </PaperButton>
                 <PaperButton
                   mode="outlined"
@@ -377,12 +466,23 @@ const AppContent = () => {
         onCook={handleCook}
         onUncook={handleUncook}
         onUpdate={handleUpdateRecipe}
+        onNext={handleNextRecipe}
       />
 
-      <HelpDialog
-        visible={showHelp}
-        onClose={() => setShowHelp(false)}
-      />
+      <Portal>
+        <Modal
+          visible={showHelp}
+          animationType="slide"
+          transparent={true}
+          statusBarTranslucent={true}
+        >
+          <View style={[styles.modalContainer, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
+            <Surface style={[styles.modalContent, { backgroundColor: theme.colors.surface, height: '90%', width: '90%' }]} elevation={4}>
+              <HelpDialog onClose={() => setShowHelp(false)} />
+            </Surface>
+          </View>
+        </Modal>
+      </Portal>
 
       <BuyCoffeeDialog
         visible={showBuyCoffee}
@@ -441,15 +541,17 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   mainButtons: {
-    padding: 16,
-  },
-  buttonCard: {
-    borderRadius: 12,
-    padding: 16,
+    padding: 20,
+    gap: 16,
   },
   mainButton: {
-    marginBottom: 12,
-    borderRadius: 8,
+    borderRadius: 12,
+    paddingVertical: 8,
+  },
+  mainButtonLabel: {
+    fontSize: 24,
+    fontWeight: '600',
+    paddingVertical: 2,
   },
   recipeCard: {
     marginBottom: 16,
@@ -498,32 +600,60 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(107, 79, 55, 0.5)', // Brown with opacity
   },
   modalContent: {
     borderRadius: 12,
     padding: 24,
-    width: '90%',
     maxWidth: 400,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '600',
-    marginBottom: 16,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  inputContainer: {
+    gap: 24,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  inputLabel: {
+    width: 80,
+    textAlign: 'right',
+    fontSize: 16,
+    fontWeight: '500',
+    paddingTop: 0,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
   },
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginTop: 16,
-    gap: 8,
+    marginTop: 32,
+    gap: 12,
   },
   modalButton: {
-    minWidth: 100,
+    minWidth: 120,
+    paddingVertical: 4,
   },
   list: {
     flex: 1,
   },
   listContent: {
     padding: 16,
+  },
+  dialogOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 1000,
   },
 });

@@ -4,3 +4,4 @@ token.json
 *.xlsx
 *.pyc
 node_modules
+CookITMobile/**/*

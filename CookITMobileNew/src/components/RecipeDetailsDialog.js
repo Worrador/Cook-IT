@@ -1,219 +1,216 @@
-import React from 'react';
-import { View, Text, StyleSheet, Modal, ScrollView, Linking } from 'react-native';
-import { Card, CardHeader, CardContent, CardFooter } from './Card';
-import { Button } from './Button';
-import { Input } from './Input';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, StyleSheet, ScrollView } from 'react-native';
+import { Dialog, Portal, Text, Button, TextInput, useTheme } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-export const RecipeDetailsDialog = ({
-  visible,
-  recipe,
-  onClose,
-  onDelete,
-  onCook,
-  onUncook,
-  onUpdate,
-}) => {
-  const [editedRecipe, setEditedRecipe] = React.useState(null);
-  const [isEditing, setIsEditing] = React.useState(false);
+export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook, onUncook, onUpdate, onNext }) => {
+  const theme = useTheme();
+  const [isEditingComment, setIsEditingComment] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [hasClickedCook, setHasClickedCook] = useState(false);
+  const [noMoreRecipes, setNoMoreRecipes] = useState(false);
+  const commentInputRef = useRef(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (recipe) {
-      setEditedRecipe(recipe);
+      setCommentText(recipe.comment || '');
     }
   }, [recipe]);
 
-  const handleSave = async () => {
-    if (editedRecipe && recipe) {
-      await onUpdate(recipe.name, editedRecipe);
-      setIsEditing(false);
+  useEffect(() => {
+    if (!visible) {
+      setHasClickedCook(false);
+      setIsEditingComment(false);
+      setNoMoreRecipes(false);
+    }
+  }, [visible]);
+
+  if (!recipe) return null;
+
+  const handleCommentSave = async () => {
+    try {
+      await onUpdate(recipe.name, { ...recipe, comment: commentText });
+      setIsEditingComment(false);
+    } catch (error) {
+      console.error('Error saving comment:', error);
     }
   };
 
-  const handleOpenUrl = async () => {
-    if (editedRecipe?.url) {
-      try {
-        await Linking.openURL(editedRecipe.url);
-      } catch (error) {
-        console.error('Error opening URL:', error);
+  const handleChangeMind = () => {
+    setHasClickedCook(false);
+    onUncook(recipe.name);
+  };
+
+  const handleCook = () => {
+    setHasClickedCook(true);
+    onCook(recipe.name);
+  };
+
+  const handleNext = async () => {
+    setIsEditingComment(false);
+    setHasClickedCook(false);
+    try {
+      const nextRecipe = await onNext();
+      if (nextRecipe && nextRecipe.empty) {
+        setNoMoreRecipes(true);
       }
+    } catch (error) {
+      console.error('Error getting next recipe:', error);
     }
   };
-
-  if (!recipe || !editedRecipe) {
-    return null;
-  }
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalContainer}>
-        <View style={styles.modalContent}>
-          <ScrollView>
-            <Card>
-              <CardHeader>
-                <Text style={styles.title}>Recipe Details</Text>
-              </CardHeader>
-              <CardContent>
-                {isEditing ? (
-                  <>
-                    <Input
-                      label="Recipe Name"
-                      value={editedRecipe.name}
-                      onChangeText={(text) => setEditedRecipe({ ...editedRecipe, name: text })}
-                      placeholder="Enter recipe name"
-                    />
-                    <Input
-                      label="Recipe URL"
-                      value={editedRecipe.url || ''}
-                      onChangeText={(text) => setEditedRecipe({ ...editedRecipe, url: text })}
-                      placeholder="Enter recipe URL (optional)"
-                    />
-                    <Input
-                      label="Comments"
-                      value={editedRecipe.comment || ''}
-                      onChangeText={(text) => setEditedRecipe({ ...editedRecipe, comment: text })}
-                      placeholder="Add any comments (optional)"
-                      multiline
-                      numberOfLines={3}
-                    />
-                  </>
+    <Portal>
+      <Dialog visible={visible} onDismiss={onClose} style={styles.dialog}>
+        <Dialog.Title style={[styles.title, { color: theme.colors.onSurface }]}>
+          <MaterialCommunityIcons name="book-open-variant" size={24} color={theme.colors.onSurface} style={styles.titleIcon} />
+          How about this recipe?
+        </Dialog.Title>
+        <Dialog.Content>
+          <View style={styles.content}>
+            <View style={styles.row}>
+              <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
+              <View style={styles.nameContainer}>
+                <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
+                <Button
+                  icon="delete"
+                  onPress={() => onDelete(recipe.name)}
+                  style={styles.deleteButton}
+                  textColor={theme.colors.error}
+                />
+              </View>
+            </View>
+            <View style={styles.row}>
+              <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
+              <View style={styles.commentContainer}>
+                {isEditingComment ? (
+                  <TextInput
+                    ref={commentInputRef}
+                    value={commentText}
+                    onChangeText={setCommentText}
+                    onBlur={handleCommentSave}
+                    style={[styles.commentInput, { backgroundColor: theme.colors.surface }]}
+                    placeholder="Add a comment..."
+                    multiline
+                    autoFocus
+                  />
                 ) : (
-                  <>
-                    <Text style={styles.recipeName}>{editedRecipe.name}</Text>
-                    {editedRecipe.url && (
-                      <Text style={styles.url} onPress={handleOpenUrl}>
-                        {editedRecipe.url}
-                      </Text>
-                    )}
-                    {editedRecipe.comment && (
-                      <Text style={styles.comment}>{editedRecipe.comment}</Text>
-                    )}
-                    <Text style={styles.date}>
-                      Added: {new Date(editedRecipe.createdAt).toLocaleDateString()}
-                    </Text>
-                  </>
+                  <Button
+                    mode="text"
+                    onPress={() => setIsEditingComment(true)}
+                    style={styles.commentButton}
+                    textColor={theme.colors.onSurface}
+                  >
+                    {commentText || "Click to add comment..."}
+                  </Button>
                 )}
-              </CardContent>
-              <CardFooter>
-                {isEditing ? (
-                  <>
-                    <Button
-                      variant="secondary"
-                      onPress={() => {
-                        setEditedRecipe(recipe);
-                        setIsEditing(false);
-                      }}
-                      style={styles.button}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onPress={handleSave}
-                      style={styles.button}
-                    >
-                      Save
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="ghost"
-                      onPress={() => setIsEditing(true)}
-                      style={styles.button}
-                    >
-                      Edit
-                    </Button>
-                    {editedRecipe.cooked ? (
-                      <Button
-                        variant="secondary"
-                        onPress={() => onUncook(editedRecipe.name)}
-                        style={styles.button}
-                      >
-                        Mark as Uncooked
-                      </Button>
-                    ) : (
-                      <Button
-                        onPress={() => onCook(editedRecipe.name)}
-                        style={styles.button}
-                      >
-                        Mark as Cooked
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      onPress={() => onDelete(editedRecipe.name)}
-                      style={styles.button}
-                    >
-                      Delete
-                    </Button>
-                  </>
-                )}
-              </CardFooter>
-            </Card>
-          </ScrollView>
-          <Button
-            variant="secondary"
-            onPress={onClose}
-            style={styles.closeButton}
-          >
-            Close
-          </Button>
-        </View>
-      </View>
-    </Modal>
+              </View>
+            </View>
+          </View>
+        </Dialog.Content>
+        <Dialog.Actions style={styles.actions}>
+          {!hasClickedCook ? (
+            <View style={styles.buttonContainer}>
+              <Button
+                mode="outlined"
+                onPress={handleNext}
+                style={[styles.actionButton, { borderColor: theme.colors.primary }]}
+                textColor={theme.colors.primary}
+                icon="arrow-right"
+                disabled={noMoreRecipes}
+              >
+                {noMoreRecipes ? "No more recipes" : "Next"}
+              </Button>
+              <Button
+                mode="contained"
+                onPress={handleCook}
+                style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
+                icon="chef-hat"
+              >
+                I will Cook IT!
+              </Button>
+            </View>
+          ) : (
+            <>
+              <Button
+                mode="contained"
+                onPress={handleChangeMind}
+                style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
+                icon="refresh"
+              >
+                Change my mind
+              </Button>
+            </>
+          )}
+        </Dialog.Actions>
+      </Dialog>
+    </Portal>
   );
 };
 
 const styles = StyleSheet.create({
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 24,
-    width: '90%',
-    maxWidth: 400,
-    maxHeight: '80%',
+  dialog: {
+    backgroundColor: '#fbf7f0',
   },
   title: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 16,
+    textAlign: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  titleIcon: {
+    marginRight: 8,
+  },
+  content: {
+    gap: 16,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 16,
+  },
+  label: {
+    width: 80,
+    textAlign: 'right',
+    fontSize: 16,
+    fontWeight: '500',
+    paddingTop: 8,
+  },
+  nameContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   recipeName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 8,
+    flex: 1,
+    fontSize: 16,
+    marginRight: 8,
   },
-  url: {
-    fontSize: 14,
-    color: '#2563eb',
-    textDecorationLine: 'underline',
-    marginBottom: 8,
+  deleteButton: {
+    margin: 0,
   },
-  comment: {
-    fontSize: 14,
-    color: '#4b5563',
-    marginBottom: 8,
+  commentContainer: {
+    flex: 1,
   },
-  date: {
-    fontSize: 12,
-    color: '#6b7280',
+  commentInput: {
+    fontSize: 16,
   },
-  button: {
-    marginLeft: 8,
+  commentButton: {
+    alignItems: 'flex-start',
+    padding: 0,
   },
-  closeButton: {
-    marginTop: 16,
+  actions: {
+    padding: 16,
+    gap: 8,
+  },
+  buttonContainer: {
+    width: '100%',
+    gap: 8,
+  },
+  actionButton: {
+    width: '100%',
   },
 });
