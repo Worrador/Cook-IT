@@ -1,47 +1,112 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert } from 'react-native';
 import { Card, CardHeader, CardContent, CardFooter } from './src/components/Card';
 import { Button } from './src/components/Button';
 import { Input } from './src/components/Input';
-import { loadRecipes, addRecipe, deleteRecipe } from './src/utils/storage';
+import { RecipeDetailsDialog } from './src/components/RecipeDetailsDialog';
+import { HelpDialog } from './src/components/HelpDialog';
+import {
+  loadRecipes,
+  addRecipe,
+  deleteRecipe,
+  updateRecipe,
+  getCookedRecipes,
+  setCookedStatus,
+  getTutorialCount,
+  incrementTutorialCount,
+} from './src/utils/storage';
 
 export default function App() {
   const [recipes, setRecipes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newRecipe, setNewRecipe] = useState('');
+  const [newRecipe, setNewRecipe] = useState({ name: '', url: '', comment: '' });
   const [error, setError] = useState('');
+  const [showRecipeDetails, setShowRecipeDetails] = useState(false);
+  const [selectedRecipe, setSelectedRecipe] = useState(null);
+  const [showHelp, setShowHelp] = useState(false);
+  const [cookedRecipes, setCookedRecipes] = useState({});
 
   useEffect(() => {
-    loadInitialRecipes();
+    loadInitialData();
   }, []);
 
-  const loadInitialRecipes = async () => {
-    const loadedRecipes = await loadRecipes();
-    setRecipes(loadedRecipes);
-    setIsLoading(false);
+  const loadInitialData = async () => {
+    try {
+      const [loadedRecipes, loadedCookedRecipes, tutorialCount] = await Promise.all([
+        loadRecipes(),
+        getCookedRecipes(),
+        getTutorialCount(),
+      ]);
+
+      setRecipes(loadedRecipes);
+      setCookedRecipes(loadedCookedRecipes);
+      setIsLoading(false);
+
+      // Show help if tutorial count is less than 5
+      if (tutorialCount < 5) {
+        setShowHelp(true);
+        await incrementTutorialCount();
+      }
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+      setIsLoading(false);
+    }
   };
 
   const handleAddRecipe = async () => {
-    if (!newRecipe.trim()) {
+    if (!newRecipe.name.trim()) {
       setError('Recipe name is required');
       return;
     }
 
     const recipe = {
-      name: newRecipe.trim(),
-      createdAt: new Date().toISOString(),
+      name: newRecipe.name.trim(),
+      url: newRecipe.url.trim(),
+      comment: newRecipe.comment.trim(),
     };
 
     const updatedRecipes = await addRecipe(recipe);
     setRecipes(updatedRecipes);
-    setNewRecipe('');
+    setNewRecipe({ name: '', url: '', comment: '' });
     setShowAddModal(false);
     setError('');
   };
 
   const handleDeleteRecipe = async (recipeName) => {
-    const updatedRecipes = await deleteRecipe(recipeName);
+    Alert.alert(
+      'Delete Recipe',
+      'Are you sure you want to delete this recipe?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const updatedRecipes = await deleteRecipe(recipeName);
+            setRecipes(updatedRecipes);
+            setShowRecipeDetails(false);
+          },
+        },
+      ],
+    );
+  };
+
+  const handleCook = async (recipeName) => {
+    const updatedCookedRecipes = await setCookedStatus(recipeName, true);
+    setCookedRecipes(updatedCookedRecipes);
+  };
+
+  const handleUncook = async (recipeName) => {
+    const updatedCookedRecipes = await setCookedStatus(recipeName, false);
+    setCookedRecipes(updatedCookedRecipes);
+  };
+
+  const handleUpdateRecipe = async (oldName, updatedRecipe) => {
+    const updatedRecipes = await updateRecipe(oldName, updatedRecipe);
     setRecipes(updatedRecipes);
   };
 
@@ -58,6 +123,13 @@ export default function App() {
       <View style={styles.header}>
         <Text style={styles.title}>CookIT</Text>
         <Text style={styles.subtitle}>Your Recipe Manager</Text>
+        <Button
+          variant="ghost"
+          onPress={() => setShowHelp(true)}
+          style={styles.helpButton}
+        >
+          Help
+        </Button>
       </View>
 
       <Button
@@ -71,24 +143,31 @@ export default function App() {
         data={recipes}
         keyExtractor={(item) => item.name}
         renderItem={({ item }) => (
-          <Card>
-            <CardHeader>
-              <Text style={styles.recipeName}>{item.name}</Text>
-            </CardHeader>
-            <CardContent>
-              <Text style={styles.recipeDate}>
-                Added: {new Date(item.createdAt).toLocaleDateString()}
-              </Text>
-            </CardContent>
-            <CardFooter>
-              <Button
-                variant="ghost"
-                onPress={() => handleDeleteRecipe(item.name)}
-              >
-                Delete
-              </Button>
-            </CardFooter>
-          </Card>
+          <TouchableOpacity
+            onPress={() => {
+              setSelectedRecipe(item);
+              setShowRecipeDetails(true);
+            }}
+          >
+            <Card>
+              <CardHeader>
+                <Text style={styles.recipeName}>{item.name}</Text>
+                {cookedRecipes[item.name] && (
+                  <Text style={styles.cookedBadge}>Cooked</Text>
+                )}
+              </CardHeader>
+              <CardContent>
+                {item.comment && (
+                  <Text style={styles.recipeComment} numberOfLines={2}>
+                    {item.comment}
+                  </Text>
+                )}
+                <Text style={styles.recipeDate}>
+                  Added: {new Date(item.createdAt).toLocaleDateString()}
+                </Text>
+              </CardContent>
+            </Card>
+          </TouchableOpacity>
         )}
         style={styles.list}
       />
@@ -103,17 +182,31 @@ export default function App() {
             <Text style={styles.modalTitle}>Add New Recipe</Text>
             <Input
               label="Recipe Name"
-              value={newRecipe}
-              onChangeText={setNewRecipe}
+              value={newRecipe.name}
+              onChangeText={(text) => setNewRecipe({ ...newRecipe, name: text })}
               placeholder="Enter recipe name"
               error={error}
+            />
+            <Input
+              label="Recipe URL"
+              value={newRecipe.url}
+              onChangeText={(text) => setNewRecipe({ ...newRecipe, url: text })}
+              placeholder="Enter recipe URL (optional)"
+            />
+            <Input
+              label="Comments"
+              value={newRecipe.comment}
+              onChangeText={(text) => setNewRecipe({ ...newRecipe, comment: text })}
+              placeholder="Add any comments (optional)"
+              multiline
+              numberOfLines={3}
             />
             <View style={styles.modalButtons}>
               <Button
                 variant="secondary"
                 onPress={() => {
                   setShowAddModal(false);
-                  setNewRecipe('');
+                  setNewRecipe({ name: '', url: '', comment: '' });
                   setError('');
                 }}
                 style={styles.modalButton}
@@ -130,6 +223,24 @@ export default function App() {
           </View>
         </View>
       </Modal>
+
+      <RecipeDetailsDialog
+        visible={showRecipeDetails && selectedRecipe !== null}
+        recipe={selectedRecipe}
+        onClose={() => {
+          setShowRecipeDetails(false);
+          setSelectedRecipe(null);
+        }}
+        onDelete={handleDeleteRecipe}
+        onCook={handleCook}
+        onUncook={handleUncook}
+        onUpdate={handleUpdateRecipe}
+      />
+
+      <HelpDialog
+        visible={showHelp}
+        onClose={() => setShowHelp(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -160,6 +271,11 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginTop: 4,
   },
+  helpButton: {
+    position: 'absolute',
+    right: 16,
+    top: 16,
+  },
   addButton: {
     margin: 16,
   },
@@ -172,9 +288,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1f2937',
   },
-  recipeDate: {
+  recipeComment: {
     fontSize: 14,
+    color: '#4b5563',
+    marginBottom: 8,
+  },
+  recipeDate: {
+    fontSize: 12,
     color: '#6b7280',
+  },
+  cookedBadge: {
+    fontSize: 12,
+    color: '#059669',
+    backgroundColor: '#d1fae5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    overflow: 'hidden',
+    alignSelf: 'flex-start',
+    marginTop: 4,
   },
   modalContainer: {
     flex: 1,
