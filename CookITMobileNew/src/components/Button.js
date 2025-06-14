@@ -1,101 +1,52 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { Button as PaperButton } from 'react-native-paper';
 
 export const Button = ({
   children,
   onPress,
-  variant = 'default',
-  size = 'medium',
-  disabled = false,
-  loading = false,
   style,
-  textStyle,
+  variant = 'contained',
+  icon,
+  ...props
 }) => {
-  const buttonStyles = [
-    styles.button,
-    styles[variant],
-    styles[size],
-    disabled && styles.disabled,
-    style,
-  ];
+  const getMode = () => {
+    switch (variant) {
+      case 'outlined':
+        return 'outlined';
+      case 'ghost':
+        return 'text';
+      case 'destructive':
+        return 'contained';
+      default:
+        return 'contained';
+    }
+  };
 
-  const textStyles = [
-    styles.text,
-    styles[`${variant}Text`],
-    styles[`${size}Text`],
-    disabled && styles.disabledText,
-    textStyle,
-  ];
+  const getButtonColor = () => {
+    if (variant === 'destructive') {
+      return '#ef4444';
+    }
+    return undefined;
+  };
 
   return (
-    <TouchableOpacity
-      style={buttonStyles}
+    <PaperButton
+      mode={getMode()}
       onPress={onPress}
-      disabled={disabled || loading}
+      style={[styles.button, style]}
+      icon={icon}
+      buttonColor={getButtonColor()}
+      textColor={variant === 'destructive' ? 'white' : undefined}
+      {...props}
     >
-      {loading ? (
-        <ActivityIndicator color={variant === 'default' ? 'white' : '#2563eb'} />
-      ) : (
-        <Text style={textStyles}>{children}</Text>
-      )}
-    </TouchableOpacity>
+      {children}
+    </PaperButton>
   );
 };
 
 const styles = StyleSheet.create({
   button: {
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  default: {
-    backgroundColor: '#2563eb',
-  },
-  secondary: {
-    backgroundColor: '#e5e7eb',
-  },
-  ghost: {
-    backgroundColor: 'transparent',
-  },
-  small: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  medium: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  large: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  text: {
-    fontWeight: '600',
-  },
-  defaultText: {
-    color: 'white',
-  },
-  secondaryText: {
-    color: '#374151',
-  },
-  ghostText: {
-    color: '#2563eb',
-  },
-  smallText: {
-    fontSize: 14,
-  },
-  mediumText: {
-    fontSize: 16,
-  },
-  largeText: {
-    fontSize: 18,
-  },
-  disabledText: {
-    color: '#9ca3af',
+    borderRadius: 8,
   },
 });

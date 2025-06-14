@@ -19,7 +19,7 @@ const BuyCoffeeDialog = ({ isOpen, setIsOpen }) => {
           </p>
           <Button
             className="w-full bg-[#6B4F37] hover:bg-[#A37B58] text-white"
-            onClick={() => window.electronAPI.openExternal('https://buymeacoffee.com/melchan')}
+            onClick={() => window.electronAPI.openExternal('https://ko-fi.com/worrador')}
           >
             <Coffee className="mr-2 h-4 w-4" />
             Support Cook-IT

@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const RECIPES_KEY = '@cookit_recipes';
 const COOKED_RECIPES_KEY = '@cookit_cooked_recipes';
 const TUTORIAL_COUNT_KEY = '@cookit_tutorial_count';
+const PINNED_RECIPES_KEY = '@cookit_pinned_recipes';
 
 export const saveRecipes = async (recipes) => {
   try {
@@ -106,5 +107,30 @@ export const incrementTutorialCount = async () => {
   } catch (error) {
     console.error('Error incrementing tutorial count:', error);
     return 0;
+  }
+};
+
+export const getPinnedRecipes = async () => {
+  try {
+    const pinnedRecipes = await AsyncStorage.getItem(PINNED_RECIPES_KEY);
+    return pinnedRecipes ? JSON.parse(pinnedRecipes) : [];
+  } catch (error) {
+    console.error('Error getting pinned recipes:', error);
+    return [];
+  }
+};
+
+export const togglePinnedRecipe = async (recipeName) => {
+  try {
+    const currentPinnedRecipes = await getPinnedRecipes();
+    const updatedPinnedRecipes = currentPinnedRecipes.includes(recipeName)
+      ? currentPinnedRecipes.filter(name => name !== recipeName)
+      : [...currentPinnedRecipes, recipeName];
+
+    await AsyncStorage.setItem(PINNED_RECIPES_KEY, JSON.stringify(updatedPinnedRecipes));
+    return updatedPinnedRecipes;
+  } catch (error) {
+    console.error('Error toggling pinned recipe:', error);
+    return [];
   }
 };
