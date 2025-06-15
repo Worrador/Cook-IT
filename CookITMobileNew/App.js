@@ -6,7 +6,7 @@ import { Button } from './src/components/Button';
 import { Input } from './src/components/Input';
 import { RecipeDetailsDialog } from './src/components/RecipeDetailsDialog';
 import HelpDialog from './src/components/HelpDialog';
-import { BuyCoffeeDialog } from './src/components/BuyCoffeeDialog';
+import BuyCoffeeDialog from './src/components/BuyCoffeeDialog';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   loadRecipes,
@@ -372,7 +372,7 @@ const AppContent = () => {
           statusBarTranslucent={true}
         >
           <View style={styles.modalContainer}>
-            <Surface style={[styles.modalContent, { backgroundColor: theme.colors.surface }]} elevation={4}>
+            <Surface style={[styles.modalContent, { backgroundColor: theme.colors.surface, width: '90%' }]} elevation={4}>
               <Text style={[styles.modalTitle, { color: theme.colors.onSurface }]}>Add New Recipe</Text>
               <View style={styles.inputContainer}>
                 <View style={styles.inputRow}>
@@ -476,7 +476,7 @@ const AppContent = () => {
           transparent={true}
           statusBarTranslucent={true}
         >
-          <View style={[styles.modalContainer, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
+          <View style={styles.modalContainer}>
             <Surface style={[styles.modalContent, { backgroundColor: theme.colors.surface, height: '90%', width: '90%' }]} elevation={4}>
               <HelpDialog onClose={() => setShowHelp(false)} />
             </Surface>
@@ -484,10 +484,20 @@ const AppContent = () => {
         </Modal>
       </Portal>
 
-      <BuyCoffeeDialog
-        visible={showBuyCoffee}
-        onClose={() => setShowBuyCoffee(false)}
-      />
+      <Portal>
+        <Modal
+          visible={showBuyCoffee}
+          animationType="slide"
+          transparent={true}
+          statusBarTranslucent={true}
+        >
+          <View style={styles.modalContainer}>
+            <Surface style={[styles.modalContent, { backgroundColor: theme.colors.surface, height: '90%', width: '90%' }]} elevation={4}>
+              <BuyCoffeeDialog onClose={() => setShowBuyCoffee(false)} />
+            </Surface>
+          </View>
+        </Modal>
+      </Portal>
     </SafeAreaView>
   );
 };
