@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar, AppState } from 'react-native';
+import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar, AppState, BackHandler } from 'react-native';
 import { Text, Surface, useTheme, IconButton, FAB, Portal, Dialog, Button as PaperButton, Provider as PaperProvider, MD3LightTheme, TextInput } from 'react-native-paper';
 import { Card, CardHeader, CardContent, CardFooter } from './src/components/Card';
 import { Button } from './src/components/Button';
@@ -215,24 +215,7 @@ const AppContent = () => {
   };
 
   const handleQuit = () => {
-    Alert.alert(
-      'Quit App',
-      'Are you sure you want to quit?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Quit',
-          style: 'destructive',
-          onPress: () => {
-            // On mobile, we can't actually quit the app, but we can minimize it
-            // You might want to add any cleanup logic here
-          },
-        },
-      ],
-    );
+    BackHandler.exitApp();
   };
 
   const handleTogglePinned = async (recipeName) => {
@@ -310,7 +293,7 @@ const AppContent = () => {
         </Button>
         <Button
           onPress={handleQuit}
-          style={[styles.mainButton, { backgroundColor: theme.colors.accent }]}
+          style={[styles.quitButton, { backgroundColor: theme.colors.accent }]}
           variant="destructive"
           icon="exit-to-app"
           labelStyle={styles.mainButtonLabel}
@@ -365,18 +348,20 @@ const AppContent = () => {
       />
 
       <Portal>
-        <Modal
-          visible={showAddModal}
-          animationType="slide"
-          transparent={true}
-          statusBarTranslucent={true}
-        >
-          <View style={styles.modalContainer}>
-            <Surface style={[styles.modalContent, { backgroundColor: theme.colors.surface, width: '90%' }]} elevation={4}>
-              <Text style={[styles.modalTitle, { color: theme.colors.onSurface }]}>Add New Recipe</Text>
-              <View style={styles.inputContainer}>
-                <View style={styles.inputRow}>
-                  <Text style={[styles.inputLabel, { color: theme.colors.onSurface }]}>Name</Text>
+        <View style={styles.modalContainer}>
+          <Dialog visible={showAddModal} onDismiss={() => {
+            setShowAddModal(false);
+            setNewRecipe({ name: '', url: '', comment: '' });
+            setError('');
+          }} style={[styles.dialog, { backgroundColor: '#fbf7f0' }]}>
+            <Dialog.Title style={[styles.title, { color: theme.colors.onSurface }]}>
+              <MaterialCommunityIcons name="plus-circle" size={24} color={theme.colors.onSurface} style={styles.titleIcon} />
+              Add New Recipe
+            </Dialog.Title>
+            <Dialog.Content>
+              <View style={styles.content}>
+                <View style={styles.row}>
+                  <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
                   <TextInput
                     value={newRecipe.name}
                     onChangeText={(text) => setNewRecipe({ ...newRecipe, name: text })}
@@ -388,8 +373,8 @@ const AppContent = () => {
                     outlineStyle={{ borderRadius: 12 }}
                   />
                 </View>
-                <View style={styles.inputRow}>
-                  <Text style={[styles.inputLabel, { color: theme.colors.onSurface }]}>URL</Text>
+                <View style={styles.row}>
+                  <Text style={[styles.label, { color: theme.colors.onSurface }]}>URL</Text>
                   <TextInput
                     value={newRecipe.url}
                     onChangeText={(text) => setNewRecipe({ ...newRecipe, url: text })}
@@ -402,8 +387,8 @@ const AppContent = () => {
                     outlineStyle={{ borderRadius: 12 }}
                   />
                 </View>
-                <View style={styles.inputRow}>
-                  <Text style={[styles.inputLabel, { color: theme.colors.onSurface }]}>Comment</Text>
+                <View style={styles.row}>
+                  <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
                   <TextInput
                     value={newRecipe.comment}
                     onChangeText={(text) => setNewRecipe({ ...newRecipe, comment: text })}
@@ -418,41 +403,29 @@ const AppContent = () => {
                   />
                 </View>
               </View>
-              <View style={styles.modalButtons}>
-                <PaperButton
+            </Dialog.Content>
+            <Dialog.Actions style={styles.actions}>
+              <View style={styles.buttonContainer}>
+                <Button
                   mode="contained"
                   onPress={handleAddRecipe}
-                  style={[
-                    styles.modalButton,
-                    {
-                      backgroundColor: (newRecipe.name && newRecipe.url)
-                        ? theme.colors.primary
-                        : theme.colors.background,
-                      opacity: (newRecipe.name && newRecipe.url) ? 1 : 0.7
-                    }
-                  ]}
+                  style={[styles.actionButton, {
+                    backgroundColor: (newRecipe.name && newRecipe.url)
+                      ? theme.colors.primary
+                      : theme.colors.background,
+                    opacity: (newRecipe.name && newRecipe.url) ? 1 : 0.7,
+                    borderRadius: 12
+                  }]}
                   textColor={(newRecipe.name && newRecipe.url) ? theme.colors.surface : theme.colors.onSurface}
                   disabled={!newRecipe.name || !newRecipe.url}
-                  disabledTextColor={theme.colors.onSurface}
+                  icon="plus"
                 >
                   Add Recipe
-                </PaperButton>
-                <PaperButton
-                  mode="outlined"
-                  onPress={() => {
-                    setShowAddModal(false);
-                    setNewRecipe({ name: '', url: '', comment: '' });
-                    setError('');
-                  }}
-                  style={[styles.modalButton, { borderColor: theme.colors.primary }]}
-                  textColor={theme.colors.primary}
-                >
-                  Cancel
-                </PaperButton>
+                </Button>
               </View>
-            </Surface>
-          </View>
-        </Modal>
+            </Dialog.Actions>
+          </Dialog>
+        </View>
       </Portal>
 
       <RecipeDetailsDialog
@@ -558,6 +531,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 8,
   },
+  quitButton: {
+    borderRadius: 12,
+    paddingVertical: 8,
+    width: '45%',
+    alignSelf: 'center',
+  },
   mainButtonLabel: {
     fontSize: 24,
     fontWeight: '600',
@@ -610,6 +589,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   modalContent: {
     borderRadius: 12,
@@ -665,5 +649,40 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     zIndex: 1000,
+  },
+  dialog: {
+    width: '90%',
+    maxWidth: 400,
+    margin: 0,
+    alignSelf: 'center',
+  },
+  titleIcon: {
+    marginRight: 8,
+  },
+  content: {
+    gap: 24,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  label: {
+    width: 80,
+    textAlign: 'right',
+    fontSize: 16,
+    fontWeight: '500',
+    paddingTop: 0,
+  },
+  actions: {
+    padding: 16,
+    gap: 8,
+  },
+  buttonContainer: {
+    width: '100%',
+    gap: 8,
+  },
+  actionButton: {
+    width: '100%',
   },
 });

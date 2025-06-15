@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Dialog, Portal, Text, Button, TextInput, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -19,6 +19,9 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
 
   useEffect(() => {
     if (!visible) {
+      if (isEditingComment) {
+        handleCommentSave();
+      }
       setHasClickedCook(false);
       setIsEditingComment(false);
       setNoMoreRecipes(false);
@@ -34,6 +37,13 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
     } catch (error) {
       console.error('Error saving comment:', error);
     }
+  };
+
+  const handleDialogDismiss = () => {
+    if (isEditingComment) {
+      handleCommentSave();
+    }
+    onClose();
   };
 
   const handleChangeMind = () => {
@@ -61,52 +71,80 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
 
   return (
     <Portal>
-      <Dialog visible={visible} onDismiss={onClose} style={styles.dialog}>
+      <Dialog visible={visible} onDismiss={handleDialogDismiss} style={styles.dialog}>
         <Dialog.Title style={[styles.title, { color: theme.colors.onSurface }]}>
-          <MaterialCommunityIcons name="book-open-variant" size={24} color={theme.colors.onSurface} style={styles.titleIcon} />
-          How about this recipe?
+          <View style={styles.titleContent}>
+            <MaterialCommunityIcons name="book-open-variant" size={24} color={theme.colors.onSurface} />
+            <Text style={{ marginLeft: 16, fontSize: 20, fontWeight: '600' }}>How about this recipe?</Text>
+          </View>
         </Dialog.Title>
         <Dialog.Content>
-          <View style={styles.content}>
-            <View style={styles.row}>
-              <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
-              <View style={styles.nameContainer}>
-                <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
-                <Button
-                  icon="delete"
-                  onPress={() => onDelete(recipe.name)}
-                  style={styles.deleteButton}
-                  textColor={theme.colors.error}
-                />
-              </View>
-            </View>
-            <View style={styles.row}>
-              <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
-              <View style={styles.commentContainer}>
-                {isEditingComment ? (
-                  <TextInput
-                    ref={commentInputRef}
-                    value={commentText}
-                    onChangeText={setCommentText}
-                    onBlur={handleCommentSave}
-                    style={[styles.commentInput, { backgroundColor: theme.colors.surface }]}
-                    placeholder="Add a comment..."
-                    multiline
-                    autoFocus
-                  />
-                ) : (
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => {
+              if (isEditingComment) {
+                handleCommentSave();
+              }
+            }}
+          >
+            <View style={styles.content}>
+              <View style={styles.row}>
+                <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
+                <View style={styles.nameContainer}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
+                  </ScrollView>
                   <Button
-                    mode="text"
-                    onPress={() => setIsEditingComment(true)}
-                    style={styles.commentButton}
-                    textColor={theme.colors.onSurface}
-                  >
-                    {commentText || "Click to add comment..."}
-                  </Button>
-                )}
+                    icon="delete"
+                    onPress={() => onDelete(recipe.name)}
+                    style={styles.deleteButton}
+                    textColor={theme.colors.error}
+                    iconSize={28}
+                  />
+                </View>
+              </View>
+              <View style={styles.row}>
+                <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
+                <View style={styles.commentContainer}>
+                  {isEditingComment ? (
+                    <TextInput
+                      ref={commentInputRef}
+                      value={commentText}
+                      onChangeText={setCommentText}
+                      onBlur={handleCommentSave}
+                      style={[styles.commentInput, { backgroundColor: theme.colors.surface }]}
+                      placeholder="Add any comments"
+                      placeholderTextColor={`${theme.colors.primary}66`}
+                      multiline
+                      numberOfLines={3}
+                      autoFocus
+                      mode="outlined"
+                      outlineStyle={{ borderRadius: 12 }}
+                      contentStyle={{ textAlignVertical: 'center' }}
+                      underlineColor="transparent"
+                    />
+                  ) : (
+                    <TouchableOpacity onPress={() => setIsEditingComment(true)}>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        <TextInput
+                          value={commentText}
+                          style={[styles.commentInput, { backgroundColor: 'transparent' }]}
+                          placeholder="Add any comments"
+                          placeholderTextColor={`${theme.colors.primary}66`}
+                          multiline
+                          numberOfLines={3}
+                          mode="flat"
+                          contentStyle={{ textAlignVertical: 'center' }}
+                          editable={false}
+                          underlineColor="transparent"
+                        />
+                      </ScrollView>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
         </Dialog.Content>
         <Dialog.Actions style={styles.actions}>
           {!hasClickedCook ? (
@@ -151,17 +189,22 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
 const styles = StyleSheet.create({
   dialog: {
     backgroundColor: '#fbf7f0',
+    width: '90%',
+    maxWidth: 400,
+    margin: 0,
+    alignSelf: 'center',
   },
   title: {
     fontSize: 20,
     fontWeight: '600',
     textAlign: 'center',
+    paddingLeft: 20,
+  },
+  titleContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  titleIcon: {
-    marginRight: 8,
+    width: '100%',
   },
   content: {
     gap: 16,
@@ -176,31 +219,36 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontSize: 16,
     fontWeight: '500',
-    paddingTop: 8,
+    paddingTop: 0,
+    alignSelf: 'center',
   },
   nameContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingRight: 0,
+    marginRight: -10,
   },
   recipeName: {
     flex: 1,
     fontSize: 16,
     marginRight: 8,
+    paddingLeft: 15,
+    minWidth: 100,
   },
   deleteButton: {
     margin: 0,
+    padding: 0,
+    minWidth: 0,
+    width: 40,
   },
   commentContainer: {
     flex: 1,
   },
   commentInput: {
     fontSize: 16,
-  },
-  commentButton: {
-    alignItems: 'flex-start',
-    padding: 0,
+    minWidth: 200,
   },
   actions: {
     padding: 16,
