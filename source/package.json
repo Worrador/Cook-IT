@@ -10,6 +10,7 @@
     "dev": "webpack serve --config webpack.config.js",
     "build": "webpack --config webpack.config.js",
     "package": "npm run build && electron-builder build --win",
+    "package:mac": "npm run build && electron-builder build --mac",
     "dist": "electron-builder",
     "analyze": "cross-env ANALYZE=true npm run build"
   },
@@ -74,13 +75,17 @@
     ],
     "extraResources": [
       {
-        "from": "../python_resources/dist/Cook-IT.exe",
-        "to": "./Cook-IT.exe"
+        "from": "./dist-python",
+        "to": "./"
       }
     ],
     "win": {
       "target": "nsis",
       "icon": "assets/ChefHatColored.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/ChefHatColored.icns"
     },
     "nsis": {
       "oneClick": false,

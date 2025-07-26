@@ -1,0 +1,56 @@
+name: Build Cross-Platform Application
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install npm dependencies
+        working-directory: ./source
+        run: npm install
+
+      - name: Install Python dependencies
+        working-directory: ./python_resources
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Package Python backend for macOS
+        working-directory: ./python_resources
+        run: |
+          source venv/bin/activate
+          pyinstaller --name Cook-IT --onefile --windowed ../source/cook_it_bridge.py
+          mkdir -p ../source/dist-python
+          cp dist/Cook-IT ../source/dist-python/
+
+      - name: Build macOS application
+        working-directory: ./source
+        run: |
+          npm install
+          npm run package:mac
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Cook-IT-macOS
+          path: source/dist/Cook-IT.dmg
