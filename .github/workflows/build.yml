@@ -53,4 +53,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Cook-IT-macOS
-          path: source/dist/Cook-IT.dmg
+          path: source/dist/*.dmg
