@@ -50,7 +50,7 @@ jobs:
           npm run package:mac
 
       - name: Upload macOS artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Cook-IT-macOS
           path: source/dist/Cook-IT.dmg
