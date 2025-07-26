@@ -5,3 +5,11 @@ token.json
 *.pyc
 node_modules
 CookITMobile/**/*
+
+# Ignore sensitive files
+source/token.json
+source/credentials.json
+/python_resources/dist/
+/python_resources/build/
+/python_resources/venv/
+*.spec
