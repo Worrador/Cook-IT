@@ -163,10 +163,10 @@ const styles = StyleSheet.create({
   infoBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: 12,
     borderRadius: 16,
     marginBottom: 16,
-    gap: 16,
+    gap: 8,
   },
   infoIcon: {
     marginRight: 4,

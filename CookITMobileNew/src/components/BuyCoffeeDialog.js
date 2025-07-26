@@ -80,7 +80,7 @@ const BuyCoffeeDialog = ({ visible, onClose }) => {
 const Section = ({ icon, title, content, theme }) => (
   <View style={styles.section}>
     <View style={styles.sectionHeader}>
-      <View style={[styles.iconContainer, { backgroundColor: '#F2BC42', marginLeft: -15 }]}>
+      <View style={[styles.iconContainer, { backgroundColor: '#F2BC42' }]}>
         <Text style={styles.iconText}>{icon}</Text>
       </View>
       <Text style={[styles.sectionTitle, { color: '#E06D3D' }]}>{title}</Text>
@@ -104,7 +104,8 @@ const ListItem = ({ icon, text, theme }) => (
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 16,
   },
   header: {
     flexDirection: 'row',
@@ -123,13 +124,13 @@ const styles = StyleSheet.create({
   infoBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: 12,
     borderRadius: 16,
     marginBottom: 16,
-    gap: 16,
+    gap: 8,
   },
   infoIcon: {
-    marginRight: 4,
+    // marginRight: 4, // No longer needed, gap is used instead
   },
   infoText: {
     flex: 1,
@@ -159,6 +160,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   sectionContent: {
+    marginLeft: 15,
     paddingLeft: 12,
     borderLeftWidth: 2,
   },
@@ -179,12 +181,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   buttonContainer: {
-    marginTop: 16,
-    gap: 12,
+    marginTop: 8,
+    gap: 8,
     paddingBottom: 16,
   },
   buyButton: {
-    marginBottom: 8,
+    // marginBottom: 8, // No longer needed, gap is used instead
   },
   buyButtonLabel: {
     fontSize: 16,
@@ -192,7 +194,7 @@ const styles = StyleSheet.create({
     color: '#f7f0e2',
   },
   closeButton: {
-    marginBottom: 8,
+    marginBottom: 0,
   },
   closeButtonLabel: {
     fontSize: 16,
