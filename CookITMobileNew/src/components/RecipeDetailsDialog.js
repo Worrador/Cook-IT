@@ -87,21 +87,23 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
             <Text style={{ marginLeft: 16, fontSize: 20, fontWeight: '600' }}>How about this recipe?</Text>
           </View>
         </Dialog.Title>
-        <Dialog.Content>
+        <Dialog.Content style={styles.dialogContent}>
           <TouchableOpacity activeOpacity={1} onPress={handleContentPress}>
             <View style={styles.content}>
-              <View style={styles.row}>
-                <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollContent}>
-                  <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
-                </ScrollView>
-                <Button
-                  icon="delete"
-                  onPress={() => onDelete(recipe.name)}
-                  style={styles.deleteButton}
-                  textColor={theme.colors.error}
-                  iconSize={28}
-                />
+              <View style={styles.fixedContent}>
+                <View style={styles.row}>
+                  <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollContent}>
+                    <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
+                  </ScrollView>
+                  <Button
+                    icon="delete"
+                    onPress={() => onDelete(recipe.name)}
+                    style={styles.deleteButton}
+                    textColor={theme.colors.error}
+                    iconSize={28}
+                  />
+                </View>
               </View>
               <View style={styles.row}>
                 <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
@@ -128,20 +130,45 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
                       onPress={() => setIsEditingComment(true)}
                       style={styles.commentViewContainer}
                     >
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollContent}>
+                      {isCommentExpanded ? (
                         <TextInput
                           value={commentText}
-                          style={[styles.commentInput, { backgroundColor: 'transparent' }]}
+                          style={[styles.commentInput, {
+                            backgroundColor: 'transparent',
+                            maxHeight: 100,
+                            height: 'auto'
+                          }]}
                           placeholder="Add any comments"
                           placeholderTextColor={`${theme.colors.primary}66`}
                           multiline
-                          numberOfLines={isCommentExpanded ? undefined : 3}
+                          numberOfLines={4}
                           mode="flat"
                           contentStyle={{ textAlignVertical: 'center' }}
                           editable={false}
                           underlineColor="transparent"
                         />
-                      </ScrollView>
+                      ) : (
+                        <View style={[styles.commentScrollContainer, { height: 48 }]}>
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.scrollContent}
+                          >
+                            <TextInput
+                              value={commentText}
+                              style={[styles.commentInput, { backgroundColor: 'transparent' }]}
+                              placeholder="Add any comments"
+                              placeholderTextColor={`${theme.colors.primary}66`}
+                              multiline
+                              numberOfLines={1}
+                              mode="flat"
+                              contentStyle={{ textAlignVertical: 'center' }}
+                              editable={false}
+                              underlineColor="transparent"
+                            />
+                          </ScrollView>
+                        </View>
+                      )}
                       <TouchableOpacity
                         onPress={() => setIsCommentExpanded(!isCommentExpanded)}
                         style={styles.expandButton}
@@ -207,11 +234,17 @@ const styles = StyleSheet.create({
     margin: 0,
     alignSelf: 'center',
   },
+  dialogContent: {
+    position: 'relative',
+    paddingTop: 0,
+  },
   title: {
     fontSize: 20,
     fontWeight: '600',
     textAlign: 'center',
     paddingLeft: 20,
+    position: 'relative',
+    zIndex: 2,
   },
   titleContent: {
     flexDirection: 'row',
@@ -222,9 +255,13 @@ const styles = StyleSheet.create({
   content: {
     gap: 16,
   },
+  fixedContent: {
+    position: 'relative',
+    zIndex: 1,
+  },
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 16,
     minHeight: 48,
   },
@@ -233,7 +270,8 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontSize: 16,
     fontWeight: '500',
-    alignSelf: 'center',
+    alignSelf: 'flex-start',
+    paddingTop: 12,
   },
   scrollContent: {
     flex: 1,
@@ -253,19 +291,24 @@ const styles = StyleSheet.create({
   commentContainer: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     minWidth: 0,
   },
   commentViewContainer: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    minWidth: 0,
+  },
+  commentScrollContainer: {
+    flex: 1,
     minWidth: 0,
   },
   commentInput: {
     fontSize: 16,
     minWidth: 200,
     flex: 1,
+    paddingVertical: 0,
   },
   expandButton: {
     padding: 8,
