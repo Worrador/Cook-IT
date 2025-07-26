@@ -9,7 +9,17 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
   const [commentText, setCommentText] = useState('');
   const [hasClickedCook, setHasClickedCook] = useState(false);
   const [noMoreRecipes, setNoMoreRecipes] = useState(false);
+  const [isCommentExpanded, setIsCommentExpanded] = useState(false);
   const commentInputRef = useRef(null);
+
+  const handleCommentSave = async () => {
+    try {
+      await onUpdate(recipe.name, { ...recipe, comment: commentText });
+      setIsEditingComment(false);
+    } catch (error) {
+      console.error('Error saving comment:', error);
+    }
+  };
 
   useEffect(() => {
     if (recipe) {
@@ -25,25 +35,23 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
       setHasClickedCook(false);
       setIsEditingComment(false);
       setNoMoreRecipes(false);
+      setIsCommentExpanded(false);
     }
   }, [visible]);
 
   if (!recipe) return null;
-
-  const handleCommentSave = async () => {
-    try {
-      await onUpdate(recipe.name, { ...recipe, comment: commentText });
-      setIsEditingComment(false);
-    } catch (error) {
-      console.error('Error saving comment:', error);
-    }
-  };
 
   const handleDialogDismiss = () => {
     if (isEditingComment) {
       handleCommentSave();
     }
     onClose();
+  };
+
+  const handleContentPress = () => {
+    if (isEditingComment) {
+      handleCommentSave();
+    }
   };
 
   const handleChangeMind = () => {
@@ -59,6 +67,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
   const handleNext = async () => {
     setIsEditingComment(false);
     setHasClickedCook(false);
+    setIsCommentExpanded(false);
     try {
       const nextRecipe = await onNext();
       if (nextRecipe && nextRecipe.empty) {
@@ -79,29 +88,20 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
           </View>
         </Dialog.Title>
         <Dialog.Content>
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={() => {
-              if (isEditingComment) {
-                handleCommentSave();
-              }
-            }}
-          >
+          <TouchableOpacity activeOpacity={1} onPress={handleContentPress}>
             <View style={styles.content}>
               <View style={styles.row}>
                 <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
-                <View style={styles.nameContainer}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
-                  </ScrollView>
-                  <Button
-                    icon="delete"
-                    onPress={() => onDelete(recipe.name)}
-                    style={styles.deleteButton}
-                    textColor={theme.colors.error}
-                    iconSize={28}
-                  />
-                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollContent}>
+                  <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
+                </ScrollView>
+                <Button
+                  icon="delete"
+                  onPress={() => onDelete(recipe.name)}
+                  style={styles.deleteButton}
+                  textColor={theme.colors.error}
+                  iconSize={28}
+                />
               </View>
               <View style={styles.row}>
                 <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
@@ -116,7 +116,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
                       placeholder="Add any comments"
                       placeholderTextColor={`${theme.colors.primary}66`}
                       multiline
-                      numberOfLines={3}
+                      numberOfLines={isCommentExpanded ? undefined : 3}
                       autoFocus
                       mode="outlined"
                       outlineStyle={{ borderRadius: 12 }}
@@ -124,21 +124,34 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
                       underlineColor="transparent"
                     />
                   ) : (
-                    <TouchableOpacity onPress={() => setIsEditingComment(true)}>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <TouchableOpacity
+                      onPress={() => setIsEditingComment(true)}
+                      style={styles.commentViewContainer}
+                    >
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollContent}>
                         <TextInput
                           value={commentText}
                           style={[styles.commentInput, { backgroundColor: 'transparent' }]}
                           placeholder="Add any comments"
                           placeholderTextColor={`${theme.colors.primary}66`}
                           multiline
-                          numberOfLines={3}
+                          numberOfLines={isCommentExpanded ? undefined : 3}
                           mode="flat"
                           contentStyle={{ textAlignVertical: 'center' }}
                           editable={false}
                           underlineColor="transparent"
                         />
                       </ScrollView>
+                      <TouchableOpacity
+                        onPress={() => setIsCommentExpanded(!isCommentExpanded)}
+                        style={styles.expandButton}
+                      >
+                        <MaterialCommunityIcons
+                          name={isCommentExpanded ? "chevron-up" : "chevron-down"}
+                          size={24}
+                          color={theme.colors.primary}
+                        />
+                      </TouchableOpacity>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -211,29 +224,23 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 16,
+    minHeight: 48,
   },
   label: {
     width: 80,
     textAlign: 'right',
     fontSize: 16,
     fontWeight: '500',
-    paddingTop: 0,
     alignSelf: 'center',
   },
-  nameContainer: {
+  scrollContent: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingRight: 0,
-    marginRight: -10,
+    minWidth: 0,
   },
   recipeName: {
-    flex: 1,
     fontSize: 16,
-    marginRight: 8,
     paddingLeft: 15,
     minWidth: 100,
   },
@@ -245,10 +252,25 @@ const styles = StyleSheet.create({
   },
   commentContainer: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+  },
+  commentViewContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
   },
   commentInput: {
     fontSize: 16,
     minWidth: 200,
+    flex: 1,
+  },
+  expandButton: {
+    padding: 8,
+    marginLeft: 8,
+    alignSelf: 'center',
   },
   actions: {
     padding: 16,
