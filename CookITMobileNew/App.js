@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar, AppState, BackHandler } from 'react-native';
+import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar, AppState, BackHandler, Dimensions } from 'react-native';
 import { Text, Surface, useTheme, IconButton, FAB, Portal, Dialog, Button as PaperButton, Provider as PaperProvider, MD3LightTheme, TextInput } from 'react-native-paper';
 import { Card, CardHeader, CardContent, CardFooter } from './src/components/Card';
 import { Button } from './src/components/Button';
@@ -21,6 +21,7 @@ import {
   togglePinnedRecipe,
 } from './src/utils/storage';
 import { BlurView } from 'expo-blur';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Custom theme configuration
 const theme = {
@@ -43,6 +44,9 @@ const theme = {
 
 const AppContent = () => {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const windowHeight = Dimensions.get('window').height;
+  const dialogMaxHeight = windowHeight - insets.top - insets.bottom - 48; // 48 for vertical margin
   const [recipes, setRecipes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -87,6 +91,40 @@ const AppContent = () => {
   useEffect(() => {
     setIsAnyDialogOpen(showAddModal || showRecipeDetails || showHelp || showBuyCoffee);
   }, [showAddModal, showRecipeDetails, showHelp, showBuyCoffee]);
+
+  useEffect(() => {
+    const backAction = () => {
+      if (showBuyCoffee) {
+        setShowBuyCoffee(false);
+        return true;
+      }
+      if (showHelp) {
+        setShowHelp(false);
+        return true;
+      }
+      if (showRecipeDetails) {
+        setShowRecipeDetails(false);
+        setSelectedRecipe(null);
+        return true;
+      }
+      if (showAddModal) {
+        setShowAddModal(false);
+        setNewRecipe({ name: '', url: '', comment: '' });
+        setError('');
+        return true;
+      }
+      // If no modals are open, return false to allow default behavior (e.g., exit app)
+      return false;
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      backAction
+    );
+
+    // Cleanup the event listener when the component unmounts
+    return () => backHandler.remove();
+  }, [showBuyCoffee, showHelp, showRecipeDetails, showAddModal]); // Dependencies array
 
   const loadInitialData = async () => {
     try {
@@ -443,33 +481,23 @@ const AppContent = () => {
       />
 
       <Portal>
-        <Modal
+        <Dialog
           visible={showHelp}
-          animationType="slide"
-          transparent={true}
-          statusBarTranslucent={true}
+          onDismiss={() => setShowHelp(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface, maxHeight: dialogMaxHeight }]}
         >
-          <View style={styles.modalContainer}>
-            <Surface style={[styles.modalContent, { backgroundColor: theme.colors.surface, height: '90%', width: '90%' }]} elevation={4}>
-              <HelpDialog onClose={() => setShowHelp(false)} />
-            </Surface>
-          </View>
-        </Modal>
+          <HelpDialog onClose={() => setShowHelp(false)} />
+        </Dialog>
       </Portal>
 
       <Portal>
-        <Modal
+        <Dialog
           visible={showBuyCoffee}
-          animationType="slide"
-          transparent={true}
-          statusBarTranslucent={true}
+          onDismiss={() => setShowBuyCoffee(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface, maxHeight: dialogMaxHeight }]}
         >
-          <View style={styles.modalContainer}>
-            <Surface style={[styles.modalContent, { backgroundColor: theme.colors.surface, height: '90%', width: '90%' }]} elevation={4}>
-              <BuyCoffeeDialog onClose={() => setShowBuyCoffee(false)} />
-            </Surface>
-          </View>
-        </Modal>
+          <BuyCoffeeDialog onClose={() => setShowBuyCoffee(false)} />
+        </Dialog>
       </Portal>
     </SafeAreaView>
   );
@@ -598,6 +626,7 @@ const styles = StyleSheet.create({
   modalContent: {
     borderRadius: 12,
     padding: 24,
+    paddingBottom: 24, // Added padding to prevent overlap with nav bar
     maxWidth: 400,
   },
   modalTitle: {
@@ -653,7 +682,7 @@ const styles = StyleSheet.create({
   dialog: {
     width: '90%',
     maxWidth: 400,
-    margin: 0,
+    marginVertical: 24,
     alignSelf: 'center',
   },
   titleIcon: {

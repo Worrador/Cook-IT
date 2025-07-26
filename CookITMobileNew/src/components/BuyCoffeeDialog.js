@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Linking, ScrollView } from 'react-native';
-import { Surface, useTheme } from 'react-native-paper';
+import { Surface, useTheme, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Button } from './Button';
 
@@ -12,68 +12,68 @@ const BuyCoffeeDialog = ({ visible, onClose }) => {
   };
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      showsVerticalScrollIndicator={true}
-      bounces={true}
-    >
+    <>
       <View style={styles.header}>
-        <MaterialCommunityIcons name="coffee" size={32} color={theme.colors.primary} style={styles.headerIcon} />
+        <MaterialCommunityIcons name="coffee" size={28} color={theme.colors.primary} style={styles.headerIcon} />
         <Text style={[styles.title, { color: theme.colors.primary }]}>Support Cook-IT</Text>
       </View>
-
-      <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
-        <MaterialCommunityIcons name="heart" size={32} color={theme.colors.primary} style={styles.infoIcon} />
-        <Text style={[styles.infoText, { color: theme.colors.primary }]}>
-          <Text style={styles.bold}>Cook-IT is free and open source</Text>, but if you find it helpful, consider buying me a coffee to support its development!
-        </Text>
-      </View>
-
-      <Section
-        icon="☕"
-        title="Why Support?"
-        content="Your support helps me maintain and improve Cook-IT, add new features, and keep it free for everyone to use."
-        theme={theme}
-      />
-
-      <Section
-        icon="💡"
-        title="What You Get"
-        content={
-          <View>
-            <ListItem icon="✨" text="Access to future premium features" theme={theme} />
-            <ListItem icon="💌" text="Special thank you message in the app" theme={theme} />
-            <ListItem icon="🎉" text="The warm feeling of supporting open source" theme={theme} />
+      <Dialog.Content style={styles.content}>
+        <ScrollView>
+          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
+            <MaterialCommunityIcons name="heart" size={32} color={theme.colors.primary} style={styles.infoIcon} />
+            <Text style={[styles.infoText, { color: theme.colors.primary }]}>
+              <Text style={styles.bold}>Cook-IT is free and open source</Text>, but if you find it helpful, consider buying me a coffee to support its development!
+            </Text>
           </View>
-        }
-        theme={theme}
-      />
 
-      <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
-        <MaterialCommunityIcons name="star" size={32} color={theme.colors.primary} style={styles.infoIcon} />
-        <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
-          Every contribution, no matter how small, makes a big difference in keeping Cook-IT alive and growing!
-        </Text>
-      </View>
+          <Section
+            icon="☕"
+            title="Why Support?"
+            content="Your support helps me maintain and improve Cook-IT, add new features, and keep it free for everyone to use."
+            theme={theme}
+          />
 
-      <View style={styles.buttonContainer}>
-        <Button
-          onPress={handleBuyCoffee}
-          style={[styles.buyButton, { backgroundColor: theme.colors.primary }]}
-          labelStyle={styles.buyButtonLabel}
-          icon="coffee"
-        >
-          Buy Me a Coffee
-        </Button>
-        <Button
-          onPress={onClose}
-          style={[styles.closeButton, { backgroundColor: theme.colors.secondary }]}
-          labelStyle={styles.closeButtonLabel}
-        >
-          Maybe Later
-        </Button>
-      </View>
-    </ScrollView>
+          <Section
+            icon="💡"
+            title="What You Get"
+            content={
+              <View>
+                <ListItem icon="✨" text="Access to future premium features" theme={theme} />
+                <ListItem icon="💌" text="Special thank you message in the app" theme={theme} />
+                <ListItem icon="🎉" text="The warm feeling of supporting open source" theme={theme} />
+              </View>
+            }
+            theme={theme}
+          />
+
+          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
+            <MaterialCommunityIcons name="star" size={32} color={theme.colors.primary} style={styles.infoIcon} />
+            <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
+              Every contribution, no matter how small, makes a big difference in keeping Cook-IT alive and growing!
+            </Text>
+          </View>
+        </ScrollView>
+      </Dialog.Content>
+      <Dialog.Actions>
+        <View style={styles.buttonContainer}>
+          <Button
+            onPress={handleBuyCoffee}
+            style={[styles.buyButton, { backgroundColor: theme.colors.primary }]}
+            labelStyle={styles.buyButtonLabel}
+            icon="coffee"
+          >
+            Buy Me a Coffee
+          </Button>
+          <Button
+            onPress={onClose}
+            style={[styles.closeButton, { backgroundColor: theme.colors.secondary }]}
+            labelStyle={styles.closeButtonLabel}
+          >
+            Maybe Later
+          </Button>
+        </View>
+      </Dialog.Actions>
+    </>
   );
 };
 
@@ -103,23 +103,22 @@ const ListItem = ({ icon, text, theme }) => (
 );
 
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 8,
-    paddingVertical: 16,
+  content: {
+    flexShrink: 1,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
-    marginBottom: 16,
-  },
-  headerIcon: {
-    marginRight: 4,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
+  },
+  headerIcon: {
+    marginRight: 8,
   },
   infoBox: {
     flexDirection: 'row',
@@ -129,9 +128,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 8,
   },
-  infoIcon: {
-    // marginRight: 4, // No longer needed, gap is used instead
-  },
+  infoIcon: {},
   infoText: {
     flex: 1,
     fontSize: 14,
@@ -181,21 +178,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   buttonContainer: {
-    marginTop: 8,
+    width: '100%',
     gap: 8,
-    paddingBottom: 16,
   },
-  buyButton: {
-    // marginBottom: 8, // No longer needed, gap is used instead
-  },
+  buyButton: {},
   buyButtonLabel: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#f7f0e2',
   },
-  closeButton: {
-    marginBottom: 0,
-  },
+  closeButton: {},
   closeButtonLabel: {
     fontSize: 16,
     fontWeight: 'bold',

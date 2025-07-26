@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { Surface, useTheme } from 'react-native-paper';
+import { Surface, useTheme, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Button } from './Button';
 
@@ -8,92 +8,92 @@ const HelpDialog = ({ onClose }) => {
   const theme = useTheme();
 
   return (
-    <View style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={true}
-      >
-        <View style={styles.header}>
-          <MaterialCommunityIcons name="chef-hat" size={32} color={theme.colors.primary} style={styles.headerIcon} />
-          <Text style={[styles.title, { color: theme.colors.primary }]}>How does Cook-IT work?</Text>
-        </View>
+    <>
+      <View style={styles.header}>
+        <MaterialCommunityIcons name="chef-hat" size={28} color={theme.colors.primary} style={styles.headerIcon} />
+        <Text style={[styles.title, { color: theme.colors.primary }]}>How does Cook-IT work?</Text>
+      </View>
+      <Dialog.Content style={styles.content}>
+        <ScrollView
+          showsVerticalScrollIndicator={true}
+        >
+          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
+            <Text style={[styles.infoText, { color: theme.colors.primary }]}>
+              <Text style={styles.bold}>Cook-IT helps you decide what to cook</Text> by suggesting recipes you haven't made in a while.
+              No more "What should we eat tonight?" dilemmas!
+            </Text>
+          </View>
 
-        <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
-          <Text style={[styles.infoText, { color: theme.colors.primary }]}>
-            <Text style={styles.bold}>Cook-IT helps you decide what to cook</Text> by suggesting recipes you haven't made in a while.
-            No more "What should we eat tonight?" dilemmas!
-          </Text>
-        </View>
+          <Section
+            icon="🚀"
+            title="Getting Started"
+            content="When you first use Cook-IT, it automatically creates a recipe file in your Google Drive. If you've used Cook-IT before, it finds your existing recipe file and syncs it with your device."
+            theme={theme}
+          />
 
-        <Section
-          icon="🚀"
-          title="Getting Started"
-          content="When you first use Cook-IT, it automatically creates a recipe file in your Google Drive. If you've used Cook-IT before, it finds your existing recipe file and syncs it with your device."
-          theme={theme}
-        />
+          <Section
+            icon="📜"
+            title="Adding Recipes"
+            content={
+              <View>
+                <ListItem icon="➕" text="Click 'Add Recipe'" theme={theme} />
+                <ListItem icon="📝" text="Enter a name" theme={theme} />
+                <ListItem icon="🌐" text="Add a web URL to the recipe or just a path to a local file (e.g: C:\Documents\Recipe.pdf)" theme={theme} />
+                <ListItem icon="💬" text="Add optional comments or notes (e.g: Use more water)" theme={theme} />
+              </View>
+            }
+            theme={theme}
+          />
 
-        <Section
-          icon="📜"
-          title="Adding Recipes"
-          content={
-            <View>
-              <ListItem icon="➕" text="Click 'Add Recipe'" theme={theme} />
-              <ListItem icon="📝" text="Enter a name" theme={theme} />
-              <ListItem icon="🌐" text="Add a web URL to the recipe or just a path to a local file (e.g: C:\Documents\Recipe.pdf)" theme={theme} />
-              <ListItem icon="💬" text="Add optional comments or notes (e.g: Use more water)" theme={theme} />
-            </View>
-          }
-          theme={theme}
-        />
+          <Section
+            icon="🎲"
+            title="Choosing What to Cook"
+            content="Click 'Choose Recipe' and Cook-IT suggests something based on how recently you've made each dish. Recipes you haven't cooked in a while are more likely to be picked."
+            theme={theme}
+          />
 
-        <Section
-          icon="🎲"
-          title="Choosing What to Cook"
-          content="Click 'Choose Recipe' and Cook-IT suggests something based on how recently you've made each dish. Recipes you haven't cooked in a while are more likely to be picked."
-          theme={theme}
-        />
+          <Section
+            icon="📖"
+            title="Managing Your Recipes"
+            content={
+              <View>
+                <Text style={[styles.sectionText, { color: theme.colors.primary }]}>
+                  After you get a suggestion you have the options to:
+                </Text>
+                <ListItem icon="🗑️" text="Delete recipes you no longer want" theme={theme} />
+                <ListItem icon="✏️" text="Edit comments anytime" theme={theme} />
+                <ListItem icon="➔" text="Navigate to the next recipe suggestion by clicking 'Next'" theme={theme} />
+                <ListItem icon="👀" text="View recipe details by clicking 'I will Cook IT!'. The app will remember your choice" theme={theme} />
+                <ListItem icon="↺" text="You then will have the option to undo your choice" theme={theme} />
+                <ListItem icon="📌" text="Or save the recipe to the homescreen" theme={theme} />
+              </View>
+            }
+            theme={theme}
+          />
 
-        <Section
-          icon="📖"
-          title="Managing Your Recipes"
-          content={
-            <View>
-              <Text style={[styles.sectionText, { color: theme.colors.primary }]}>
-                After you get a suggestion you have the options to:
-              </Text>
-              <ListItem icon="🗑️" text="Delete recipes you no longer want" theme={theme} />
-              <ListItem icon="✏️" text="Edit comments anytime" theme={theme} />
-              <ListItem icon="➔" text="Navigate to the next recipe suggestion by clicking 'Next'" theme={theme} />
-              <ListItem icon="👀" text="View recipe details by clicking 'I will Cook IT!'. The app will remember your choice" theme={theme} />
-              <ListItem icon="↺" text="You then will have the option to undo your choice" theme={theme} />
-              <ListItem icon="📌" text="Or save the recipe to the homescreen" theme={theme} />
-            </View>
-          }
-          theme={theme}
-        />
+          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
+            <MaterialCommunityIcons name="lightbulb" size={32} color={theme.colors.primary} style={styles.infoIcon} />
+            <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
+              Tip: By clicking "I will Cook IT!" you will have the chance to create your shopping list. And by saving the recipe to the homescreen, the next time you open the app, you can open the recipe again for the actual cooking instructions.
+            </Text>
+          </View>
 
-        <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
-          <MaterialCommunityIcons name="lightbulb" size={32} color={theme.colors.primary} style={styles.infoIcon} />
-          <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
-            Tip: By clicking "I will Cook IT!" you will have the chance to create your shopping list. And by saving the recipe to the homescreen, the next time you open the app, you can open the recipe again for the actual cooking instructions.
-          </Text>
-        </View>
+          <Section
+            icon="💾"
+            title="Saving Your Recipes"
+            content="Your new or modified recipes are saved automatically. When you close Cook-IT, all changes are securely uploaded to your Google Drive, ensuring nothing is lost."
+            theme={theme}
+          />
 
-        <Section
-          icon="💾"
-          title="Saving Your Recipes"
-          content="Your new or modified recipes are saved automatically. When you close Cook-IT, all changes are securely uploaded to your Google Drive, ensuring nothing is lost."
-          theme={theme}
-        />
-
-        <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
-          <MaterialCommunityIcons name="lock" size={32} color={theme.colors.primary} style={styles.infoIcon} />
-          <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
-            All your recipe data stays private in your own Google Drive account.
-          </Text>
-        </View>
-
+          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
+            <MaterialCommunityIcons name="lock" size={32} color={theme.colors.primary} style={styles.infoIcon} />
+            <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
+              All your recipe data stays private in your own Google Drive account.
+            </Text>
+          </View>
+        </ScrollView>
+      </Dialog.Content>
+      <Dialog.Actions>
         <Button
           onPress={onClose}
           style={[styles.closeButton, { backgroundColor: theme.colors.primary }]}
@@ -101,15 +101,15 @@ const HelpDialog = ({ onClose }) => {
         >
           Got it!
         </Button>
-      </ScrollView>
-    </View>
+      </Dialog.Actions>
+    </>
   );
 };
 
 const Section = ({ icon, title, content, theme }) => (
   <View style={styles.section}>
     <View style={styles.sectionHeader}>
-      <View style={[styles.iconContainer, { backgroundColor: '#F2BC42', marginLeft: -30 }]}>
+      <View style={[styles.iconContainer, { backgroundColor: '#F2BC42' }]}>
         <Text style={[styles.iconText, { }]}>{icon}</Text>
       </View>
       <Text style={[styles.sectionTitle, { color: '#E06D3D' }]}>{title}</Text>
@@ -132,33 +132,22 @@ const ListItem = ({ icon, text, theme }) => (
 );
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-  scrollView: {
-    flex: 1,
-    width: '100%',
-  },
-  scrollContent: {
-    padding: 16,
-    flexGrow: 1,
+  content: {
+    flexShrink: 1,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
-    marginBottom: 16,
-    paddingLeft: 8,
-  },
-  headerIcon: {
-    marginRight: 4,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
+  },
+  headerIcon: {
+    marginRight: 8,
   },
   infoBox: {
     flexDirection: 'row',
@@ -168,9 +157,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 8,
   },
-  infoIcon: {
-    marginRight: 4,
-  },
+  infoIcon: {},
   infoText: {
     flex: 1,
     fontSize: 14,
@@ -182,7 +169,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
-    paddingLeft: 15,
   },
   iconContainer: {
     width: 32,
@@ -200,6 +186,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   sectionContent: {
+    marginLeft: 15,
     paddingLeft: 12,
     borderLeftWidth: 2,
   },
@@ -220,8 +207,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   closeButton: {
-    marginTop: 16,
-    marginBottom: 8,
+    width: '100%',
   },
   closeButtonLabel: {
     fontSize: 16,
