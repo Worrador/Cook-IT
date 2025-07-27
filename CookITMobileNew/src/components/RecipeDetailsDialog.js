@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
 import { Dialog, Portal, Text, Button, TextInput, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook, onUncook, onUpdate, onNext }) => {
+export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose, onDelete, onCook, onUncook, onUpdate, onNext }) => {
   const theme = useTheme();
   const [isEditingComment, setIsEditingComment] = useState(false);
   const [commentText, setCommentText] = useState('');
@@ -19,6 +19,10 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
     } catch (error) {
       console.error('Error saving comment:', error);
     }
+  };
+
+  const toggleCommentExpansion = () => {
+    setIsCommentExpanded(!isCommentExpanded);
   };
 
   useEffect(() => {
@@ -80,7 +84,11 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
 
   return (
     <Portal>
-      <Dialog visible={visible} onDismiss={handleDialogDismiss} style={styles.dialog}>
+      <Dialog
+        visible={visible}
+        onDismiss={handleDialogDismiss}
+        style={styles.dialog}
+      >
         <Dialog.Title style={[styles.title, { color: theme.colors.onSurface }]}>
           <View style={styles.titleContent}>
             <MaterialCommunityIcons name="book-open-variant" size={24} color={theme.colors.onSurface} />
@@ -88,89 +96,52 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
           </View>
         </Dialog.Title>
         <Dialog.Content style={styles.dialogContent}>
-          <TouchableOpacity activeOpacity={1} onPress={handleContentPress}>
-            <View style={styles.content}>
-              <View style={styles.fixedContent}>
-                <View style={styles.row}>
-                  <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollContent}>
-                    <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
-                  </ScrollView>
-                  <Button
-                    icon="delete"
-                    onPress={() => onDelete(recipe.name)}
-                    style={styles.deleteButton}
-                    textColor={theme.colors.error}
-                    iconSize={28}
+          <View style={styles.content}>
+            <View style={styles.row}>
+              <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
+              <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
+              <Button
+                icon="delete"
+                onPress={() => onDelete(recipe.name)}
+                style={styles.deleteButton}
+                textColor={theme.colors.error}
+                iconSize={28}
+              />
+            </View>
+            <View style={styles.row}>
+              <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
+              <View style={styles.commentContainer}>
+                {isEditingComment ? (
+                  <TextInput
+                    ref={commentInputRef}
+                    value={commentText}
+                    onChangeText={setCommentText}
+                    onBlur={handleCommentSave}
+                    style={styles.commentInput}
+                    placeholder="Add any comments"
+                    placeholderTextColor={`${theme.colors.primary}66`}
+                    multiline
+                    autoFocus
+                    mode="outlined"
                   />
-                </View>
-              </View>
-              <View style={styles.row}>
-                <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
-                <View style={styles.commentContainer}>
-                  {isEditingComment ? (
-                    <TextInput
-                      ref={commentInputRef}
-                      value={commentText}
-                      onChangeText={setCommentText}
-                      onBlur={handleCommentSave}
-                      style={[styles.commentInput, { backgroundColor: theme.colors.surface }]}
-                      placeholder="Add any comments"
-                      placeholderTextColor={`${theme.colors.primary}66`}
-                      multiline
-                      numberOfLines={isCommentExpanded ? undefined : 3}
-                      autoFocus
-                      mode="outlined"
-                      outlineStyle={{ borderRadius: 12 }}
-                      contentStyle={{ textAlignVertical: 'center' }}
-                      underlineColor="transparent"
-                    />
-                  ) : (
+                ) : (
+                  <View style={styles.commentViewContainer}>
                     <TouchableOpacity
+                      style={[styles.commentTextContainer, {
+                        maxHeight: isCommentExpanded ? 200 : 48
+                      }]}
                       onPress={() => setIsEditingComment(true)}
-                      style={styles.commentViewContainer}
                     >
-                      {isCommentExpanded ? (
-                        <TextInput
-                          value={commentText}
-                          style={[styles.commentInput, {
-                            backgroundColor: 'transparent',
-                            maxHeight: 100,
-                            height: 'auto'
-                          }]}
-                          placeholder="Add any comments"
-                          placeholderTextColor={`${theme.colors.primary}66`}
-                          multiline
-                          numberOfLines={4}
-                          mode="flat"
-                          contentStyle={{ textAlignVertical: 'center' }}
-                          editable={false}
-                          underlineColor="transparent"
-                        />
-                      ) : (
-                        <View style={[styles.commentScrollContainer, { height: 48 }]}>
-                          <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            style={styles.scrollContent}
-                          >
-                            <TextInput
-                              value={commentText}
-                              style={[styles.commentInput, { backgroundColor: 'transparent' }]}
-                              placeholder="Add any comments"
-                              placeholderTextColor={`${theme.colors.primary}66`}
-                              multiline
-                              numberOfLines={1}
-                              mode="flat"
-                              contentStyle={{ textAlignVertical: 'center' }}
-                              editable={false}
-                              underlineColor="transparent"
-                            />
-                          </ScrollView>
-                        </View>
-                      )}
+                      <Text
+                        style={[styles.commentText, { color: theme.colors.onSurface }]}
+                        numberOfLines={isCommentExpanded ? undefined : 2}
+                      >
+                        {commentText || "Add any comments"}
+                      </Text>
+                    </TouchableOpacity>
+                    {commentText && commentText.length > 50 && (
                       <TouchableOpacity
-                        onPress={() => setIsCommentExpanded(!isCommentExpanded)}
+                        onPress={toggleCommentExpansion}
                         style={styles.expandButton}
                       >
                         <MaterialCommunityIcons
@@ -179,26 +150,28 @@ export const RecipeDetailsDialog = ({ visible, recipe, onClose, onDelete, onCook
                           color={theme.colors.primary}
                         />
                       </TouchableOpacity>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                    )}
+                  </View>
+                )}
               </View>
             </View>
-          </TouchableOpacity>
+          </View>
         </Dialog.Content>
         <Dialog.Actions style={styles.actions}>
           {!hasClickedCook ? (
             <View style={styles.buttonContainer}>
-              <Button
-                mode="outlined"
-                onPress={handleNext}
-                style={[styles.actionButton, { borderColor: theme.colors.primary }]}
-                textColor={theme.colors.primary}
-                icon="arrow-right"
-                disabled={noMoreRecipes}
-              >
-                {noMoreRecipes ? "No more recipes" : "Next"}
-              </Button>
+              {isSuggestionFlow && (
+                <Button
+                  mode="outlined"
+                  onPress={handleNext}
+                  style={[styles.actionButton, { borderColor: theme.colors.primary }]}
+                  textColor={theme.colors.primary}
+                  icon="arrow-right"
+                  disabled={noMoreRecipes}
+                >
+                  {noMoreRecipes ? "No more recipes" : "Next"}
+                </Button>
+              )}
               <Button
                 mode="contained"
                 onPress={handleCook}
@@ -231,11 +204,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#fbf7f0',
     width: '90%',
     maxWidth: 400,
-    margin: 0,
     alignSelf: 'center',
   },
   dialogContent: {
-    position: 'relative',
     paddingTop: 0,
   },
   title: {
@@ -243,8 +214,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     paddingLeft: 20,
-    position: 'relative',
-    zIndex: 2,
   },
   titleContent: {
     flexDirection: 'row',
@@ -254,10 +223,6 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: 16,
-  },
-  fixedContent: {
-    position: 'relative',
-    zIndex: 1,
   },
   row: {
     flexDirection: 'row',
@@ -273,14 +238,10 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     paddingTop: 12,
   },
-  scrollContent: {
-    flex: 1,
-    minWidth: 0,
-  },
   recipeName: {
     fontSize: 16,
     paddingLeft: 15,
-    minWidth: 100,
+    flex: 1,
   },
   deleteButton: {
     margin: 0,
@@ -300,15 +261,25 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     minWidth: 0,
   },
-  commentScrollContainer: {
+  commentTextContainer: {
     flex: 1,
     minWidth: 0,
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(0,0,0,0.02)',
+    borderRadius: 8,
+    overflow: 'hidden',
+    minHeight: 48,
+  },
+  commentText: {
+    fontSize: 16,
+    lineHeight: 20,
   },
   commentInput: {
     fontSize: 16,
-    minWidth: 200,
     flex: 1,
-    paddingVertical: 0,
+    backgroundColor: '#f7f0e2',
   },
   expandButton: {
     padding: 8,
