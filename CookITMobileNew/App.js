@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar, AppState, BackHandler, Dimensions } from 'react-native';
+import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar, AppState, BackHandler, Dimensions, KeyboardAvoidingView, Platform, ImageBackground, ScrollView } from 'react-native';
 import { Text, Surface, useTheme, IconButton, FAB, Portal, Dialog, Button as PaperButton, Provider as PaperProvider, MD3LightTheme, TextInput } from 'react-native-paper';
 import { Card, CardHeader, CardContent, CardFooter } from './src/components/Card';
 import { Button } from './src/components/Button';
@@ -7,6 +7,7 @@ import { Input } from './src/components/Input';
 import { RecipeDetailsDialog } from './src/components/RecipeDetailsDialog';
 import HelpDialog from './src/components/HelpDialog';
 import BuyCoffeeDialog from './src/components/BuyCoffeeDialog';
+import AddRecipeDialog from './src/components/AddRecipeDialog';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   loadRecipes,
@@ -50,8 +51,6 @@ const AppContent = () => {
   const [recipes, setRecipes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newRecipe, setNewRecipe] = useState({ name: '', url: '', comment: '' });
-  const [error, setError] = useState('');
   const [showRecipeDetails, setShowRecipeDetails] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -63,6 +62,7 @@ const AppContent = () => {
   const [appState, setAppState] = useState(AppState.currentState);
   const [suggestedRecipes, setSuggestedRecipes] = useState(new Set());
   const [isAnyDialogOpen, setIsAnyDialogOpen] = useState(false);
+  const [isSuggestionFlow, setIsSuggestionFlow] = useState(false);
 
   useEffect(() => {
     // Hide status bar when component mounts
@@ -109,8 +109,6 @@ const AppContent = () => {
       }
       if (showAddModal) {
         setShowAddModal(false);
-        setNewRecipe({ name: '', url: '', comment: '' });
-        setError('');
         return true;
       }
       // If no modals are open, return false to allow default behavior (e.g., exit app)
@@ -150,23 +148,10 @@ const AppContent = () => {
     }
   };
 
-  const handleAddRecipe = async () => {
-    if (!newRecipe.name.trim()) {
-      setError('Recipe name is required');
-      return;
-    }
-
-    const recipe = {
-      name: newRecipe.name.trim(),
-      url: newRecipe.url.trim(),
-      comment: newRecipe.comment.trim(),
-    };
-
+  const handleAddRecipe = async (recipe) => {
     const updatedRecipes = await addRecipe(recipe);
     setRecipes(updatedRecipes);
-    setNewRecipe({ name: '', url: '', comment: '' });
     setShowAddModal(false);
-    setError('');
   };
 
   const handleDeleteRecipe = async (recipeName) => {
@@ -224,6 +209,7 @@ const AppContent = () => {
         if (recipe && !suggestedRecipes.has(recipe.name)) {
           setSuggestedRecipes(prev => new Set([...prev, recipe.name]));
           setSelectedRecipe(recipe);
+          setIsSuggestionFlow(true);
           setShowRecipeDetails(true);
           return;
         }
@@ -234,6 +220,7 @@ const AppContent = () => {
       // If we've tried 10 times and still haven't found a new recipe
       setSuggestedRecipes(new Set()); // Reset the set of seen recipes
       setSelectedRecipe(recipes[Math.floor(Math.random() * recipes.length)]);
+      setIsSuggestionFlow(true);
       setShowRecipeDetails(true);
     } catch (error) {
       console.error('Error choosing recipe:', error);
@@ -347,6 +334,7 @@ const AppContent = () => {
           <TouchableOpacity
             onPress={() => {
               setSelectedRecipe(item);
+              setIsSuggestionFlow(false);
               setShowRecipeDetails(true);
             }}
           >
@@ -362,10 +350,13 @@ const AppContent = () => {
                       </View>
                     )}
                     {pinnedRecipes.includes(item.name) && (
-                      <View style={[styles.badge, { backgroundColor: theme.colors.tertiary }]}>
-                        <MaterialCommunityIcons name="pin" size={16} color={theme.colors.onSurface} />
-                        <Text style={[styles.badgeText, { color: theme.colors.onSurface }]}>Pinned</Text>
-                      </View>
+                      <>
+                        <View style={[styles.badge, { backgroundColor: theme.colors.tertiary }]}>
+                          <MaterialCommunityIcons name="pin" size={16} color={theme.colors.onSurface} />
+                          <Text style={[styles.badgeText, { color: theme.colors.onSurface }]}>Pinned</Text>
+                        </View>
+                        <MaterialCommunityIcons name="pin" size={24} color={theme.colors.secondary} style={styles.pinIcon} />
+                      </>
                     )}
                   </View>
                 </View>
@@ -386,92 +377,21 @@ const AppContent = () => {
       />
 
       <Portal>
-        <View style={styles.modalContainer}>
-          <Dialog visible={showAddModal} onDismiss={() => {
-            setShowAddModal(false);
-            setNewRecipe({ name: '', url: '', comment: '' });
-            setError('');
-          }} style={[styles.dialog, { backgroundColor: '#fbf7f0' }]}>
-            <Dialog.Title style={[styles.title, { color: theme.colors.onSurface }]}>
-              <MaterialCommunityIcons name="plus-circle" size={24} color={theme.colors.onSurface} style={styles.titleIcon} />
-              Add New Recipe
-            </Dialog.Title>
-            <Dialog.Content>
-              <View style={styles.content}>
-                <View style={styles.row}>
-                  <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
-                  <TextInput
-                    value={newRecipe.name}
-                    onChangeText={(text) => setNewRecipe({ ...newRecipe, name: text })}
-                    style={[styles.input, { backgroundColor: theme.colors.background }]}
-                    placeholder="Enter recipe name"
-                    placeholderTextColor={`${theme.colors.primary}66`}
-                    error={!!error}
-                    mode="outlined"
-                    outlineStyle={{ borderRadius: 12 }}
-                  />
-                </View>
-                <View style={styles.row}>
-                  <Text style={[styles.label, { color: theme.colors.onSurface }]}>URL</Text>
-                  <TextInput
-                    value={newRecipe.url}
-                    onChangeText={(text) => setNewRecipe({ ...newRecipe, url: text })}
-                    style={[styles.input, { backgroundColor: theme.colors.background }]}
-                    placeholder="Enter recipe URL"
-                    placeholderTextColor={`${theme.colors.primary}66`}
-                    keyboardType="url"
-                    autoCapitalize="none"
-                    mode="outlined"
-                    outlineStyle={{ borderRadius: 12 }}
-                  />
-                </View>
-                <View style={styles.row}>
-                  <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
-                  <TextInput
-                    value={newRecipe.comment}
-                    onChangeText={(text) => setNewRecipe({ ...newRecipe, comment: text })}
-                    style={[styles.input, { backgroundColor: theme.colors.background }]}
-                    placeholder="Add any comments"
-                    placeholderTextColor={`${theme.colors.primary}66`}
-                    multiline
-                    numberOfLines={3}
-                    mode="outlined"
-                    outlineStyle={{ borderRadius: 12 }}
-                    contentStyle={{ textAlignVertical: 'center' }}
-                  />
-                </View>
-              </View>
-            </Dialog.Content>
-            <Dialog.Actions style={styles.actions}>
-              <View style={styles.buttonContainer}>
-                <Button
-                  mode="contained"
-                  onPress={handleAddRecipe}
-                  style={[styles.actionButton, {
-                    backgroundColor: (newRecipe.name && newRecipe.url)
-                      ? theme.colors.primary
-                      : theme.colors.background,
-                    opacity: (newRecipe.name && newRecipe.url) ? 1 : 0.7,
-                    borderRadius: 12
-                  }]}
-                  textColor={(newRecipe.name && newRecipe.url) ? theme.colors.surface : theme.colors.onSurface}
-                  disabled={!newRecipe.name || !newRecipe.url}
-                  icon="plus"
-                >
-                  Add Recipe
-                </Button>
-              </View>
-            </Dialog.Actions>
-          </Dialog>
-        </View>
+        <AddRecipeDialog
+          visible={showAddModal}
+          onDismiss={() => setShowAddModal(false)}
+          onAddRecipe={handleAddRecipe}
+        />
       </Portal>
 
       <RecipeDetailsDialog
         visible={showRecipeDetails && selectedRecipe !== null}
         recipe={selectedRecipe}
+        isSuggestionFlow={isSuggestionFlow}
         onClose={() => {
           setShowRecipeDetails(false);
           setSelectedRecipe(null);
+          setIsSuggestionFlow(false);
         }}
         onDelete={handleDeleteRecipe}
         onCook={handleCook}
@@ -574,6 +494,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderRadius: 12,
     overflow: 'hidden',
+    position: 'relative',
+  },
+  pinIcon: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    transform: [{ rotate: '25deg' }],
   },
   recipeHeader: {
     padding: 16,
@@ -679,14 +606,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     zIndex: 1000,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 0,
+    paddingBottom: 20,
+    paddingTop: 4,
+    gap: 8,
+  },
   dialog: {
     width: '90%',
     maxWidth: 400,
-    marginVertical: 24,
     alignSelf: 'center',
   },
   titleIcon: {
-    marginRight: 8,
+    // marginRight is no longer needed, gap is used instead
   },
   content: {
     gap: 24,
