@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Keyboard } from 'react-native';
 import { Dialog, Portal, Text, Button, TextInput, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -10,7 +10,33 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
   const [hasClickedCook, setHasClickedCook] = useState(false);
   const [noMoreRecipes, setNoMoreRecipes] = useState(false);
   const [isCommentExpanded, setIsCommentExpanded] = useState(false);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const [isCommentFocused, setIsCommentFocused] = useState(false);
   const commentInputRef = useRef(null);
+
+  // Keyboard listeners for dialog positioning
+  useEffect(() => {
+    const keyboardDidShow = (event) => {
+      // Only apply offset if comment input is focused
+      if (isCommentFocused) {
+        const keyboardHeight = event.endCoordinates.height;
+        // Use 30% of keyboard height, max 150px
+        setKeyboardOffset(-Math.min(keyboardHeight * 0.5, 180));
+      }
+    };
+
+    const keyboardDidHide = () => {
+      setKeyboardOffset(0);
+    };
+
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', keyboardDidShow);
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', keyboardDidHide);
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, [isCommentFocused]);
 
   const handleCommentSave = async () => {
     try {
@@ -87,7 +113,10 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       <Dialog
         visible={visible}
         onDismiss={handleDialogDismiss}
-        style={styles.dialog}
+        style={[
+          styles.dialog,
+          { transform: [{ translateY: keyboardOffset }] }
+        ]}
       >
         <Dialog.Title style={[styles.title, { color: theme.colors.onSurface }]}>
           <View style={styles.titleContent}>
@@ -95,105 +124,112 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
             <Text style={{ marginLeft: 16, fontSize: 20, fontWeight: '600' }}>How about this recipe?</Text>
           </View>
         </Dialog.Title>
-        <Dialog.Content style={styles.dialogContent}>
-          <View style={styles.content}>
-            <View style={styles.row}>
-              <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
-              <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
-              <Button
-                icon="delete"
-                onPress={() => onDelete(recipe.name)}
-                style={styles.deleteButton}
-                textColor={theme.colors.error}
-                iconSize={28}
-              />
-            </View>
-            <View style={styles.row}>
-              <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
-              <View style={styles.commentContainer}>
-                {isEditingComment ? (
-                  <TextInput
-                    ref={commentInputRef}
-                    value={commentText}
-                    onChangeText={setCommentText}
-                    onBlur={handleCommentSave}
-                    style={styles.commentInput}
-                    placeholder="Add any comments"
-                    placeholderTextColor={`${theme.colors.primary}66`}
-                    multiline
-                    autoFocus
-                    mode="outlined"
-                  />
-                ) : (
-                  <View style={styles.commentViewContainer}>
-                    <TouchableOpacity
-                      style={[styles.commentTextContainer, {
-                        maxHeight: isCommentExpanded ? 200 : 48
-                      }]}
-                      onPress={() => setIsEditingComment(true)}
-                    >
-                      <Text
-                        style={[styles.commentText, { color: theme.colors.onSurface }]}
-                        numberOfLines={isCommentExpanded ? undefined : 2}
-                      >
-                        {commentText || "Add any comments"}
-                      </Text>
-                    </TouchableOpacity>
-                    {commentText && commentText.length > 50 && (
+        <ScrollView keyboardShouldPersistTaps="handled">
+          <Dialog.Content style={styles.dialogContent}>
+            <View style={styles.content}>
+              <View style={styles.row}>
+                <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
+                <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
+                <Button
+                  icon="delete"
+                  onPress={() => onDelete(recipe.name)}
+                  style={styles.deleteButton}
+                  textColor={theme.colors.error}
+                  iconSize={28}
+                />
+              </View>
+              <View style={styles.row}>
+                <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
+                <View style={styles.commentContainer}>
+                  {isEditingComment ? (
+                    <TextInput
+                      ref={commentInputRef}
+                      value={commentText}
+                      onChangeText={setCommentText}
+                      onBlur={() => {
+                        setIsCommentFocused(false);
+                        handleCommentSave();
+                      }}
+                      onFocus={() => setIsCommentFocused(true)}
+                      style={styles.commentInput}
+                      placeholder="Add any comments"
+                      placeholderTextColor={`${theme.colors.primary}66`}
+                      multiline
+                      autoFocus
+                      mode="outlined"
+                    />
+                  ) : (
+                    <View style={styles.commentViewContainer}>
                       <TouchableOpacity
-                        onPress={toggleCommentExpansion}
-                        style={styles.expandButton}
+                        style={[styles.commentTextContainer, {
+                          maxHeight: isCommentExpanded ? 200 : 48,
+                          backgroundColor: 'transparent'
+                        }]}
+                        onPress={() => setIsEditingComment(true)}
                       >
-                        <MaterialCommunityIcons
-                          name={isCommentExpanded ? "chevron-up" : "chevron-down"}
-                          size={24}
-                          color={theme.colors.primary}
-                        />
+                        <Text
+                          style={[styles.commentText, { color: theme.colors.onSurface }]}
+                          numberOfLines={isCommentExpanded ? undefined : 2}
+                        >
+                          {commentText || "Add any comments"}
+                        </Text>
                       </TouchableOpacity>
-                    )}
-                  </View>
-                )}
+                      {commentText && commentText.length > 50 && (
+                        <TouchableOpacity
+                          onPress={toggleCommentExpansion}
+                          style={styles.expandButton}
+                        >
+                          <MaterialCommunityIcons
+                            name={isCommentExpanded ? "chevron-up" : "chevron-down"}
+                            size={24}
+                            color={theme.colors.primary}
+                          />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+                </View>
               </View>
             </View>
-          </View>
-        </Dialog.Content>
-        <Dialog.Actions style={styles.actions}>
-          {!hasClickedCook ? (
-            <View style={styles.buttonContainer}>
-              {isSuggestionFlow && (
+          </Dialog.Content>
+          <Dialog.Actions style={styles.actions}>
+            {!hasClickedCook ? (
+              <View style={styles.buttonContainer}>
+                {isSuggestionFlow && (
+                  <Button
+                    mode="outlined"
+                    onPress={handleNext}
+                    style={[styles.actionButton, { borderColor: theme.colors.primary }]}
+                    textColor={theme.colors.primary}
+                    icon="arrow-right"
+                    disabled={noMoreRecipes}
+                  >
+                    {noMoreRecipes ? "No more recipes" : "Next"}
+                  </Button>
+                )}
                 <Button
-                  mode="outlined"
-                  onPress={handleNext}
-                  style={[styles.actionButton, { borderColor: theme.colors.primary }]}
-                  textColor={theme.colors.primary}
-                  icon="arrow-right"
-                  disabled={noMoreRecipes}
+                  mode="contained"
+                  onPress={handleCook}
+                  style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
+                  icon="chef-hat"
                 >
-                  {noMoreRecipes ? "No more recipes" : "Next"}
+                  I will Cook IT!
                 </Button>
-              )}
-              <Button
-                mode="contained"
-                onPress={handleCook}
-                style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
-                icon="chef-hat"
-              >
-                I will Cook IT!
-              </Button>
-            </View>
-          ) : (
-            <>
-              <Button
-                mode="contained"
-                onPress={handleChangeMind}
-                style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
-                icon="refresh"
-              >
-                Change my mind
-              </Button>
-            </>
-          )}
-        </Dialog.Actions>
+              </View>
+            ) : (
+              <>
+                <Button
+                  mode="contained"
+                  onPress={handleChangeMind}
+                  style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
+                  icon="refresh"
+                >
+                  Change my mind
+                </Button>
+              </>
+            )}
+          </Dialog.Actions>
+        </ScrollView>
       </Dialog>
     </Portal>
   );

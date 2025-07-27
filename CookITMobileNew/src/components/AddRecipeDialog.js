@@ -18,10 +18,11 @@ const AddRecipeDialog = ({ visible, onDismiss, onAddRecipe }) => {
   }, [visible]);
 
   useEffect(() => {
-    const keyboardDidShow = () => {
+    const keyboardDidShow = (event) => {
       // Using a fixed value is often more reliable for centered dialogs
       // to prevent them from being pushed too far up.
-      setKeyboardOffset(-150);
+      const keyboardHeight = event.endCoordinates.height;
+      setKeyboardOffset(-Math.min(keyboardHeight * 0.6, 200));
     };
 
     const keyboardDidHide = () => {
@@ -155,7 +156,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   content: {
-    gap: 24,
+    gap: 20,
   },
   row: {
     flexDirection: 'row',
@@ -173,7 +174,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   actions: {
-    padding: 16,
+    padding: 8,
     gap: 8,
   },
   buttonContainer: {
