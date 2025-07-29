@@ -45,6 +45,19 @@ export const deleteRecipe = async (recipeName) => {
     const recipes = await loadRecipes();
     const updatedRecipes = recipes.filter(recipe => recipe.name !== recipeName);
     await saveRecipes(updatedRecipes);
+
+    // Clean up pinned recipes
+    const pinnedRecipes = await getPinnedRecipes();
+    const updatedPinnedRecipes = pinnedRecipes.filter(name => name !== recipeName);
+    await AsyncStorage.setItem(PINNED_RECIPES_KEY, JSON.stringify(updatedPinnedRecipes));
+
+    // Clean up cooked recipes
+    const cookedRecipes = await getCookedRecipes();
+    if (cookedRecipes[recipeName] !== undefined) {
+      delete cookedRecipes[recipeName];
+      await AsyncStorage.setItem(COOKED_RECIPES_KEY, JSON.stringify(cookedRecipes));
+    }
+
     return updatedRecipes;
   } catch (error) {
     console.error('Error deleting recipe:', error);
@@ -132,5 +145,45 @@ export const togglePinnedRecipe = async (recipeName) => {
   } catch (error) {
     console.error('Error toggling pinned recipe:', error);
     return [];
+  }
+};
+
+// Clean up stale references in pinned and cooked recipes
+export const cleanupStaleReferences = async () => {
+  try {
+    const recipes = await loadRecipes();
+    const validRecipeNames = new Set(recipes.map(recipe => recipe.name));
+
+    // Clean up pinned recipes
+    const pinnedRecipes = await getPinnedRecipes();
+    const validPinnedRecipes = pinnedRecipes.filter(name => validRecipeNames.has(name));
+    if (validPinnedRecipes.length !== pinnedRecipes.length) {
+      await AsyncStorage.setItem(PINNED_RECIPES_KEY, JSON.stringify(validPinnedRecipes));
+    }
+
+    // Clean up cooked recipes
+    const cookedRecipes = await getCookedRecipes();
+    const validCookedRecipes = {};
+    let cookedRecipesChanged = false;
+
+    for (const [recipeName, isCooked] of Object.entries(cookedRecipes)) {
+      if (validRecipeNames.has(recipeName)) {
+        validCookedRecipes[recipeName] = isCooked;
+      } else {
+        cookedRecipesChanged = true;
+      }
+    }
+
+    if (cookedRecipesChanged) {
+      await AsyncStorage.setItem(COOKED_RECIPES_KEY, JSON.stringify(validCookedRecipes));
+    }
+
+    return {
+      pinnedRecipes: validPinnedRecipes,
+      cookedRecipes: validCookedRecipes
+    };
+  } catch (error) {
+    console.error('Error cleaning up stale references:', error);
+    return null;
   }
 };

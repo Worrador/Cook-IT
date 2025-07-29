@@ -6,7 +6,7 @@ import * as Haptics from 'expo-haptics';
 const InteractivePin = ({
   isPinned,
   onToggle,
-  size = 24,
+  size = 28, // Increased from 24 to make pin bigger
   style,
   disabled = false
 }) => {
@@ -73,10 +73,7 @@ const InteractivePin = ({
           },
         ]}
       >
-        {/* Pin shadow */}
-        <View style={[styles.pinShadow, { width: size + 2, height: size + 2 }]} />
-
-        {/* Pin body */}
+        {/* Pin body - removed shadow */}
         <MaterialCommunityIcons
           name="pin"
           size={size}
@@ -104,20 +101,14 @@ const InteractivePin = ({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: -8, // Move slightly above the card edge
+    left: '50%', // Center horizontally
+    transform: [{ translateX: -14 }], // Adjusted for larger pin size (28/2 = 14)
     zIndex: 10,
   },
   pinContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  pinShadow: {
-    position: 'absolute',
-    backgroundColor: 'rgba(0,0,0,0.15)',
-    borderRadius: 12,
-    top: 2,
-    left: 2,
   },
   pin: {
     // Additional styling handled via props
