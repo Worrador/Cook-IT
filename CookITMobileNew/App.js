@@ -76,6 +76,7 @@ const AppContent = () => {
   const [suggestedRecipes, setSuggestedRecipes] = useState(new Set());
   const [isAnyDialogOpen, setIsAnyDialogOpen] = useState(false);
   const [isSuggestionFlow, setIsSuggestionFlow] = useState(false);
+  const [bouncingPins, setBouncingPins] = useState(new Set()); // Track which pins should bounce
 
   // Animation values
   const corkSlideAnim = useRef(new Animated.Value(0)).current; // 0 = hidden, 1 = visible
@@ -143,15 +144,31 @@ const AppContent = () => {
 
         const recipeAnimationPromises = pinnedRecipeNames.map((recipeName, index) => {
           const recipeAnim = getRecipeAnimation(recipeName);
-          return Animated.timing(recipeAnim, {
+          const animation = Animated.timing(recipeAnim, {
             toValue: 1,
             duration: 400,
             delay: index * 100, // 100ms delay between each recipe
             useNativeDriver: false,
           });
+
+          // Add bounce trigger after each recipe animation completes
+          animation.start(() => {
+            setBouncingPins(prev => new Set([...prev, recipeName]));
+            // Reset bounce state after animation completes
+            setTimeout(() => {
+              setBouncingPins(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(recipeName);
+                return newSet;
+              });
+            }, 500); // Reset after bounce animation duration
+          });
+
+          return animation;
         });
 
-        Animated.parallel(recipeAnimationPromises).start();
+        // Don't use Animated.parallel since we want individual completion callbacks
+        // The delays will handle the staggering
       });
     } else {
       // Hide cork background - slide down and center buttons (pinned recipes disabled)
@@ -159,6 +176,9 @@ const AppContent = () => {
       const pinnedRecipeNames = recipes
         .filter(recipe => pinnedRecipes.includes(recipe.name))
         .map(recipe => recipe.name);
+
+      // Clear bouncing pins when hiding
+      setBouncingPins(new Set());
 
       const recipeAnimationPromises = pinnedRecipeNames.map((recipeName) => {
         const recipeAnim = getRecipeAnimation(recipeName);
@@ -526,7 +546,9 @@ const AppContent = () => {
                       <InteractivePin
                         isPinned={pinnedRecipes.includes(item.name)}
                         onToggle={() => handleTogglePinned(item.name)}
-                        size={22}
+                        size={32}
+                        triggerBounce={bouncingPins.has(item.name)}
+                        key={`pin-${item.name}-${showPinnedOnly}`} // Force re-mount to trigger bounce animation
                       />
 
                       <View style={styles.recipeHeader}>

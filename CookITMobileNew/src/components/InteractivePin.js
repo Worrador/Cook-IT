@@ -6,12 +6,42 @@ import * as Haptics from 'expo-haptics';
 const InteractivePin = ({
   isPinned,
   onToggle,
-  size = 28, // Increased from 24 to make pin bigger
+  size = 32, // Increased from 28 to make pin even bigger
   style,
-  disabled = false
+  disabled = false,
+  triggerBounce = false, // New prop to control bounce animation
 }) => {
   const [scaleAnim] = useState(new Animated.Value(1));
+  const [bounceAnim] = useState(new Animated.Value(1)); // New animation for bounce effect
   const [isPressed, setIsPressed] = useState(false);
+
+  // Bounce animation to signal clickability
+  const playBounceAnimation = () => {
+    // Scale up to 125% then back to normal
+    Animated.sequence([
+      Animated.timing(bounceAnim, {
+        toValue: 1.25,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(bounceAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  // Trigger bounce when triggerBounce prop changes to true
+  React.useEffect(() => {
+    if (triggerBounce) {
+      const timer = setTimeout(() => {
+        playBounceAnimation();
+      }, 100); // Small delay after recipe appears
+
+      return () => clearTimeout(timer);
+    }
+  }, [triggerBounce]);
 
   const handlePressIn = () => {
     setIsPressed(true);
@@ -67,7 +97,7 @@ const InteractivePin = ({
           styles.pinContainer,
           {
             transform: [
-              { scale: scaleAnim },
+              { scale: Animated.multiply(scaleAnim, bounceAnim) }, // Combine press and bounce animations
               { rotate: '25deg' }, // Realistic pin angle
             ],
           },
@@ -103,7 +133,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -8, // Move slightly above the card edge
     left: '50%', // Center horizontally
-    transform: [{ translateX: -14 }], // Adjusted for larger pin size (28/2 = 14)
+    transform: [{ translateX: -16 }], // Adjusted for larger pin size (32/2 = 16)
     zIndex: 10,
   },
   pinContainer: {
