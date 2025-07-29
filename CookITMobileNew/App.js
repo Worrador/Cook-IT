@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar, AppState, BackHandler, Dimensions, KeyboardAvoidingView, Platform, ImageBackground, ScrollView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar, AppState, BackHandler, Dimensions, KeyboardAvoidingView, Platform, ImageBackground, ScrollView, LayoutAnimation, Animated } from 'react-native';
 import { Text, Surface, useTheme, IconButton, FAB, Portal, Dialog, Button as PaperButton, Provider as PaperProvider, MD3LightTheme, TextInput } from 'react-native-paper';
 import { Card, CardHeader, CardContent, CardFooter } from './src/components/Card';
 import { Button } from './src/components/Button';
@@ -8,6 +8,7 @@ import { RecipeDetailsDialog } from './src/components/RecipeDetailsDialog';
 import HelpDialog from './src/components/HelpDialog';
 import BuyCoffeeDialog from './src/components/BuyCoffeeDialog';
 import AddRecipeDialog from './src/components/AddRecipeDialog';
+import InteractivePin from './src/components/InteractivePin';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   loadRecipes,
@@ -64,6 +65,10 @@ const AppContent = () => {
   const [isAnyDialogOpen, setIsAnyDialogOpen] = useState(false);
   const [isSuggestionFlow, setIsSuggestionFlow] = useState(false);
 
+  // Animation values
+  const corkSlideAnim = useRef(new Animated.Value(0)).current; // 0 = hidden, 1 = visible
+  const buttonPositionAnim = useRef(new Animated.Value(0)).current; // 0 = center, 1 = top
+
   useEffect(() => {
     // Hide status bar when component mounts
     StatusBar.setHidden(true);
@@ -91,6 +96,41 @@ const AppContent = () => {
   useEffect(() => {
     setIsAnyDialogOpen(showAddModal || showRecipeDetails || showHelp || showBuyCoffee);
   }, [showAddModal, showRecipeDetails, showHelp, showBuyCoffee]);
+
+  // Animation effect for cork background
+  useEffect(() => {
+    const duration = 600; // Animation duration in milliseconds
+
+    if (showPinnedOnly) {
+      // Show cork background - slide up from bottom (pinned recipes enabled)
+      Animated.parallel([
+        Animated.timing(corkSlideAnim, {
+          toValue: 1,
+          duration: duration,
+          useNativeDriver: false,
+        }),
+        Animated.timing(buttonPositionAnim, {
+          toValue: 1,
+          duration: duration,
+          useNativeDriver: false,
+        }),
+      ]).start();
+    } else {
+      // Hide cork background - slide down and center buttons (pinned recipes disabled)
+      Animated.parallel([
+        Animated.timing(corkSlideAnim, {
+          toValue: 0,
+          duration: duration,
+          useNativeDriver: false,
+        }),
+        Animated.timing(buttonPositionAnim, {
+          toValue: 0,
+          duration: duration,
+          useNativeDriver: false,
+        }),
+      ]).start();
+    }
+  }, [showPinnedOnly]);
 
   useEffect(() => {
     const backAction = () => {
@@ -244,6 +284,22 @@ const AppContent = () => {
   };
 
   const handleTogglePinned = async (recipeName) => {
+    // Configure layout animation for smooth removal
+    LayoutAnimation.configureNext({
+      duration: 300,
+      create: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+      update: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+      },
+      delete: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+    });
+
     const updatedPinnedRecipes = await togglePinnedRecipe(recipeName);
     setPinnedRecipes(updatedPinnedRecipes);
   };
@@ -299,7 +355,17 @@ const AppContent = () => {
         </View>
       </Surface>
 
-      <View style={styles.mainButtons}>
+      <Animated.View style={[
+        styles.mainButtons,
+        {
+          transform: [{
+            translateY: buttonPositionAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, -50], // Move up by 50 pixels when pinned view is active
+            })
+          }]
+        }
+      ]}>
         <Button
           onPress={handleChooseRecipe}
           style={[styles.mainButton, { backgroundColor: theme.colors.secondary }]}
@@ -325,56 +391,101 @@ const AppContent = () => {
         >
           Quit
         </Button>
-      </View>
+      </Animated.View>
 
-      <FlatList
-        data={filteredRecipes}
-        keyExtractor={(item) => item.name}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            onPress={() => {
-              setSelectedRecipe(item);
-              setIsSuggestionFlow(false);
-              setShowRecipeDetails(true);
-            }}
-          >
-            <Surface style={[styles.recipeCard, { backgroundColor: theme.colors.surface }]} elevation={2}>
-              <View style={styles.recipeHeader}>
-                <View style={styles.recipeTitleContainer}>
-                  <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{item.name}</Text>
-                  <View style={styles.recipeBadges}>
-                    {cookedRecipes[item.name] && (
-                      <View style={[styles.badge, { backgroundColor: theme.colors.secondary }]}>
-                        <MaterialCommunityIcons name="check-circle" size={16} color="white" />
-                        <Text style={styles.badgeText}>Cooked</Text>
-                      </View>
-                    )}
-                    {pinnedRecipes.includes(item.name) && (
-                      <>
-                        <View style={[styles.badge, { backgroundColor: theme.colors.tertiary }]}>
-                          <MaterialCommunityIcons name="pin" size={16} color={theme.colors.onSurface} />
-                          <Text style={[styles.badgeText, { color: theme.colors.onSurface }]}>Pinned</Text>
-                        </View>
-                        <MaterialCommunityIcons name="pin" size={24} color={theme.colors.secondary} style={styles.pinIcon} />
-                      </>
-                    )}
-                  </View>
-                </View>
-                {item.comment && (
-                  <Text style={[styles.recipeComment, { color: theme.colors.onSurface }]} numberOfLines={2}>
-                    {item.comment}
-                  </Text>
+      <View style={[
+        styles.listContainer,
+        showPinnedOnly && { backgroundColor: '#D4B896' }
+      ]}>
+        <Animated.View style={[
+          styles.corkBackground,
+          {
+            transform: [{
+              translateY: corkSlideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [windowHeight, 0], // Slide up from bottom of screen
+              })
+            }],
+            opacity: corkSlideAnim,
+          }
+        ]}>
+          <View style={styles.corkPattern} />
+          <View style={styles.corkOverlay} />
+          <View style={styles.corkTexture} />
+        </Animated.View>
+
+        <FlatList
+          data={filteredRecipes}
+          keyExtractor={(item) => item.name}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              onPress={() => {
+                setSelectedRecipe(item);
+                setIsSuggestionFlow(false);
+                setShowRecipeDetails(true);
+              }}
+            >
+              <Surface
+                style={[
+                  styles.recipeCard,
+                  { backgroundColor: theme.colors.surface },
+                  showPinnedOnly && styles.pinnedRecipeCard,
+                  pinnedRecipes.includes(item.name) && !showPinnedOnly && styles.pinnedRecipeCardRegular
+                ]}
+                elevation={showPinnedOnly ? 4 : (pinnedRecipes.includes(item.name) ? 3 : 2)}
+              >
+                {/* Interactive Pin - only show in pinned view */}
+                {showPinnedOnly && (
+                  <InteractivePin
+                    isPinned={pinnedRecipes.includes(item.name)}
+                    onToggle={() => handleTogglePinned(item.name)}
+                    size={22}
+                  />
                 )}
-                <Text style={[styles.recipeDate, { color: theme.colors.onSurface }]}>
-                  Added: {new Date(item.createdAt).toLocaleDateString()}
-                </Text>
-              </View>
-            </Surface>
-          </TouchableOpacity>
-        )}
-        style={styles.list}
-        contentContainerStyle={styles.listContent}
-      />
+
+                <View style={styles.recipeHeader}>
+                  <View style={styles.recipeTitleContainer}>
+                    <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{item.name}</Text>
+                    <View style={styles.recipeBadges}>
+                      {cookedRecipes[item.name] && (
+                        <View style={[styles.badge, { backgroundColor: theme.colors.secondary }]}>
+                          <MaterialCommunityIcons name="check-circle" size={16} color="white" />
+                          <Text style={styles.badgeText}>Cooked</Text>
+                        </View>
+                      )}
+                      {pinnedRecipes.includes(item.name) && (
+                        <>
+                          <View style={[styles.badge, { backgroundColor: theme.colors.tertiary }]}>
+                            <MaterialCommunityIcons name="pin" size={16} color={theme.colors.onSurface} />
+                            <Text style={[styles.badgeText, { color: theme.colors.onSurface }]}>Pinned</Text>
+                          </View>
+                          {!showPinnedOnly && (
+                            <MaterialCommunityIcons name="pin" size={24} color={theme.colors.secondary} style={styles.pinIcon} />
+                          )}
+                        </>
+                      )}
+                    </View>
+                  </View>
+                  {item.comment && (
+                    <Text style={[styles.recipeComment, { color: theme.colors.onSurface }]} numberOfLines={2}>
+                      {item.comment}
+                    </Text>
+                  )}
+                  <Text style={[styles.recipeDate, { color: theme.colors.onSurface }]}>
+                    Added: {new Date(item.createdAt).toLocaleDateString()}
+                  </Text>
+                </View>
+              </Surface>
+            </TouchableOpacity>
+          )}
+          style={[
+            styles.list,
+            showPinnedOnly && { backgroundColor: 'transparent' },
+            { zIndex: 2 } // Ensure recipes show above cork background
+          ]}
+          contentContainerStyle={styles.listContent}
+        />
+      </View>
 
       <Portal>
         <AddRecipeDialog
@@ -398,6 +509,8 @@ const AppContent = () => {
         onUncook={handleUncook}
         onUpdate={handleUpdateRecipe}
         onNext={handleNextRecipe}
+        onTogglePin={handleTogglePinned}
+        isPinned={selectedRecipe ? pinnedRecipes.includes(selectedRecipe.name) : false}
       />
 
       <Portal>
@@ -495,6 +608,33 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',
+  },
+  pinnedRecipeCard: {
+    backgroundColor: '#FEFCF8', // Slightly warmer white for pinned cards
+    shadowColor: '#8B7355',
+    shadowOffset: {
+      width: 2,
+      height: 3,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    // Android shadow
+    elevation: 6,
+    borderWidth: 0.5,
+    borderColor: 'rgba(139, 115, 85, 0.1)',
+  },
+  pinnedRecipeCardRegular: {
+    shadowColor: '#8B7355',
+    shadowOffset: {
+      width: 2,
+      height: 3,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    // Android shadow
+    elevation: 3,
+    borderWidth: 0.5,
+    borderColor: 'rgba(139, 115, 85, 0.1)',
   },
   pinIcon: {
     position: 'absolute',
@@ -648,5 +788,43 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     width: '100%',
+  },
+  corkBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1, // Higher z-index to show above the container background
+  },
+  corkOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(139, 115, 85, 0.6)', // Much stronger brownish overlay
+  },
+  corkPattern: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#B8956A', // Much darker cork color for better visibility
+    opacity: 0.8, // Very high opacity to ensure it's visible
+  },
+  corkTexture: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#E0D0B0', // A lighter, more subtle texture color
+    opacity: 0.3, // Higher opacity for more visible texture
+  },
+  listContainer: {
+    flex: 1,
+    position: 'relative', // Added to properly contain the absolute-positioned cork background
   },
 });

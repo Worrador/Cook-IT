@@ -3,7 +3,7 @@ import { View, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Keyboard } 
 import { Dialog, Portal, Text, Button, TextInput, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose, onDelete, onCook, onUncook, onUpdate, onNext }) => {
+export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose, onDelete, onCook, onUncook, onUpdate, onNext, onTogglePin, isPinned }) => {
   const theme = useTheme();
   const [isEditingComment, setIsEditingComment] = useState(false);
   const [commentText, setCommentText] = useState('');
@@ -207,6 +207,17 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                     {noMoreRecipes ? "No more recipes" : "Next"}
                   </Button>
                 )}
+                {onTogglePin && !isSuggestionFlow && (
+                  <Button
+                    mode="outlined"
+                    onPress={() => onTogglePin(recipe.name)}
+                    style={[styles.actionButton, { borderColor: theme.colors.tertiary }]}
+                    textColor={theme.colors.tertiary}
+                    icon={isPinned ? "pin-off" : "pin"}
+                  >
+                    {isPinned ? "Unpin this recipe" : "Pin this recipe"}
+                  </Button>
+                )}
                 <Button
                   mode="contained"
                   onPress={handleCook}
@@ -217,7 +228,18 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                 </Button>
               </View>
             ) : (
-              <>
+              <View style={styles.buttonContainer}>
+                {onTogglePin && (
+                  <Button
+                    mode="outlined"
+                    onPress={() => onTogglePin(recipe.name)}
+                    style={[styles.actionButton, { borderColor: theme.colors.tertiary }]}
+                    textColor={theme.colors.tertiary}
+                    icon={isPinned ? "pin-off" : "pin"}
+                  >
+                    {isPinned ? "Unpin this recipe" : "Pin this recipe"}
+                  </Button>
+                )}
                 <Button
                   mode="contained"
                   onPress={handleChangeMind}
@@ -226,7 +248,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                 >
                   Change my mind
                 </Button>
-              </>
+              </View>
             )}
           </Dialog.Actions>
         </ScrollView>
