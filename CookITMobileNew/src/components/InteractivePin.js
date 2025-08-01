@@ -112,9 +112,13 @@ const InteractivePin = ({
             styles.pin,
             {
               opacity: isPinned ? 1 : 0.6,
-              textShadowColor: 'rgba(0,0,0,0.3)',
-              textShadowOffset: { width: 1, height: 1 },
-              textShadowRadius: 2,
+              textShadowColor: 'rgba(0,0,0,0.5)',
+              textShadowOffset: { width: 2, height: 2 },
+              textShadowRadius: 4,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.3,
+              shadowRadius: 4,
             },
           ]}
         />
@@ -131,10 +135,10 @@ const InteractivePin = ({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: -8, // Move slightly above the card edge
+    top: -18, // Move pins higher above the card edge
     left: '50%', // Center horizontally
     transform: [{ translateX: -16 }], // Adjusted for larger pin size (32/2 = 16)
-    zIndex: 10,
+    zIndex: 11, // Ensure pin appears above all other layers
   },
   pinContainer: {
     alignItems: 'center',

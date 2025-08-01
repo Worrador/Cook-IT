@@ -485,11 +485,16 @@ const AppContent = () => {
             }],
             opacity: corkSlideAnim,
             zIndex: 1, // Keep cork background behind recipes
+            overflow: 'visible', // Allow pins to extend beyond cork boundaries
           }
         ]}>
-          <View style={styles.corkPattern} />
-          <View style={styles.corkOverlay} />
-          <View style={styles.corkTexture} />
+          <ImageBackground 
+            source={require('./assets/wine-cork-wp4.png')}
+            style={styles.corkImageBackground}
+            resizeMode="cover"
+          >
+            <View style={styles.corkOverlay} />
+          </ImageBackground>
         </Animated.View>
 
         {/* Pinned recipes - slide with cork background */}
@@ -504,7 +509,7 @@ const AppContent = () => {
                 })
               }],
               opacity: 1, // Keep full opacity for pinned recipes on cork
-              zIndex: 10, // Ensure recipes are above cork background
+              zIndex: 12, // Ensure recipes and pins are above all other layers
             }
           ]}
         >
@@ -696,6 +701,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    overflow: 'visible', // Allow pins to extend beyond container boundaries
   },
   loadingContainer: {
     flex: 1,
@@ -759,7 +765,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   pinnedRecipeCard: {
-    backgroundColor: '#FEFCF8', // Slightly warmer white for pinned cards
+    backgroundColor: theme.colors.surface, // Match the yellowish background from the main container
     shadowColor: '#8B7355',
     shadowOffset: {
       width: 2,
@@ -886,6 +892,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
+    paddingTop: 16, // Add top margin for pinned recipes
   },
   dialogOverlay: {
     position: 'absolute',
@@ -947,34 +954,24 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 1, // Higher z-index to show above the container background
   },
+  corkImageBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   corkOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(139, 115, 85, 0.6)', // Much stronger brownish overlay
-  },
-  corkPattern: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#B8956A', // Much darker cork color for better visibility
-    opacity: 0.8, // Very high opacity to ensure it's visible
-  },
-  corkTexture: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#E0D0B0', // A lighter, more subtle texture color
-    opacity: 0.3, // Higher opacity for more visible texture
+    backgroundColor: 'rgba(122, 57, 0, 0)',
   },
   listContainer: {
     flex: 1,
     position: 'relative', // Added to properly contain the absolute-positioned cork background
+    overflow: 'visible', // Allow pins to extend beyond container boundaries
   },
 });
