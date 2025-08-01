@@ -524,16 +524,62 @@ const AppContent = () => {
         >
           <View style={{
             flex: 1,
-            borderTopWidth: 10,
-            borderLeftWidth: 10,
-            borderRightWidth: 10,
-            borderBottomWidth: showScrollBorder ? 10 : 0,
-            borderTopColor: '#C4A484',
-            borderLeftColor: '#C4A484',
-            borderRightColor: '#C4A484',
-            borderBottomColor: '#C4A484',
             zIndex: 1,
           }}>
+            {/* Top border */}
+            <ImageBackground 
+              source={require('./assets/cork-wood2.png')}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 10,
+                zIndex: 2,
+              }}
+              resizeMode="stretch"
+            />
+            {/* Left border */}
+            <ImageBackground 
+              source={require('./assets/cork-wood.png')}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                bottom: 0,
+                width: 10,
+                zIndex: 2,
+              }}
+              resizeMode="stretch"
+            />
+            {/* Right border */}
+            <ImageBackground 
+              source={require('./assets/cork-wood.png')}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: 10,
+                zIndex: 2,
+              }}
+              resizeMode="stretch"
+            />
+            {/* Bottom border - only when scrolled to bottom */}
+            {showScrollBorder && (
+              <ImageBackground 
+                source={require('./assets/cork-wood2.png')}
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: 10,
+                  zIndex: 2,
+                }}
+                resizeMode="stretch"
+              />
+            )}
             <FlatList
               data={recipes.filter(recipe => pinnedRecipes.includes(recipe.name))}
               keyExtractor={(item) => item.name}
@@ -556,6 +602,10 @@ const AppContent = () => {
                 styles.list, 
                 { 
                   backgroundColor: 'transparent',
+                  marginTop: 10,
+                  marginLeft: 10,
+                  marginRight: 10,
+                  marginBottom: showScrollBorder ? 10 : 0,
                 }
               ]}
               renderItem={({ item, index }) => {
