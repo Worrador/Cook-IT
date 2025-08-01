@@ -107,7 +107,7 @@ const InteractivePin = ({
         <MaterialCommunityIcons
           name="pin"
           size={size}
-          color={isPinned ? '#D86A3A' : '#8B7355'} // Orange when pinned, muted brown when not
+          color={isPinned ? '#F2BC42' : '#8B7355'} // Yellow when pinned (like the old banner), muted brown when not
           style={[
             styles.pin,
             {
@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
     top: -18, // Move pins higher above the card edge
     left: '50%', // Center horizontally
     transform: [{ translateX: -16 }], // Adjusted for larger pin size (32/2 = 16)
-    zIndex: 11, // Ensure pin appears above all other layers
+    zIndex: 9999, // Ensure pin appears above all other layers including scrollview border
   },
   pinContainer: {
     alignItems: 'center',

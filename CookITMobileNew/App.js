@@ -120,6 +120,14 @@ const AppContent = () => {
     setIsAnyDialogOpen(showAddModal || showRecipeDetails || showHelp || showBuyCoffee);
   }, [showAddModal, showRecipeDetails, showHelp, showBuyCoffee]);
 
+  // Set initial border state for pinned recipes
+  useEffect(() => {
+    if (showPinnedOnly && pinnedRecipes.length > 0) {
+      // Show border initially for pinned recipes
+      setShowScrollBorder(true);
+    }
+  }, [showPinnedOnly, pinnedRecipes.length]);
+
   // Animation effect for cork background
   useEffect(() => {
     const duration = 600; // Animation duration in milliseconds
@@ -510,34 +518,47 @@ const AppContent = () => {
                 })
               }],
               opacity: 1, // Keep full opacity for pinned recipes on cork
-              zIndex: 12, // Ensure recipes and pins are above all other layers
+              zIndex: 12, // Lower z-index so pins appear above the border
             }
           ]}
         >
-          <FlatList
-            data={recipes.filter(recipe => pinnedRecipes.includes(recipe.name))}
-            keyExtractor={(item) => item.name}
-            onScroll={(event) => {
+          <View style={{
+            flex: 1,
+            borderTopWidth: 10,
+            borderLeftWidth: 10,
+            borderRightWidth: 10,
+            borderBottomWidth: showScrollBorder ? 10 : 0,
+            borderTopColor: '#C4A484',
+            borderLeftColor: '#C4A484',
+            borderRightColor: '#C4A484',
+            borderBottomColor: '#C4A484',
+            zIndex: 1,
+          }}>
+            <FlatList
+              data={recipes.filter(recipe => pinnedRecipes.includes(recipe.name))}
+              keyExtractor={(item) => item.name}
+                          onScroll={(event) => {
               const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-              const isAtBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 10;
+              // Show border if content is shorter than container OR if scrolled to bottom
+              const isAtBottom = contentSize.height <= layoutMeasurement.height || 
+                                contentOffset.y + layoutMeasurement.height >= contentSize.height - 10;
+              console.log('Scroll values:', { contentSize, layoutMeasurement, contentOffset, isAtBottom });
               setShowScrollBorder(isAtBottom);
             }}
-            scrollEventThrottle={16}
-            style={[
-              styles.list, 
-              { 
-                backgroundColor: 'transparent',
-                borderTopWidth: 10,
-                borderLeftWidth: 10,
-                borderRightWidth: 10,
-                borderBottomWidth: showScrollBorder ? 10 : 0,
-                borderTopColor: '#C4A484',
-                borderLeftColor: '#C4A484',
-                borderRightColor: '#C4A484',
-                borderBottomColor: '#C4A484',
-              }
-            ]}
-            renderItem={({ item, index }) => {
+            onContentSizeChange={(width, height) => {
+              console.log('Content size changed:', { width, height });
+              // Also check on content size change
+              const isAtBottom = height <= 400; // Approximate container height
+              setShowScrollBorder(isAtBottom);
+            }}
+              scrollEventThrottle={16}
+              style={[
+                styles.list, 
+                { 
+                  backgroundColor: 'transparent',
+                }
+              ]}
+              renderItem={({ item, index }) => {
               const recipeAnim = getRecipeAnimation(item.name);
               return (
                 <Animated.View
@@ -587,10 +608,7 @@ const AppContent = () => {
                                 <Text style={styles.badgeText}>Cooked</Text>
                               </View>
                             )}
-                            <View style={[styles.badge, { backgroundColor: theme.colors.tertiary }]}>
-                              <MaterialCommunityIcons name="pin" size={16} color={theme.colors.onSurface} />
-                              <Text style={[styles.badgeText, { color: theme.colors.onSurface }]}>Pinned</Text>
-                            </View>
+
                           </View>
                         </View>
                         {item.comment && (
@@ -609,6 +627,7 @@ const AppContent = () => {
             }}
             contentContainerStyle={styles.listContent}
           />
+          </View>
         </Animated.View>
 
         {/* Regular recipes - always visible when not in pinned mode, but exclude pinned recipes */}
