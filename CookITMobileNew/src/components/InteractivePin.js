@@ -113,7 +113,7 @@ const InteractivePin = ({
             {
               opacity: isPinned ? 1 : 0.6,
               textShadowColor: 'rgba(0,0,0,0.5)',
-              textShadowOffset: { width: 2, height: 2 },
+              textShadowOffset: { width: 0, height: -2 },
               textShadowRadius: 4,
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 2 },

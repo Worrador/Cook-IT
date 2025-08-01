@@ -77,6 +77,7 @@ const AppContent = () => {
   const [isAnyDialogOpen, setIsAnyDialogOpen] = useState(false);
   const [isSuggestionFlow, setIsSuggestionFlow] = useState(false);
   const [bouncingPins, setBouncingPins] = useState(new Set()); // Track which pins should bounce
+  const [showScrollBorder, setShowScrollBorder] = useState(false); // Track if scroll border should show
 
   // Animation values
   const corkSlideAnim = useRef(new Animated.Value(0)).current; // 0 = hidden, 1 = visible
@@ -516,6 +517,26 @@ const AppContent = () => {
           <FlatList
             data={recipes.filter(recipe => pinnedRecipes.includes(recipe.name))}
             keyExtractor={(item) => item.name}
+            onScroll={(event) => {
+              const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+              const isAtBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 10;
+              setShowScrollBorder(isAtBottom);
+            }}
+            scrollEventThrottle={16}
+            style={[
+              styles.list, 
+              { 
+                backgroundColor: 'transparent',
+                borderTopWidth: 10,
+                borderLeftWidth: 10,
+                borderRightWidth: 10,
+                borderBottomWidth: showScrollBorder ? 10 : 0,
+                borderTopColor: '#C4A484',
+                borderLeftColor: '#C4A484',
+                borderRightColor: '#C4A484',
+                borderBottomColor: '#C4A484',
+              }
+            ]}
             renderItem={({ item, index }) => {
               const recipeAnim = getRecipeAnimation(item.name);
               return (
@@ -586,7 +607,6 @@ const AppContent = () => {
                 </Animated.View>
               );
             }}
-            style={[styles.list, { backgroundColor: 'transparent' }]}
             contentContainerStyle={styles.listContent}
           />
         </Animated.View>
@@ -766,13 +786,13 @@ const styles = StyleSheet.create({
   },
   pinnedRecipeCard: {
     backgroundColor: theme.colors.surface, // Match the yellowish background from the main container
-    shadowColor: '#8B7355',
+    shadowColor: '#000',
     shadowOffset: {
-      width: 2,
-      height: 3,
+      width: 0,
+      height: 8, // Stronger bottom shadow to simulate hanging on cork board
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
     // Android shadow
     elevation: 6,
     borderWidth: 0.5,
