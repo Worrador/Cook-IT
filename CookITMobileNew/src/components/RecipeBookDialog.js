@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { Surface, useTheme, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Button } from './Button';
@@ -13,9 +13,15 @@ const RecipeBookDialog = ({
   onTogglePin 
 }) => {
   const theme = useTheme();
+  const [searchQuery, setSearchQuery] = useState('');
   
-  // Sort recipes alphabetically
-  const sortedRecipes = [...recipes].sort((a, b) => a.name.localeCompare(b.name));
+  // Sort recipes alphabetically and filter by search query
+  const sortedRecipes = [...recipes]
+    .filter(recipe => 
+      recipe.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (recipe.comment && recipe.comment.toLowerCase().includes(searchQuery.toLowerCase()))
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const renderRecipe = (recipe) => (
     <TouchableOpacity
@@ -49,10 +55,15 @@ const RecipeBookDialog = ({
         <Text style={[styles.title, { color: theme.colors.primary }]}>Recipe Book</Text>
       </View>
       <Dialog.Content style={styles.content}>
-        <View style={styles.recipeCount}>
-          <Text style={[styles.recipeCountText, { color: theme.colors.primary }]}>
-            {recipes.length} recipes
-          </Text>
+        <View style={styles.searchContainer}>
+          <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.primary} style={styles.searchIcon} />
+          <TextInput
+            style={[styles.searchInput, { color: theme.colors.primary }]}
+            placeholder="Search recipes..."
+            placeholderTextColor="#A0A0A0"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
         </View>
         
         <ScrollView
@@ -65,12 +76,17 @@ const RecipeBookDialog = ({
             <View style={[styles.emptyState, { backgroundColor: '#FBE7A0' }]}>
               <MaterialCommunityIcons name="book-open-variant" size={48} color={theme.colors.primary} />
               <Text style={[styles.emptyStateText, { color: theme.colors.primary }]}>
-                No recipes yet! Add your first recipe using the "Add Recipe" button.
+                {searchQuery ? 'No results found' : 'No recipes yet! Add your first recipe using the "Add Recipe" button.'}
               </Text>
             </View>
           )}
         </ScrollView>
       </Dialog.Content>
+      <View style={styles.recipeCount}>
+        <Text style={[styles.recipeCountText, { color: theme.colors.primary }]}>
+          {recipes.length} recipes
+        </Text>
+      </View>
       <Dialog.Actions>
         <Button
           onPress={onClose}
@@ -102,6 +118,23 @@ const styles = StyleSheet.create({
   headerIcon: {
     marginRight: 8,
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    paddingVertical: 4,
+  },
   recipeCount: {
     alignItems: 'center',
     paddingBottom: 16,
@@ -110,7 +143,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '400',
   },
-
+  recipesList: {
+    height: '80%', // Percentage-based height that works across all devices
+  },
   recipeItem: {
     marginBottom: 12,
   },
