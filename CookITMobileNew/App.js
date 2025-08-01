@@ -9,6 +9,7 @@ import HelpDialog from './src/components/HelpDialog';
 import BuyCoffeeDialog from './src/components/BuyCoffeeDialog';
 import AddRecipeDialog from './src/components/AddRecipeDialog';
 import InteractivePin from './src/components/InteractivePin';
+import RecipeBookDialog from './src/components/RecipeBookDialog';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   loadRecipes,
@@ -69,8 +70,10 @@ const AppContent = () => {
   const [showHelp, setShowHelp] = useState(false);
   const [cookedRecipes, setCookedRecipes] = useState({});
   const [showBuyCoffee, setShowBuyCoffee] = useState(false);
+  const [showRecipeBook, setShowRecipeBook] = useState(false);
   const [pinnedRecipes, setPinnedRecipes] = useState([]);
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
+  const [showHelpButton, setShowHelpButton] = useState(false);
   const [fabVisible, setFabVisible] = useState(true);
   const [appState, setAppState] = useState(AppState.currentState);
   const [suggestedRecipes, setSuggestedRecipes] = useState(new Set());
@@ -78,6 +81,7 @@ const AppContent = () => {
   const [isSuggestionFlow, setIsSuggestionFlow] = useState(false);
   const [bouncingPins, setBouncingPins] = useState(new Set()); // Track which pins should bounce
   const [showScrollBorder, setShowScrollBorder] = useState(false); // Track if scroll border should show
+  const [pressedRecipe, setPressedRecipe] = useState(null); // Track which recipe is being pressed
 
   // Animation values
   const corkSlideAnim = useRef(new Animated.Value(0)).current; // 0 = hidden, 1 = visible
@@ -114,6 +118,24 @@ const AppContent = () => {
 
   useEffect(() => {
     loadInitialData();
+    
+    // Check app open count for help button visibility
+    const checkHelpButtonVisibility = async () => {
+      try {
+        const appOpenCount = await getTutorialCount();
+        const newCount = appOpenCount + 1;
+        await incrementTutorialCount();
+        
+        // Show help button for first 5 times, then every 5th time
+        const shouldShow = newCount <= 5 || newCount % 5 === 0;
+        setShowHelpButton(shouldShow);
+      } catch (error) {
+        console.error('Error checking help button visibility:', error);
+        setShowHelpButton(true); // Fallback to showing it
+      }
+    };
+    
+    checkHelpButtonVisibility();
   }, []);
 
   useEffect(() => {
@@ -420,17 +442,25 @@ const AppContent = () => {
             </View>
           </View>
           <View style={styles.headerButtons}>
-            <IconButton
-              icon="help-circle"
-              size={24}
-              iconColor={theme.colors.tertiary}
-              onPress={() => setShowHelp(true)}
-            />
+            {showHelpButton && (
+              <IconButton
+                icon="help-circle"
+                size={24}
+                iconColor={theme.colors.tertiary}
+                onPress={() => setShowHelp(true)}
+              />
+            )}
             <IconButton
               icon={showPinnedOnly ? "pin" : "pin-off"}
               size={24}
               iconColor={theme.colors.tertiary}
               onPress={() => setShowPinnedOnly(!showPinnedOnly)}
+            />
+            <IconButton
+              icon="book-open"
+              size={24}
+              iconColor={theme.colors.tertiary}
+              onPress={() => setShowRecipeBook(true)}
             />
             <IconButton
               icon="coffee"
@@ -613,12 +643,17 @@ const AppContent = () => {
               return (
                 <Animated.View
                   style={{
-                    transform: [{
-                      translateY: recipeAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [windowHeight, 0], // Start from bottom of screen, slide to final position
-                      })
-                    }],
+                    transform: [
+                      {
+                        translateY: recipeAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [windowHeight, 0], // Start from bottom of screen, slide to final position
+                        })
+                      },
+                      {
+                        scale: pressedRecipe === item.name ? 1.05 : 1, // Scale up while pressed
+                      }
+                    ],
                     opacity: recipeAnim.interpolate({
                       inputRange: [0, 0.3, 1],
                       outputRange: [0, 0, 1], // Fade out when sliding down, but stay opaque when sliding up
@@ -626,6 +661,13 @@ const AppContent = () => {
                   }}
                 >
                   <TouchableOpacity
+                    activeOpacity={1}
+                    onPressIn={() => {
+                      setPressedRecipe(item.name);
+                    }}
+                    onPressOut={() => {
+                      setPressedRecipe(null);
+                    }}
                     onPress={() => {
                       setSelectedRecipe(item);
                       setIsSuggestionFlow(false);
@@ -680,54 +722,7 @@ const AppContent = () => {
           </View>
         </Animated.View>
 
-        {/* Regular recipes - always visible when not in pinned mode, but exclude pinned recipes */}
-        {!showPinnedOnly && (
-          <FlatList
-            data={recipes.filter(recipe => !pinnedRecipes.includes(recipe.name))}
-            keyExtractor={(item) => item.name}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                onPress={() => {
-                  setSelectedRecipe(item);
-                  setIsSuggestionFlow(false);
-                  setShowRecipeDetails(true);
-                }}
-              >
-                <Surface
-                  style={[
-                    styles.recipeCard,
-                    { backgroundColor: theme.colors.surface }
-                  ]}
-                  elevation={2}
-                >
-                  <View style={styles.recipeHeader}>
-                    <View style={styles.recipeTitleContainer}>
-                      <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{item.name}</Text>
-                      <View style={styles.recipeBadges}>
-                        {cookedRecipes[item.name] && (
-                          <View style={[styles.badge, { backgroundColor: theme.colors.secondary }]}>
-                            <MaterialCommunityIcons name="check-circle" size={16} color="white" />
-                            <Text style={styles.badgeText}>Cooked</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                    {item.comment && (
-                      <Text style={[styles.recipeComment, { color: theme.colors.onSurface }]} numberOfLines={2}>
-                        {item.comment}
-                      </Text>
-                    )}
-                    <Text style={[styles.recipeDate, { color: theme.colors.onSurface }]}>
-                      Added: {new Date(item.createdAt).toLocaleDateString()}
-                    </Text>
-                  </View>
-                </Surface>
-              </TouchableOpacity>
-            )}
-            style={styles.list}
-            contentContainerStyle={styles.listContent}
-          />
-        )}
+
       </View>
 
       <Portal>
@@ -773,6 +768,28 @@ const AppContent = () => {
           style={[styles.dialog, { backgroundColor: theme.colors.surface, maxHeight: dialogMaxHeight }]}
         >
           <BuyCoffeeDialog onClose={() => setShowBuyCoffee(false)} />
+        </Dialog>
+      </Portal>
+
+      <Portal>
+        <Dialog
+          visible={showRecipeBook}
+          onDismiss={() => setShowRecipeBook(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface, maxHeight: dialogMaxHeight }]}
+        >
+          <RecipeBookDialog
+            onClose={() => setShowRecipeBook(false)}
+            recipes={recipes}
+            onRecipePress={(recipe) => {
+              setSelectedRecipe(recipe);
+              setIsSuggestionFlow(false);
+              setShowRecipeDetails(true);
+              // Don't close the recipe book dialog
+            }}
+            cookedRecipes={cookedRecipes}
+            pinnedRecipes={pinnedRecipes}
+            onTogglePin={handleTogglePinned}
+          />
         </Dialog>
       </Portal>
     </SafeAreaView>
@@ -1004,6 +1021,7 @@ const styles = StyleSheet.create({
   dialog: {
     width: '90%',
     maxWidth: 400,
+    maxHeight: '85%',
     alignSelf: 'center',
   },
   titleIcon: {
