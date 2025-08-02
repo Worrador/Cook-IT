@@ -41,6 +41,11 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
   }, [isCommentFocused]);
 
   const handleCommentSave = async () => {
+    if (!recipe) {
+      console.warn('Cannot save comment: recipe is null');
+      return;
+    }
+    
     try {
       await onUpdate(recipe.name, { ...recipe, comment: commentText });
       setIsEditingComment(false);
@@ -68,7 +73,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
 
   useEffect(() => {
     if (!visible) {
-      if (isEditingComment) {
+      if (isEditingComment && recipe) {
         handleCommentSave();
       }
       setHasClickedCook(false);
@@ -76,29 +81,31 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       setNoMoreRecipes(false);
       setIsCommentExpanded(false);
     }
-  }, [visible]);
+  }, [visible, recipe]);
 
   if (!recipe) return null;
 
   const handleDialogDismiss = () => {
-    if (isEditingComment) {
+    if (isEditingComment && recipe) {
       handleCommentSave();
     }
     onClose();
   };
 
   const handleContentPress = () => {
-    if (isEditingComment) {
+    if (isEditingComment && recipe) {
       handleCommentSave();
     }
   };
 
   const handleChangeMind = () => {
+    if (!recipe) return;
     setHasClickedCook(false);
     onUncook(recipe.name);
   };
 
   const handleCook = () => {
+    if (!recipe) return;
     setHasClickedCook(true);
     onCook(recipe.name);
   };
@@ -149,22 +156,37 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                 <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
                 <View style={styles.commentContainer}>
                   {isEditingComment ? (
-                    <TextInput
-                      ref={commentInputRef}
-                      value={commentText}
-                      onChangeText={setCommentText}
-                      onBlur={() => {
-                        setIsCommentFocused(false);
-                        handleCommentSave();
-                      }}
-                      onFocus={() => setIsCommentFocused(true)}
-                      style={styles.commentInput}
-                      placeholder="Add any comments"
-                      placeholderTextColor={`${theme.colors.primary}66`}
-                      multiline
-                      autoFocus
-                      mode="outlined"
-                    />
+                    <View style={styles.commentEditContainer}>
+                      <TextInput
+                        ref={commentInputRef}
+                        value={commentText}
+                        onChangeText={setCommentText}
+                        onBlur={() => {
+                          setIsCommentFocused(false);
+                          handleCommentSave();
+                        }}
+                        onFocus={() => setIsCommentFocused(true)}
+                        style={styles.commentInput}
+                        placeholder="Add any comments"
+                        placeholderTextColor={`${theme.colors.primary}66`}
+                        multiline
+                        autoFocus
+                        mode="outlined"
+                      />
+                      <TouchableOpacity
+                        onPress={handleCommentSave}
+                        style={styles.expandButton}
+                      >
+                        <MaterialCommunityIcons
+                          name="content-save"
+                          size={20}
+                          width={20}
+                          paddingTop={4}
+                          paddingLeft={4}
+                          color={theme.colors.primary}
+                        />
+                      </TouchableOpacity>
+                    </View>
                   ) : (
                     <View style={styles.commentViewContainer}>
                       <TouchableOpacity
@@ -336,6 +358,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   commentViewContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    minWidth: 0,
+  },
+  commentEditContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-start',
