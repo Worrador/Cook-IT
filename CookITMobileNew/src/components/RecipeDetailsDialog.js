@@ -3,10 +3,12 @@ import { View, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Keyboard } 
 import { Dialog, Portal, Text, Button, TextInput, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose, onDelete, onCook, onUncook, onUpdate, onNext, onTogglePin, isPinned }) => {
+export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose, onDelete, onCook, onUncook, onUpdate, onNext, onTogglePin, isPinned, pinnedRecipes, setPinnedRecipes }) => {
   const theme = useTheme();
   const [isEditingComment, setIsEditingComment] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [nameText, setNameText] = useState('');
   const [hasClickedCook, setHasClickedCook] = useState(false);
   const [noMoreRecipes, setNoMoreRecipes] = useState(false);
   const [isCommentExpanded, setIsCommentExpanded] = useState(false);
@@ -15,6 +17,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
   const [shouldShowExpandButton, setShouldShowExpandButton] = useState(false);
   const commentInputRef = useRef(null);
   const commentTextRef = useRef(null);
+  const nameInputRef = useRef(null);
 
   // Keyboard listeners for dialog positioning
   useEffect(() => {
@@ -54,6 +57,32 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     }
   };
 
+  const handleNameSave = async () => {
+    if (!recipe) {
+      console.warn('Cannot save name: recipe is null');
+      return;
+    }
+    
+    try {
+      // Update the recipe with the new name
+      await onUpdate(recipe.name, { ...recipe, name: nameText });
+      
+      // If this recipe was pinned, we need to update the pinned recipes array
+      // to reflect the new name
+      if (isPinned && pinnedRecipes && setPinnedRecipes) {
+        // Remove the old name and add the new name to pinned recipes
+        const updatedPinnedRecipes = pinnedRecipes
+          .filter(name => name !== recipe.name) // Remove old name
+          .concat(nameText); // Add new name
+        setPinnedRecipes(updatedPinnedRecipes);
+      }
+      
+      setIsEditingName(false);
+    } catch (error) {
+      console.error('Error saving name:', error);
+    }
+  };
+
   const toggleCommentExpansion = () => {
     setIsCommentExpanded(!isCommentExpanded);
   };
@@ -61,6 +90,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
   useEffect(() => {
     if (recipe) {
       setCommentText(recipe.comment || '');
+      setNameText(recipe.name || '');
     }
   }, [recipe]);
 
@@ -76,8 +106,12 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       if (isEditingComment && recipe) {
         handleCommentSave();
       }
+      if (isEditingName && recipe) {
+        handleNameSave();
+      }
       setHasClickedCook(false);
       setIsEditingComment(false);
+      setIsEditingName(false);
       setNoMoreRecipes(false);
       setIsCommentExpanded(false);
     }
@@ -89,12 +123,18 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     if (isEditingComment && recipe) {
       handleCommentSave();
     }
+    if (isEditingName && recipe) {
+      handleNameSave();
+    }
     onClose();
   };
 
   const handleContentPress = () => {
     if (isEditingComment && recipe) {
       handleCommentSave();
+    }
+    if (isEditingName && recipe) {
+      handleNameSave();
     }
   };
 
@@ -143,14 +183,52 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
             <View style={styles.content}>
               <View style={styles.row}>
                 <Text style={[styles.label, { color: theme.colors.onSurface }]}>Name</Text>
-                <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{recipe.name}</Text>
-                <Button
-                  icon="delete"
-                  onPress={() => onDelete(recipe.name)}
-                  style={styles.deleteButton}
-                  textColor={theme.colors.error}
-                  iconSize={28}
-                />
+                <View style={styles.nameContainer}>
+                  {isEditingName ? (
+                    <View style={styles.nameEditContainer}>
+                      <TextInput
+                        ref={nameInputRef}
+                        value={nameText}
+                        onChangeText={setNameText}
+                        onBlur={() => handleNameSave()}
+                        style={styles.nameInput}
+                        placeholder="Enter recipe name"
+                        placeholderTextColor={`${theme.colors.primary}66`}
+                        autoFocus
+                        mode="outlined"
+                      />
+                      <TouchableOpacity
+                        onPress={handleNameSave}
+                        style={styles.expandButton}
+                      >
+                        <MaterialCommunityIcons
+                          name="content-save"
+                          size={20}
+                          width={20}
+                          paddingTop={4}
+                          paddingLeft={4}
+                          color={theme.colors.primary}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.nameViewContainer}>
+                      <TouchableOpacity
+                        style={styles.nameTextContainer}
+                        onLongPress={() => setIsEditingName(true)}
+                      >
+                        <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{nameText}</Text>
+                      </TouchableOpacity>
+                      <Button
+                        icon="delete"
+                        onPress={() => onDelete(recipe.name)}
+                        style={styles.deleteButton}
+                        textColor={theme.colors.error}
+                        iconSize={28}
+                      />
+                    </View>
+                  )}
+                </View>
               </View>
               <View style={[styles.row, { marginTop: 1 }]}>
                 <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
@@ -356,6 +434,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     minWidth: 0,
+  },
+  nameContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    minWidth: 0,
+  },
+  nameViewContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    minWidth: 0,
+  },
+  nameEditContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    minWidth: 0,
+  },
+  nameTextContainer: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  nameInput: {
+    fontSize: 16,
+    flex: 1,
+    backgroundColor: '#f7f0e2',
   },
   commentViewContainer: {
     flex: 1,

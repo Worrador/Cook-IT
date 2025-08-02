@@ -748,6 +748,8 @@ const AppContent = () => {
         onNext={handleNextRecipe}
         onTogglePin={handleTogglePinned}
         isPinned={selectedRecipe ? pinnedRecipes.includes(selectedRecipe.name) : false}
+        pinnedRecipes={pinnedRecipes}
+        setPinnedRecipes={setPinnedRecipes}
       />
 
       <Portal>
