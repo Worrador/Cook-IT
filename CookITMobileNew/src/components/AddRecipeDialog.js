@@ -61,11 +61,9 @@ const AddRecipeDialog = ({ visible, onDismiss, onAddRecipe }) => {
       ]}
     >
       <ScrollView keyboardShouldPersistTaps="handled">
-        <View style={styles.headerRow}>
-          <MaterialCommunityIcons name="plus-circle" size={28} color={theme.colors.onSurface} />
-          <Text style={[styles.title, { color: theme.colors.onSurface }]}>
-            Add New Recipe
-          </Text>
+        <View style={styles.header}>
+          <MaterialCommunityIcons name="plus-circle" size={28} color={theme.colors.primary} style={styles.headerIcon} />
+          <Text style={[styles.title, { color: theme.colors.primary }]}>Add New Recipe</Text>
         </View>
         <Dialog.Content>
           <View style={styles.content}>
@@ -143,17 +141,19 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: 'center',
   },
-  headerRow: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 8,
+    paddingTop: 0,
     paddingBottom: 24,
-    gap: 8,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
+  },
+  headerIcon: {
+    marginRight: 8,
   },
   content: {
     gap: 20,

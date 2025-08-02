@@ -127,12 +127,10 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
           { transform: [{ translateY: keyboardOffset }] }
         ]}
       >
-        <Dialog.Title style={[styles.title, { color: theme.colors.onSurface }]}>
-          <View style={styles.titleContent}>
-            <MaterialCommunityIcons name="book-open-variant" size={24} color={theme.colors.onSurface} />
-            <Text style={{ marginLeft: 16, fontSize: 20, fontWeight: '600' }}>How about this recipe?</Text>
-          </View>
-        </Dialog.Title>
+        <View style={styles.header}>
+          <MaterialCommunityIcons name="book-open-variant" size={28} color={theme.colors.primary} style={styles.headerIcon} />
+          <Text style={[styles.title, { color: theme.colors.primary }]}>How about this recipe?</Text>
+        </View>
         <ScrollView keyboardShouldPersistTaps="handled">
           <Dialog.Content style={styles.dialogContent}>
             <View style={styles.content}>
@@ -287,17 +285,19 @@ const styles = StyleSheet.create({
   dialogContent: {
     paddingTop: 0,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: '600',
-    textAlign: 'center',
-    paddingLeft: 20,
-  },
-  titleContent: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
+    paddingTop: 0,
+    paddingBottom: 16,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  headerIcon: {
+    marginRight: 8,
   },
   content: {
     gap: 16,
