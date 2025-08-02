@@ -135,7 +135,7 @@ const InteractivePin = ({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: -18, // Move pins higher above the card edge
+    top: -18, // Move pins even higher above the card edge to extend beyond cork borders
     left: '50%', // Center horizontally
     transform: [{ translateX: -16 }], // Adjusted for larger pin size (32/2 = 16)
     zIndex: 9999, // Ensure pin appears above all other layers including scrollview border

@@ -513,28 +513,6 @@ const AppContent = () => {
       <View style={[
         styles.listContainer
       ]}>
-        <Animated.View style={[
-          styles.corkBackground,
-          {
-            transform: [{
-              translateY: corkSlideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [windowHeight, 0], // Slide up from bottom of screen
-              })
-            }],
-            opacity: corkSlideAnim,
-            zIndex: 1, // Keep cork background behind recipes
-            overflow: 'visible', // Allow pins to extend beyond cork boundaries
-          }
-        ]}>
-          <ImageBackground 
-            source={require('./assets/wine-cork-wp4.png')}
-            style={styles.corkImageBackground}
-            resizeMode="cover"
-          >
-            <View style={styles.corkOverlay} />
-          </ImageBackground>
-        </Animated.View>
 
         {/* Pinned recipes - slide with cork background */}
         <Animated.View
@@ -552,56 +530,31 @@ const AppContent = () => {
             }
           ]}
         >
+          {/* Combined cork surface with borders */}
           <View style={{
             flex: 1,
-            zIndex: 1,
+            position: 'relative',
+            overflow: 'visible', // Allow pins to extend beyond boundaries
           }}>
-            {/* Top border */}
+            {/* Combined cork background with borders */}
             <ImageBackground 
-              source={require('./assets/cork-wood2.png')}
+              source={require('./assets/wine-cork-wp4.png')}
               style={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
                 right: 0,
-                height: 10,
-                zIndex: 2,
-              }}
-              resizeMode="stretch"
-            />
-            {/* Left border */}
-            <ImageBackground 
-              source={require('./assets/cork-wood.png')}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
                 bottom: 0,
-                width: 10,
-                zIndex: 2,
+                zIndex: 1,
               }}
-              resizeMode="stretch"
-            />
-            {/* Right border */}
-            <ImageBackground 
-              source={require('./assets/cork-wood.png')}
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                bottom: 0,
-                width: 10,
-                zIndex: 2,
-              }}
-              resizeMode="stretch"
-            />
-            {/* Bottom border - only when scrolled to bottom */}
-            {showScrollBorder && (
+              resizeMode="cover"
+            >
+              {/* Top border */}
               <ImageBackground 
                 source={require('./assets/cork-wood2.png')}
                 style={{
                   position: 'absolute',
-                  bottom: 0,
+                  top: 0,
                   left: 0,
                   right: 0,
                   height: 10,
@@ -609,24 +562,67 @@ const AppContent = () => {
                 }}
                 resizeMode="stretch"
               />
-            )}
+              {/* Left border */}
+              <ImageBackground 
+                source={require('./assets/cork-wood.png')}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  bottom: 0,
+                  width: 10,
+                  zIndex: 2,
+                }}
+                resizeMode="stretch"
+              />
+              {/* Right border */}
+              <ImageBackground 
+                source={require('./assets/cork-wood.png')}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                  bottom: 0,
+                  width: 10,
+                  zIndex: 2,
+                }}
+                resizeMode="stretch"
+              />
+              {/* Bottom border - only when scrolled to bottom */}
+              {showScrollBorder && (
+                <ImageBackground 
+                  source={require('./assets/cork-wood2.png')}
+                  style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: 10,
+                    zIndex: 2,
+                  }}
+                  resizeMode="stretch"
+                />
+              )}
+            </ImageBackground>
+
+            {/* ScrollView for pinned recipes on top of combined surface */}
             <FlatList
               data={recipes.filter(recipe => pinnedRecipes.includes(recipe.name))}
               keyExtractor={(item) => item.name}
-                          onScroll={(event) => {
-              const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-              // Show border if content is shorter than container OR if scrolled to bottom
-              const isAtBottom = contentSize.height <= layoutMeasurement.height || 
-                                contentOffset.y + layoutMeasurement.height >= contentSize.height - 10;
-              console.log('Scroll values:', { contentSize, layoutMeasurement, contentOffset, isAtBottom });
-              setShowScrollBorder(isAtBottom);
-            }}
-            onContentSizeChange={(width, height) => {
-              console.log('Content size changed:', { width, height });
-              // Also check on content size change
-              const isAtBottom = height <= 400; // Approximate container height
-              setShowScrollBorder(isAtBottom);
-            }}
+              onScroll={(event) => {
+                const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+                // Show border if content is shorter than container OR if scrolled to bottom
+                const isAtBottom = contentSize.height <= layoutMeasurement.height || 
+                                  contentOffset.y + layoutMeasurement.height >= contentSize.height - 10;
+                console.log('Scroll values:', { contentSize, layoutMeasurement, contentOffset, isAtBottom });
+                setShowScrollBorder(isAtBottom);
+              }}
+              onContentSizeChange={(width, height) => {
+                console.log('Content size changed:', { width, height });
+                // Also check on content size change
+                const isAtBottom = height <= 400; // Approximate container height
+                setShowScrollBorder(isAtBottom);
+              }}
               scrollEventThrottle={16}
               style={[
                 styles.list, 
@@ -636,89 +632,92 @@ const AppContent = () => {
                   marginLeft: 10,
                   marginRight: 10,
                   marginBottom: showScrollBorder ? 10 : 0,
+                  zIndex: 3, // Above the combined cork surface
+                  overflow: 'visible', // Allow pins to extend beyond FlatList boundaries
                 }
               ]}
               renderItem={({ item, index }) => {
-              const recipeAnim = getRecipeAnimation(item.name);
-              return (
-                <Animated.View
-                  style={{
-                    transform: [
-                      {
-                        translateY: recipeAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [windowHeight, 0], // Start from bottom of screen, slide to final position
-                        })
-                      },
-                      {
-                        scale: pressedRecipe === item.name ? 1.05 : 1, // Scale up while pressed
-                      }
-                    ],
-                    opacity: recipeAnim.interpolate({
-                      inputRange: [0, 0.3, 1],
-                      outputRange: [0, 0, 1], // Fade out when sliding down, but stay opaque when sliding up
-                    }),
-                  }}
-                >
-                  <TouchableOpacity
-                    activeOpacity={1}
-                    onPressIn={() => {
-                      setPressedRecipe(item.name);
-                    }}
-                    onPressOut={() => {
-                      setPressedRecipe(null);
-                    }}
-                    onPress={() => {
-                      setSelectedRecipe(item);
-                      setIsSuggestionFlow(false);
-                      setShowRecipeDetails(true);
+                const recipeAnim = getRecipeAnimation(item.name);
+                return (
+                  <Animated.View
+                    style={{
+                      transform: [
+                        {
+                          translateY: recipeAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [windowHeight, 0], // Start from bottom of screen, slide to final position
+                          })
+                        },
+                        {
+                          scale: pressedRecipe === item.name ? 1.05 : 1, // Scale up while pressed
+                        }
+                      ],
+                      opacity: recipeAnim.interpolate({
+                        inputRange: [0, 0.3, 1],
+                        outputRange: [0, 0, 1], // Fade out when sliding down, but stay opaque when sliding up
+                      }),
                     }}
                   >
-                    <Surface
-                      style={[
-                        styles.recipeCard,
-                        { backgroundColor: theme.colors.surface },
-                        styles.pinnedRecipeCard
-                      ]}
-                      elevation={4}
+                    <TouchableOpacity
+                      activeOpacity={1}
+                      onPressIn={() => {
+                        setPressedRecipe(item.name);
+                      }}
+                      onPressOut={() => {
+                        setPressedRecipe(null);
+                      }}
+                      onPress={() => {
+                        setSelectedRecipe(item);
+                        setIsSuggestionFlow(false);
+                        setShowRecipeDetails(true);
+                      }}
                     >
-                      <InteractivePin
-                        isPinned={pinnedRecipes.includes(item.name)}
-                        onToggle={() => handleTogglePinned(item.name)}
-                        size={32}
-                        triggerBounce={bouncingPins.has(item.name)}
-                        key={`pin-${item.name}-${showPinnedOnly}`} // Force re-mount to trigger bounce animation
-                      />
+                      <Surface
+                        style={[
+                          styles.recipeCard,
+                          { backgroundColor: theme.colors.surface },
+                          styles.pinnedRecipeCard,
+                          { overflow: 'visible' } // Explicitly override any overflow constraints
+                        ]}
+                        elevation={4}
+                      >
+                        <InteractivePin
+                          isPinned={pinnedRecipes.includes(item.name)}
+                          onToggle={() => handleTogglePinned(item.name)}
+                          size={32}
+                          triggerBounce={bouncingPins.has(item.name)}
+                          key={`pin-${item.name}-${showPinnedOnly}`} // Force re-mount to trigger bounce animation
+                        />
 
-                      <View style={styles.recipeHeader}>
-                        <View style={styles.recipeTitleContainer}>
-                          <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{item.name}</Text>
-                          <View style={styles.recipeBadges}>
-                            {cookedRecipes[item.name] && (
-                              <View style={[styles.badge, { backgroundColor: theme.colors.secondary }]}>
-                                <MaterialCommunityIcons name="check-circle" size={16} color="white" />
-                                <Text style={styles.badgeText}>Cooked</Text>
-                              </View>
-                            )}
+                        <View style={styles.recipeHeader}>
+                          <View style={styles.recipeTitleContainer}>
+                            <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{item.name}</Text>
+                            <View style={styles.recipeBadges}>
+                              {cookedRecipes[item.name] && (
+                                <View style={[styles.badge, { backgroundColor: theme.colors.secondary }]}>
+                                  <MaterialCommunityIcons name="check-circle" size={16} color="white" />
+                                  <Text style={styles.badgeText}>Cooked</Text>
+                                </View>
+                              )}
 
+                            </View>
                           </View>
-                        </View>
-                        {item.comment && (
-                          <Text style={[styles.recipeComment, { color: theme.colors.onSurface }]} numberOfLines={2}>
-                            {item.comment}
+                          {item.comment && (
+                            <Text style={[styles.recipeComment, { color: theme.colors.onSurface }]} numberOfLines={2}>
+                              {item.comment}
+                            </Text>
+                          )}
+                          <Text style={[styles.recipeDate, { color: theme.colors.onSurface }]}>
+                            Added: {new Date(item.createdAt).toLocaleDateString()}
                           </Text>
-                        )}
-                        <Text style={[styles.recipeDate, { color: theme.colors.onSurface }]}>
-                          Added: {new Date(item.createdAt).toLocaleDateString()}
-                        </Text>
-                      </View>
-                    </Surface>
-                  </TouchableOpacity>
-                </Animated.View>
-              );
-            }}
-            contentContainerStyle={styles.listContent}
-          />
+                        </View>
+                      </Surface>
+                    </TouchableOpacity>
+                  </Animated.View>
+                );
+              }}
+              contentContainerStyle={styles.listContent}
+            />
           </View>
         </Animated.View>
 
