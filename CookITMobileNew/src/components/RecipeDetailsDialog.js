@@ -12,7 +12,9 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
   const [isCommentExpanded, setIsCommentExpanded] = useState(false);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [isCommentFocused, setIsCommentFocused] = useState(false);
+  const [shouldShowExpandButton, setShouldShowExpandButton] = useState(false);
   const commentInputRef = useRef(null);
+  const commentTextRef = useRef(null);
 
   // Keyboard listeners for dialog positioning
   useEffect(() => {
@@ -56,6 +58,13 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       setCommentText(recipe.comment || '');
     }
   }, [recipe]);
+
+  // Check if text needs expansion button
+  useEffect(() => {
+    if (!commentText) {
+      setShouldShowExpandButton(false);
+    }
+  }, [commentText]);
 
   useEffect(() => {
     if (!visible) {
@@ -138,7 +147,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                   iconSize={28}
                 />
               </View>
-              <View style={styles.row}>
+              <View style={[styles.row, { marginTop: 1 }]}>
                 <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
                 <View style={styles.commentContainer}>
                   {isEditingComment ? (
@@ -168,20 +177,31 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                         onPress={() => setIsEditingComment(true)}
                       >
                         <Text
-                          style={[styles.commentText, { color: theme.colors.onSurface }]}
+                          ref={commentTextRef}
+                          style={[styles.commentText, { color: commentText ? theme.colors.onSurface : theme.colors.onSurface + '66' }]}
                           numberOfLines={isCommentExpanded ? undefined : 2}
+                          onTextLayout={(event) => {
+                            const { lines } = event.nativeEvent;
+                            if (lines.length > 2) {
+                              setShouldShowExpandButton(true);
+                            } else {
+                              setShouldShowExpandButton(false);
+                            }
+                          }}
                         >
                           {commentText || "Add any comments"}
                         </Text>
                       </TouchableOpacity>
-                      {commentText && commentText.length > 50 && (
+                      {commentText && shouldShowExpandButton && (
                         <TouchableOpacity
                           onPress={toggleCommentExpansion}
                           style={styles.expandButton}
                         >
                           <MaterialCommunityIcons
                             name={isCommentExpanded ? "chevron-up" : "chevron-down"}
-                            size={24}
+                            size={28}
+                            width={20}
+                            paddingTop={4}
                             color={theme.colors.primary}
                           />
                         </TouchableOpacity>
@@ -300,12 +320,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingLeft: 15,
     flex: 1,
+    paddingTop: 12,
   },
   deleteButton: {
     margin: 0,
-    padding: 0,
     minWidth: 0,
-    width: 40,
+    width: 20,
+    alignSelf: 'flex-start',
+    paddingTop: 4,
   },
   commentContainer: {
     flex: 1,
@@ -341,11 +363,11 @@ const styles = StyleSheet.create({
   },
   expandButton: {
     padding: 8,
-    marginLeft: 8,
+    marginLeft: 0,
     alignSelf: 'center',
   },
   actions: {
-    padding: 16,
+    padding: 0,
     gap: 8,
   },
   buttonContainer: {

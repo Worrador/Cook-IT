@@ -58,7 +58,7 @@ const BuyCoffeeDialog = ({ visible, onClose }) => {
         <View style={styles.buttonContainer}>
           <Button
             onPress={handleBuyCoffee}
-            style={[styles.buyButton, { backgroundColor: theme.colors.primary }]}
+            style={[styles.buyButton, { backgroundColor: theme.colors.secondary }]}
             labelStyle={styles.buyButtonLabel}
             icon="coffee"
           >
@@ -66,7 +66,7 @@ const BuyCoffeeDialog = ({ visible, onClose }) => {
           </Button>
           <Button
             onPress={onClose}
-            style={[styles.closeButton, { backgroundColor: theme.colors.secondary }]}
+            style={[styles.closeButton, { backgroundColor: theme.colors.primary }]}
             labelStyle={styles.closeButtonLabel}
           >
             Maybe Later
