@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "CookITMobileNew",
-    "slug": "CookITMobileNew",
+    "slug": "cookit-mobile",
+    "originalFullName": "@worrador/cookit-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,17 +14,26 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "scheme": "cookit-mobile"
     },
     "android": {
+      "package": "com.worrador.cookitmobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "scheme": "cookit-mobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "scheme": "cookit-mobile",
+    "extra": {
+      "eas": {
+        "projectId": "7c196cfa-6a72-4f0b-9cc7-a9aa007d9009"
+      }
     }
   }
 }

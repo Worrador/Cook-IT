@@ -5,6 +5,35 @@ const COOKED_RECIPES_KEY = '@cookit_cooked_recipes';
 const TUTORIAL_COUNT_KEY = '@cookit_tutorial_count';
 const PINNED_RECIPES_KEY = '@cookit_pinned_recipes';
 
+// Import sync service
+let syncService = null;
+const importSyncService = async () => {
+  if (!syncService) {
+    try {
+      const module = await import('../services/syncService');
+      syncService = module.default;
+    } catch (error) {
+      console.warn('SyncService not available:', error);
+    }
+  }
+  return syncService;
+};
+
+// Helper function to trigger sync after data changes
+const triggerSync = async () => {
+  try {
+    const sync = await importSyncService();
+    if (sync) {
+      // Use quickSync for immediate updates without full merge logic
+      sync.quickSync().catch(error => {
+        console.warn('Background sync failed:', error);
+      });
+    }
+  } catch (error) {
+    console.warn('Failed to trigger sync:', error);
+  }
+};
+
 export const saveRecipes = async (recipes) => {
   try {
     await AsyncStorage.setItem(RECIPES_KEY, JSON.stringify(recipes));
@@ -33,6 +62,10 @@ export const addRecipe = async (recipe) => {
     };
     recipes.push(newRecipe);
     await saveRecipes(recipes);
+
+    // Trigger sync after adding recipe
+    triggerSync();
+
     return recipes;
   } catch (error) {
     console.error('Error adding recipe:', error);
@@ -58,6 +91,9 @@ export const deleteRecipe = async (recipeName) => {
       await AsyncStorage.setItem(COOKED_RECIPES_KEY, JSON.stringify(cookedRecipes));
     }
 
+    // Trigger sync after deleting recipe
+    triggerSync();
+
     return updatedRecipes;
   } catch (error) {
     console.error('Error deleting recipe:', error);
@@ -69,9 +105,13 @@ export const updateRecipe = async (recipeName, updates) => {
   try {
     const recipes = await loadRecipes();
     const updatedRecipes = recipes.map(recipe =>
-      recipe.name === recipeName ? { ...recipe, ...updates } : recipe
+      recipe.name === recipeName ? { ...recipe, ...updates, lastModified: new Date().toISOString() } : recipe
     );
     await saveRecipes(updatedRecipes);
+
+    // Trigger sync after updating recipe
+    triggerSync();
+
     return updatedRecipes;
   } catch (error) {
     console.error('Error updating recipe:', error);
@@ -94,6 +134,10 @@ export const setCookedStatus = async (recipeName, isCooked) => {
     const cookedRecipes = await getCookedRecipes();
     cookedRecipes[recipeName] = isCooked;
     await AsyncStorage.setItem(COOKED_RECIPES_KEY, JSON.stringify(cookedRecipes));
+
+    // Trigger sync after changing cooked status
+    triggerSync();
+
     return cookedRecipes;
   } catch (error) {
     console.error('Error setting cooked status:', error);
@@ -141,6 +185,10 @@ export const togglePinnedRecipe = async (recipeName) => {
       : [...currentPinnedRecipes, recipeName];
 
     await AsyncStorage.setItem(PINNED_RECIPES_KEY, JSON.stringify(updatedPinnedRecipes));
+
+    // Trigger sync after toggling pin status
+    triggerSync();
+
     return updatedPinnedRecipes;
   } catch (error) {
     console.error('Error toggling pinned recipe:', error);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar, AppState, BackHandler, Dimensions, KeyboardAvoidingView, Platform, ImageBackground, ScrollView, LayoutAnimation, Animated } from 'react-native';
 import { Text, Surface, useTheme, IconButton, FAB, Portal, Dialog, Button as PaperButton, Provider as PaperProvider, MD3LightTheme, TextInput } from 'react-native-paper';
 import { Card, CardHeader, CardContent, CardFooter } from './src/components/Card';
@@ -11,6 +11,7 @@ import AddRecipeDialog from './src/components/AddRecipeDialog';
 import InteractivePin from './src/components/InteractivePin';
 import RecipeBookDialog from './src/components/RecipeBookDialog';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
 import {
   loadRecipes,
   addRecipe,
@@ -24,6 +25,7 @@ import {
   togglePinnedRecipe,
   cleanupStaleReferences,
 } from './src/utils/storage';
+import syncService from './src/services/syncService';
 import { BlurView } from 'expo-blur';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -45,6 +47,16 @@ const theme = {
     onSurface: '#5A4230', // Slightly darker brown for text on light backgrounds
   },
 };
+
+const CLIENT_ID = '609680746236-fuo5qoefnbqilcuj9p2eimebrf2k5eqo.apps.googleusercontent.com';
+const IOS_CLIENT_ID = '609680746236-3a8sfki001a0f3us91lasc7j36p5m8h3.apps.googleusercontent.com';
+const ANDROID_CLIENT_ID = '609680746236-k1rfu6bfjbn39fiu7bj2m4er2kaeqfhs.apps.googleusercontent.com';
+const SCOPES = [
+  'openid',
+  'profile',
+  'email',
+  'https://www.googleapis.com/auth/drive.file'
+];
 
 const AppContent = () => {
   const theme = useTheme();
@@ -83,10 +95,34 @@ const AppContent = () => {
   const [showScrollBorder, setShowScrollBorder] = useState(false); // Track if scroll border should show
   const [pressedRecipe, setPressedRecipe] = useState(null); // Track which recipe is being pressed
 
+  // Google Drive sync states
+  const [syncStatus, setSyncStatus] = useState({ isAuthenticated: false, lastSync: null, inProgress: false });
+  const [showSyncInfo, setShowSyncInfo] = useState(false);
+
   // Animation values
   const corkSlideAnim = useRef(new Animated.Value(0)).current; // 0 = hidden, 1 = visible
   const buttonPositionAnim = useRef(new Animated.Value(0)).current; // 0 = center, 1 = top
   const recipeAnimations = useRef(new Map()).current; // Map to store individual recipe animations
+
+  // Initialize Google Auth Hook directly in the component
+  const [googleAuthRequest, googleAuthResponse, googlePromptAsync] = Google.useAuthRequest({
+    expoClientId: CLIENT_ID,
+    iosClientId: IOS_CLIENT_ID,
+    androidClientId: ANDROID_CLIENT_ID,
+    webClientId: CLIENT_ID,
+    scopes: SCOPES,
+    additionalParameters: {
+      access_type: 'offline',
+      prompt: 'consent',
+    },
+  });
+
+  // Pass the promptAsync function to the sync service
+  useEffect(() => {
+    if (googlePromptAsync) {
+      syncService.setPromptAsync(googlePromptAsync);
+    }
+  }, [googlePromptAsync]);
 
   // Function to get or create animation for a recipe
   const getRecipeAnimation = (recipeName) => {
@@ -95,6 +131,19 @@ const AppContent = () => {
     }
     return recipeAnimations.get(recipeName);
   };
+
+  // Handle Google Auth Response
+  useEffect(() => {
+    if (googleAuthResponse?.type === 'success') {
+      console.log('Google authentication successful from hook!');
+      // The authentication is handled automatically by the service
+      // Just trigger a sync status update
+      handleSyncCheck();
+    } else if (googleAuthResponse?.type === 'error') {
+      console.error('Google authentication failed:', googleAuthResponse.error);
+      Alert.alert('Authentication Failed', 'Failed to connect to Google Drive. Please try again.');
+    }
+  }, [googleAuthResponse]);
 
   useEffect(() => {
     // Hide status bar when component mounts
@@ -105,6 +154,8 @@ const AppContent = () => {
       if (appState.match(/inactive|background/) && nextAppState === 'active') {
         // App has come to the foreground
         StatusBar.setHidden(true);
+        // Trigger sync when app comes to foreground
+        handleSyncCheck();
       }
       setAppState(nextAppState);
     });
@@ -118,14 +169,14 @@ const AppContent = () => {
 
   useEffect(() => {
     loadInitialData();
-    
+
     // Check app open count for help button visibility
     const checkHelpButtonVisibility = async () => {
       try {
         const appOpenCount = await getTutorialCount();
         const newCount = appOpenCount + 1;
         await incrementTutorialCount();
-        
+
         // Show help button for first 5 times, then every 5th time
         const shouldShow = newCount <= 5 || newCount % 5 === 0;
         setShowHelpButton(shouldShow);
@@ -134,7 +185,7 @@ const AppContent = () => {
         setShowHelpButton(true); // Fallback to showing it
       }
     };
-    
+
     checkHelpButtonVisibility();
   }, []);
 
@@ -295,9 +346,87 @@ const AppContent = () => {
         setShowHelp(true);
         await incrementTutorialCount();
       }
+
+      // Initialize Google Drive sync
+      await initializeSync();
     } catch (error) {
       console.error('Error loading initial data:', error);
       setIsLoading(false);
+    }
+  };
+
+  const initializeSync = async () => {
+    try {
+      console.log('Initializing Google Drive sync...');
+      setSyncStatus(prev => ({ ...prev, inProgress: true }));
+
+      const syncResult = await syncService.initializeSync();
+
+      if (syncResult.success && syncResult.hasChanges) {
+        console.log('Sync completed with changes, reloading data...');
+        // Reload data after successful sync with changes
+        const [loadedRecipes, loadedCookedRecipes, loadedPinnedRecipes] = await Promise.all([
+          loadRecipes(),
+          getCookedRecipes(),
+          getPinnedRecipes(),
+        ]);
+
+        setRecipes(loadedRecipes);
+        setCookedRecipes(loadedCookedRecipes);
+        setPinnedRecipes(loadedPinnedRecipes);
+      }
+
+      // Update sync status
+      const status = await syncService.checkSyncStatus();
+      setSyncStatus(status);
+    } catch (error) {
+      console.error('Error initializing sync:', error);
+      setSyncStatus(prev => ({ ...prev, inProgress: false }));
+    }
+  };
+
+  const handleSyncCheck = async () => {
+    try {
+      const status = await syncService.checkSyncStatus();
+      setSyncStatus(status);
+
+      if (status.isAuthenticated && !status.inProgress) {
+        // Trigger a background sync
+        syncService.performSync().then(result => {
+          if (result.success && result.hasChanges) {
+            // Reload data if there were changes
+            loadInitialData();
+          }
+        }).catch(error => {
+          console.warn('Background sync failed:', error);
+        });
+      }
+    } catch (error) {
+      console.error('Error checking sync status:', error);
+    }
+  };
+
+  const handleManualSync = async () => {
+    try {
+      setSyncStatus(prev => ({ ...prev, inProgress: true }));
+      const syncResult = await syncService.performSync();
+
+      if (syncResult.success) {
+        Alert.alert('Sync Complete', syncResult.message);
+        if (syncResult.hasChanges) {
+          // Reload data after successful sync with changes
+          await loadInitialData();
+        }
+      } else {
+        Alert.alert('Sync Failed', syncResult.message);
+      }
+
+      const status = await syncService.checkSyncStatus();
+      setSyncStatus(status);
+    } catch (error) {
+      console.error('Manual sync error:', error);
+      Alert.alert('Sync Error', error.message);
+      setSyncStatus(prev => ({ ...prev, inProgress: false }));
     }
   };
 
@@ -422,6 +551,9 @@ const AppContent = () => {
       <View style={styles.loadingContainer}>
         <MaterialCommunityIcons name="chef-hat" size={48} color={theme.colors.primary} />
         <Text style={styles.loadingText}>Loading your recipes...</Text>
+        {syncStatus.inProgress && (
+          <Text style={[styles.loadingText, { fontSize: 14, marginTop: 8 }]}>Syncing with Google Drive...</Text>
+        )}
       </View>
     );
   }
@@ -436,8 +568,17 @@ const AppContent = () => {
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
             <MaterialCommunityIcons name="chef-hat" size={32} color={theme.colors.tertiary} />
-            <View>
-              <Text style={[styles.title, { color: theme.colors.tertiary }]}>CookIT</Text>
+            <View style={styles.titleContainer}>
+              <View style={styles.titleRow}>
+                <Text style={[styles.title, { color: theme.colors.tertiary }]}>CookIT</Text>
+                <TouchableOpacity onPress={() => setShowSyncInfo(true)}>
+                  <MaterialCommunityIcons
+                    name={syncStatus.isAuthenticated ? (syncStatus.inProgress ? "cloud-sync-outline" : "cloud-check-outline") : "cloud-off-outline"}
+                    size={22}
+                    color={syncStatus.isAuthenticated ? theme.colors.tertiary : theme.colors.surface}
+                  />
+                </TouchableOpacity>
+              </View>
               <Text style={[styles.subtitle, { color: theme.colors.surface }]}>Your Recipe Manager</Text>
             </View>
           </View>
@@ -445,29 +586,31 @@ const AppContent = () => {
             {showHelpButton && (
               <IconButton
                 icon="help-circle"
-                size={24}
+                size={28}
                 iconColor={theme.colors.tertiary}
                 onPress={() => setShowHelp(true)}
               />
             )}
             <IconButton
               icon={showPinnedOnly ? "pin" : "pin-off"}
-              size={24}
+              size={28}
               iconColor={theme.colors.tertiary}
               onPress={() => setShowPinnedOnly(!showPinnedOnly)}
             />
             <IconButton
               icon="book-open"
-              size={24}
+              size={28}
               iconColor={theme.colors.tertiary}
               onPress={() => setShowRecipeBook(true)}
             />
-            <IconButton
-              icon="coffee"
-              size={24}
-              iconColor={theme.colors.tertiary}
-              onPress={() => setShowBuyCoffee(true)}
-            />
+            {!showHelpButton && (
+              <IconButton
+                icon="coffee"
+                size={28}
+                iconColor={theme.colors.tertiary}
+                onPress={() => setShowBuyCoffee(true)}
+              />
+            )}
           </View>
         </View>
       </Surface>
@@ -537,7 +680,7 @@ const AppContent = () => {
             overflow: 'visible', // Allow pins to extend beyond boundaries
           }}>
             {/* Combined cork background with borders */}
-            <ImageBackground 
+            <ImageBackground
               source={require('./assets/wine-cork-wp4.png')}
               style={{
                 position: 'absolute',
@@ -550,7 +693,7 @@ const AppContent = () => {
               resizeMode="cover"
             >
               {/* Top border */}
-              <ImageBackground 
+              <ImageBackground
                 source={require('./assets/cork-wood2.png')}
                 style={{
                   position: 'absolute',
@@ -563,7 +706,7 @@ const AppContent = () => {
                 resizeMode="stretch"
               />
               {/* Left border */}
-              <ImageBackground 
+              <ImageBackground
                 source={require('./assets/cork-wood.png')}
                 style={{
                   position: 'absolute',
@@ -576,7 +719,7 @@ const AppContent = () => {
                 resizeMode="stretch"
               />
               {/* Right border */}
-              <ImageBackground 
+              <ImageBackground
                 source={require('./assets/cork-wood.png')}
                 style={{
                   position: 'absolute',
@@ -590,7 +733,7 @@ const AppContent = () => {
               />
               {/* Bottom border - only when scrolled to bottom */}
               {showScrollBorder && (
-                <ImageBackground 
+                <ImageBackground
                   source={require('./assets/cork-wood2.png')}
                   style={{
                     position: 'absolute',
@@ -612,7 +755,7 @@ const AppContent = () => {
               onScroll={(event) => {
                 const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
                 // Show border if content is shorter than container OR if scrolled to bottom
-                const isAtBottom = contentSize.height <= layoutMeasurement.height || 
+                const isAtBottom = contentSize.height <= layoutMeasurement.height ||
                                   contentOffset.y + layoutMeasurement.height >= contentSize.height - 10;
                 console.log('Scroll values:', { contentSize, layoutMeasurement, contentOffset, isAtBottom });
                 setShowScrollBorder(isAtBottom);
@@ -625,8 +768,8 @@ const AppContent = () => {
               }}
               scrollEventThrottle={16}
               style={[
-                styles.list, 
-                { 
+                styles.list,
+                {
                   backgroundColor: 'transparent',
                   marginTop: 10,
                   marginLeft: 10,
@@ -699,7 +842,6 @@ const AppContent = () => {
                                   <Text style={styles.badgeText}>Cooked</Text>
                                 </View>
                               )}
-
                             </View>
                           </View>
                           {item.comment && (
@@ -720,7 +862,6 @@ const AppContent = () => {
             />
           </View>
         </Animated.View>
-
 
       </View>
 
@@ -793,15 +934,50 @@ const AppContent = () => {
           />
         </Dialog>
       </Portal>
+
+      {/* Sync Info Dialog */}
+      <Portal>
+        <Dialog
+          visible={showSyncInfo}
+          onDismiss={() => setShowSyncInfo(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title>Google Drive Sync</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ marginBottom: 16 }}>
+              Status: {syncStatus.isAuthenticated ? '✅ Connected' : '❌ Not Connected'}
+            </Text>
+            {syncStatus.lastSync && (
+              <Text style={{ marginBottom: 16 }}>
+                Last Sync: {new Date(syncStatus.lastSync).toLocaleString()}
+              </Text>
+            )}
+            <Text style={{ marginBottom: 16, fontSize: 12, color: theme.colors.onSurfaceVariant }}>
+              Your recipes are automatically synced with Google Drive when you make changes.
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <PaperButton onPress={() => setShowSyncInfo(false)}>Close</PaperButton>
+            <PaperButton
+              onPress={handleManualSync}
+              disabled={syncStatus.inProgress}
+            >
+              {syncStatus.inProgress ? 'Syncing...' : 'Sync Now'}
+            </PaperButton>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </SafeAreaView>
   );
 };
 
 export default function App() {
   return (
-    <PaperProvider theme={theme}>
-      <AppContent />
-    </PaperProvider>
+    <SafeAreaProvider>
+      <PaperProvider theme={theme}>
+        <AppContent />
+      </PaperProvider>
+    </SafeAreaProvider>
   );
 }
 
@@ -828,23 +1004,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingLeft: 16,
+    paddingRight: 8,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 12,
   },
   headerButtons: {
     flexDirection: 'row',
     gap: 4,
+    flex: 1,
+    justifyContent: 'center',
   },
   mainButtons: {
     padding: 20,
@@ -1081,5 +1261,16 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative', // Added to properly contain the absolute-positioned cork background
     overflow: 'visible', // Allow pins to extend beyond container boundaries
+  },
+  titleContainer: {
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    gap: 4,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
 });
