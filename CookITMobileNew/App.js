@@ -10,6 +10,7 @@ import BuyCoffeeDialog from './src/components/BuyCoffeeDialog';
 import AddRecipeDialog from './src/components/AddRecipeDialog';
 import InteractivePin from './src/components/InteractivePin';
 import RecipeBookDialog from './src/components/RecipeBookDialog';
+import EmptyRecipeBookDialog from './src/components/EmptyRecipeBookDialog';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import {
@@ -24,6 +25,7 @@ import {
   getPinnedRecipes,
   togglePinnedRecipe,
   cleanupStaleReferences,
+  addSampleRecipes,
 } from './src/utils/storage';
 import syncService from './src/services/syncService';
 import { BlurView } from 'expo-blur';
@@ -98,6 +100,11 @@ const AppContent = () => {
   // Google Drive sync states
   const [syncStatus, setSyncStatus] = useState({ isAuthenticated: false, lastSync: null, inProgress: false });
   const [showSyncInfo, setShowSyncInfo] = useState(false);
+
+  // Empty recipe book dialog states
+  const [showEmptyRecipeBookDialog, setShowEmptyRecipeBookDialog] = useState(false);
+  const [isAddingSampleRecipes, setIsAddingSampleRecipes] = useState(false);
+  const [tutorialCount, setTutorialCountState] = useState(0);
 
   // Animation values
   const corkSlideAnim = useRef(new Animated.Value(0)).current; // 0 = hidden, 1 = visible
@@ -190,8 +197,8 @@ const AppContent = () => {
   }, []);
 
   useEffect(() => {
-    setIsAnyDialogOpen(showAddModal || showRecipeDetails || showHelp || showBuyCoffee);
-  }, [showAddModal, showRecipeDetails, showHelp, showBuyCoffee]);
+    setIsAnyDialogOpen(showAddModal || showRecipeDetails || showHelp || showBuyCoffee || showEmptyRecipeBookDialog);
+  }, [showAddModal, showRecipeDetails, showHelp, showBuyCoffee, showEmptyRecipeBookDialog]);
 
   // Set initial border state for pinned recipes
   useEffect(() => {
@@ -306,6 +313,10 @@ const AppContent = () => {
         setShowAddModal(false);
         return true;
       }
+      if (showEmptyRecipeBookDialog) {
+        setShowEmptyRecipeBookDialog(false);
+        return true;
+      }
       // If no modals are open, return false to allow default behavior (e.g., exit app)
       return false;
     };
@@ -317,7 +328,7 @@ const AppContent = () => {
 
     // Cleanup the event listener when the component unmounts
     return () => backHandler.remove();
-  }, [showBuyCoffee, showHelp, showRecipeDetails, showAddModal]); // Dependencies array
+  }, [showBuyCoffee, showHelp, showRecipeDetails, showAddModal, showEmptyRecipeBookDialog]); // Dependencies array
 
   const loadInitialData = async () => {
     try {
@@ -340,11 +351,18 @@ const AppContent = () => {
         setCookedRecipes(loadedCookedRecipes);
         setPinnedRecipes(loadedPinnedRecipes);
       }
+      setTutorialCountState(tutorialCount);
       setIsLoading(false);
 
+      // Show tutorial for first 5 times
       if (tutorialCount < 5) {
         setShowHelp(true);
         await incrementTutorialCount();
+      }
+
+      // Show empty recipe book dialog if no recipes exist
+      if (loadedRecipes.length === 0) {
+        setShowEmptyRecipeBookDialog(true);
       }
 
       // Initialize Google Drive sync
@@ -475,7 +493,7 @@ const AppContent = () => {
 
   const handleChooseRecipe = async () => {
     if (recipes.length === 0) {
-      Alert.alert('No Recipes', 'Please add some recipes first!');
+      setShowEmptyRecipeBookDialog(true);
       return;
     }
 
@@ -546,6 +564,29 @@ const AppContent = () => {
     setPinnedRecipes(updatedPinnedRecipes);
   };
 
+  const handleAddSampleRecipes = async () => {
+    try {
+      setIsAddingSampleRecipes(true);
+      const updatedRecipes = await addSampleRecipes();
+      setRecipes(updatedRecipes);
+      setShowEmptyRecipeBookDialog(false);
+      Alert.alert('Success', 'Sample recipes have been added to your recipe book!');
+    } catch (error) {
+      console.error('Error adding sample recipes:', error);
+      Alert.alert('Error', 'Failed to add sample recipes. Please try again.');
+    } finally {
+      setIsAddingSampleRecipes(false);
+    }
+  };
+
+  const handleOpenRecipeBook = () => {
+    if (recipes.length === 0) {
+      setShowEmptyRecipeBookDialog(true);
+    } else {
+      setShowRecipeBook(true);
+    }
+  };
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -601,7 +642,7 @@ const AppContent = () => {
               icon="book-open"
               size={28}
               iconColor={theme.colors.tertiary}
-              onPress={() => setShowRecipeBook(true)}
+              onPress={handleOpenRecipeBook}
             />
             {!showHelpButton && (
               <IconButton
@@ -965,6 +1006,22 @@ const AppContent = () => {
               {syncStatus.inProgress ? 'Syncing...' : 'Sync Now'}
             </PaperButton>
           </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* Empty Recipe Book Dialog */}
+      <Portal>
+        <Dialog
+          visible={showEmptyRecipeBookDialog}
+          onDismiss={() => setShowEmptyRecipeBookDialog(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface, maxHeight: dialogMaxHeight }]}
+        >
+          <EmptyRecipeBookDialog
+            onDismiss={() => setShowEmptyRecipeBookDialog(false)}
+            onAddSampleRecipes={handleAddSampleRecipes}
+            isLoading={isAddingSampleRecipes}
+            isFirstTime={tutorialCount < 5}
+          />
         </Dialog>
       </Portal>
     </SafeAreaView>

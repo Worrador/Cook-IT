@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Keyboard } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Keyboard, Linking } from 'react-native';
 import { Dialog, Portal, Text, Button, TextInput, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -48,7 +48,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       console.warn('Cannot save comment: recipe is null');
       return;
     }
-    
+
     try {
       await onUpdate(recipe.name, { ...recipe, comment: commentText });
       setIsEditingComment(false);
@@ -62,11 +62,11 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       console.warn('Cannot save name: recipe is null');
       return;
     }
-    
+
     try {
       // Update the recipe with the new name
       await onUpdate(recipe.name, { ...recipe, name: nameText });
-      
+
       // If this recipe was pinned, we need to update the pinned recipes array
       // to reflect the new name
       if (isPinned && pinnedRecipes && setPinnedRecipes) {
@@ -76,7 +76,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
           .concat(nameText); // Add new name
         setPinnedRecipes(updatedPinnedRecipes);
       }
-      
+
       setIsEditingName(false);
     } catch (error) {
       console.error('Error saving name:', error);
@@ -148,6 +148,21 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     if (!recipe) return;
     setHasClickedCook(true);
     onCook(recipe.name);
+  };
+
+  const handleOpenURL = async () => {
+    if (!recipe || !recipe.url) return;
+
+    try {
+      const supported = await Linking.canOpenURL(recipe.url);
+      if (supported) {
+        await Linking.openURL(recipe.url);
+      } else {
+        console.error('Cannot open URL:', recipe.url);
+      }
+    } catch (error) {
+      console.error('Error opening URL:', error);
+    }
   };
 
   const handleNext = async () => {
@@ -308,6 +323,27 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                   )}
                 </View>
               </View>
+              {recipe && recipe.url && (
+                <View style={[styles.row, { marginTop: 1 }]}>
+                  <Text style={[styles.label, { color: theme.colors.onSurface }]}>URL</Text>
+                  <View style={styles.urlContainer}>
+                    <TouchableOpacity
+                      style={styles.urlTextContainer}
+                      onPress={handleOpenURL}
+                    >
+                      <Text style={[styles.urlText, { color: theme.colors.primary }]} numberOfLines={2}>
+                        {recipe.url}
+                      </Text>
+                      <MaterialCommunityIcons
+                        name="open-in-new"
+                        size={16}
+                        color={theme.colors.primary}
+                        style={styles.urlIcon}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </View>
           </Dialog.Content>
           <Dialog.Actions style={styles.actions}>
@@ -510,5 +546,29 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     width: '100%',
+  },
+  urlContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+    backgroundColor: '#f7f0e2',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  urlTextContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+  },
+  urlText: {
+    fontSize: 14,
+    lineHeight: 18,
+    flex: 1,
+  },
+  urlIcon: {
+    marginLeft: 8,
   },
 });
