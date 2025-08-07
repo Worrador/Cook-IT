@@ -400,7 +400,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                   style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
                   icon="refresh"
                 >
-                  Change my mind
+                  Changed my mind
                 </Button>
               </View>
             )}
