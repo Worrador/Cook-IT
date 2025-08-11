@@ -18,12 +18,19 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
   const commentInputRef = useRef(null);
   const commentTextRef = useRef(null);
   const nameInputRef = useRef(null);
+  const [isNameExpanded, setIsNameExpanded] = useState(false);
+  const [isUrlExpanded, setIsUrlExpanded] = useState(false);
+  const [isEditingUrl, setIsEditingUrl] = useState(false);
+  const [urlText, setUrlText] = useState('');
+  const urlInputRef = useRef(null);
+  const [isNameFocused, setIsNameFocused] = useState(false);
+  const [isUrlFocused, setIsUrlFocused] = useState(false);
 
   // Keyboard listeners for dialog positioning
   useEffect(() => {
     const keyboardDidShow = (event) => {
-      // Only apply offset if comment input is focused
-      if (isCommentFocused) {
+      // Only apply offset if any input is focused
+      if (isCommentFocused || isNameFocused || isUrlFocused) {
         const keyboardHeight = event.endCoordinates.height;
         // Use 30% of keyboard height, max 150px
         setKeyboardOffset(-Math.min(keyboardHeight * 0.5, 180));
@@ -41,7 +48,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       keyboardDidShowListener.remove();
       keyboardDidHideListener.remove();
     };
-  }, [isCommentFocused]);
+  }, [isCommentFocused, isNameFocused, isUrlFocused]);
 
   const handleCommentSave = async () => {
     if (!recipe) {
@@ -83,6 +90,20 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     }
   };
 
+  const handleUrlSave = async () => {
+    if (!recipe) {
+      console.warn('Cannot save URL: recipe is null');
+      return;
+    }
+
+    try {
+      await onUpdate(recipe.name, { ...recipe, url: urlText });
+      setIsEditingUrl(false);
+    } catch (error) {
+      console.error('Error saving URL:', error);
+    }
+  };
+
   const toggleCommentExpansion = () => {
     setIsCommentExpanded(!isCommentExpanded);
   };
@@ -91,6 +112,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     if (recipe) {
       setCommentText(recipe.comment || '');
       setNameText(recipe.name || '');
+      setUrlText(recipe.url || '');
     }
   }, [recipe]);
 
@@ -109,9 +131,13 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       if (isEditingName && recipe) {
         handleNameSave();
       }
+      if (isEditingUrl && recipe) {
+        handleUrlSave();
+      }
       setHasClickedCook(false);
       setIsEditingComment(false);
       setIsEditingName(false);
+      setIsEditingUrl(false);
       setNoMoreRecipes(false);
       setIsCommentExpanded(false);
     }
@@ -169,6 +195,8 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     setIsEditingComment(false);
     setHasClickedCook(false);
     setIsCommentExpanded(false);
+    setIsEditingName(false);
+    setIsEditingUrl(false);
     try {
       const nextRecipe = await onNext();
       if (nextRecipe && nextRecipe.empty) {
@@ -205,8 +233,12 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                         ref={nameInputRef}
                         value={nameText}
                         onChangeText={setNameText}
-                        onBlur={() => handleNameSave()}
-                        style={styles.nameInput}
+                        onBlur={() => {
+                          setIsNameFocused(false);
+                          handleNameSave();
+                        }}
+                        onFocus={() => setIsNameFocused(true)}
+                        style={styles.commentInput}
                         placeholder="Enter recipe name"
                         placeholderTextColor={`${theme.colors.primary}66`}
                         autoFocus
@@ -229,23 +261,31 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                   ) : (
                     <View style={styles.nameViewContainer}>
                       <TouchableOpacity
-                        style={styles.nameTextContainer}
+                        style={[styles.commentTextContainer, { maxHeight: 48 }]}
                         onLongPress={() => setIsEditingName(true)}
                       >
-                        <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{nameText}</Text>
+                        <Text
+                          style={[styles.commentText, { color: nameText ? theme.colors.onSurface : theme.colors.onSurface + '66' }]}
+                          numberOfLines={1}
+                        >
+                          {nameText || "Enter recipe name"}
+                        </Text>
                       </TouchableOpacity>
-                      <Button
-                        icon="delete"
+                      <TouchableOpacity
                         onPress={() => onDelete(recipe.name)}
                         style={styles.deleteButton}
-                        textColor={theme.colors.error}
-                        iconSize={28}
-                      />
+                      >
+                        <MaterialCommunityIcons
+                          name="delete"
+                          size={22}
+                          color={theme.colors.primary}
+                        />
+                      </TouchableOpacity>
                     </View>
                   )}
                 </View>
               </View>
-              <View style={[styles.row, { marginTop: 1 }]}>
+              <View style={[styles.row, { marginTop: 0 }]}>
                 <Text style={[styles.label, { color: theme.colors.onSurface }]}>Comment</Text>
                 <View style={styles.commentContainer}>
                   {isEditingComment ? (
@@ -283,19 +323,16 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                   ) : (
                     <View style={styles.commentViewContainer}>
                       <TouchableOpacity
-                        style={[styles.commentTextContainer, {
-                          maxHeight: isCommentExpanded ? 200 : 48,
-                          backgroundColor: 'transparent'
-                        }]}
+                        style={[styles.commentTextContainer, { maxHeight: isCommentExpanded ? 200 : 48 }]}
                         onPress={() => setIsEditingComment(true)}
                       >
                         <Text
                           ref={commentTextRef}
                           style={[styles.commentText, { color: commentText ? theme.colors.onSurface : theme.colors.onSurface + '66' }]}
-                          numberOfLines={isCommentExpanded ? undefined : 2}
+                          numberOfLines={isCommentExpanded ? undefined : 1}
                           onTextLayout={(event) => {
                             const { lines } = event.nativeEvent;
-                            if (lines.length > 2) {
+                            if (lines.length > 1) {
                               setShouldShowExpandButton(true);
                             } else {
                               setShouldShowExpandButton(false);
@@ -305,20 +342,18 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                           {commentText || "Add any comments"}
                         </Text>
                       </TouchableOpacity>
-                      {commentText && shouldShowExpandButton && (
-                        <TouchableOpacity
-                          onPress={toggleCommentExpansion}
-                          style={styles.expandButton}
-                        >
-                          <MaterialCommunityIcons
-                            name={isCommentExpanded ? "chevron-up" : "chevron-down"}
-                            size={28}
-                            width={20}
-                            paddingTop={4}
-                            color={theme.colors.primary}
-                          />
-                        </TouchableOpacity>
-                      )}
+                      <TouchableOpacity
+                        onPress={toggleCommentExpansion}
+                        style={styles.expandButton}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      >
+                        <MaterialCommunityIcons
+                          name={isCommentExpanded ? "chevron-up" : "chevron-down"}
+                          size={28}
+                          width={20}
+                          color={theme.colors.primary}
+                        />
+                      </TouchableOpacity>
                     </View>
                   )}
                 </View>
@@ -327,20 +362,63 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                 <View style={[styles.row, { marginTop: 1 }]}>
                   <Text style={[styles.label, { color: theme.colors.onSurface }]}>URL</Text>
                   <View style={styles.urlContainer}>
-                    <TouchableOpacity
-                      style={styles.urlTextContainer}
-                      onPress={handleOpenURL}
-                    >
-                      <Text style={[styles.urlText, { color: theme.colors.primary }]} numberOfLines={2}>
-                        {recipe.url}
-                      </Text>
-                      <MaterialCommunityIcons
-                        name="open-in-new"
-                        size={16}
-                        color={theme.colors.primary}
-                        style={styles.urlIcon}
-                      />
-                    </TouchableOpacity>
+                    {isEditingUrl ? (
+                      <View style={styles.urlEditContainer}>
+                        <TextInput
+                          ref={urlInputRef}
+                          value={urlText}
+                          onChangeText={setUrlText}
+                          onBlur={() => {
+                            setIsUrlFocused(false);
+                            handleUrlSave();
+                          }}
+                          onFocus={() => setIsUrlFocused(true)}
+                          style={styles.commentInput}
+                          placeholder="Enter recipe URL"
+                          placeholderTextColor={`${theme.colors.primary}66`}
+                          autoFocus
+                          mode="outlined"
+                        />
+                        <TouchableOpacity
+                          onPress={handleUrlSave}
+                          style={styles.expandButton}
+                        >
+                          <MaterialCommunityIcons
+                            name="content-save"
+                            size={20}
+                            width={20}
+                            paddingTop={4}
+                            paddingLeft={4}
+                            color={theme.colors.primary}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View style={styles.urlViewContainer}>
+                        <TouchableOpacity
+                          style={[styles.commentTextContainer, { maxHeight: 48 }]}
+                          onLongPress={() => setIsEditingUrl(true)}
+                        >
+                          <Text
+                            style={[styles.commentText, { color: theme.colors.primary }]}
+                            numberOfLines={1}
+                          >
+                            {urlText || "Enter recipe URL"}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={handleOpenURL}
+                          style={styles.expandButton}
+                        >
+                          <MaterialCommunityIcons
+                            name="open-in-new"
+                            size={18}
+                            width={16}
+                            color={theme.colors.primary}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
                 </View>
               )}
@@ -454,16 +532,20 @@ const styles = StyleSheet.create({
   },
   recipeName: {
     fontSize: 16,
-    paddingLeft: 15,
+    paddingLeft: 12,
+    marginRight: 2,
     flex: 1,
     paddingTop: 12,
   },
   deleteButton: {
     margin: 0,
     minWidth: 0,
-    width: 20,
+    width: 30,
     alignSelf: 'flex-start',
-    paddingTop: 4,
+    paddingTop: 12,
+    paddingLeft: 4,
+    marginLeft: 0,
+    marginRight: -4,
   },
   commentContainer: {
     flex: 1,
@@ -493,6 +575,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     justifyContent: 'center',
+    paddingRight: 2,
   },
   nameInput: {
     fontSize: 16,
@@ -515,12 +598,14 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingTop: 0,
+    paddingLeft: 12,
     backgroundColor: 'rgba(0,0,0,0.02)',
     borderRadius: 8,
     overflow: 'hidden',
     minHeight: 48,
+    marginRight: 2,
+    backgroundColor: 'transparent',
   },
   commentText: {
     fontSize: 16,
@@ -532,8 +617,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#f7f0e2',
   },
   expandButton: {
-    padding: 8,
-    marginLeft: 0,
+    padding: 0,
+    marginLeft: 4,
+    marginRight: 4,
     alignSelf: 'center',
   },
   actions: {
@@ -550,25 +636,19 @@ const styles = StyleSheet.create({
   urlContainer: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     minWidth: 0,
-    backgroundColor: '#f7f0e2',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
   },
-  urlTextContainer: {
+  urlEditContainer: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     minWidth: 0,
   },
-  urlText: {
-    fontSize: 14,
-    lineHeight: 18,
+  urlViewContainer: {
     flex: 1,
-  },
-  urlIcon: {
-    marginLeft: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    minWidth: 0,
   },
 });
