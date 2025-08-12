@@ -10,10 +10,7 @@ class SyncService {
     this.isSyncing = false;
   }
 
-  // Set the prompt function from React component
-  setPromptAsync(promptAsync) {
-    googleDriveService.setPromptAsync(promptAsync);
-  }
+  // Removed setPromptAsync; native sign-in does not require plumbing from React component
 
   async getLastSyncTime() {
     try {
@@ -279,8 +276,18 @@ class SyncService {
   async quickSync() {
     try {
       if (!googleDriveService.isAuthenticated()) {
+        console.log('Quick sync skipped: not authenticated');
         return { success: false, message: 'Not authenticated' };
       }
+
+      // Check if already syncing to prevent multiple simultaneous syncs
+      if (this.isSyncing) {
+        console.log('Quick sync skipped: sync already in progress');
+        return { success: false, message: 'Sync already in progress' };
+      }
+
+      // Set syncing flag to prevent concurrent syncs
+      this.isSyncing = true;
 
       // Just upload current local state without merging
       const localRecipes = await loadRecipes();
@@ -297,10 +304,14 @@ class SyncService {
       await googleDriveService.uploadRecipes(localData);
       await this.setLastSyncTime();
 
+      console.log('Quick sync completed successfully');
       return { success: true, message: 'Quick sync completed' };
     } catch (error) {
       console.error('Quick sync error:', error);
       return { success: false, message: error.message };
+    } finally {
+      // Always reset syncing flag
+      this.isSyncing = false;
     }
   }
 

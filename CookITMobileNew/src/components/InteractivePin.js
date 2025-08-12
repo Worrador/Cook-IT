@@ -80,7 +80,12 @@ const InteractivePin = ({
       console.log('Haptics not available:', error);
     }
 
-    onToggle();
+    try {
+      console.log(`Toggling pin for recipe: ${isPinned ? 'unpinning' : 'pinning'}`);
+      onToggle();
+    } catch (error) {
+      console.error('Error in pin toggle:', error);
+    }
   };
 
   return (

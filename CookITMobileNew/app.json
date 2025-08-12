@@ -5,11 +5,11 @@
     "originalFullName": "@worrador/cookit-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/ChefHatColored.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/ChefHatColored.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -20,16 +20,19 @@
     "android": {
       "package": "com.worrador.cookitmobile",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/ChefHatColored.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
       "scheme": "cookit-mobile"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/ChefHatColored.png"
     },
     "scheme": "cookit-mobile",
+    "plugins": [
+      "@react-native-google-signin/google-signin"
+    ],
     "extra": {
       "eas": {
         "projectId": "7c196cfa-6a72-4f0b-9cc7-a9aa007d9009"

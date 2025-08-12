@@ -20,15 +20,47 @@ const importSyncService = async () => {
 };
 
 // Helper function to trigger sync after data changes
+let syncTimeout = null;
+let lastSyncError = null;
+const SYNC_ERROR_COOLDOWN = 30000; // 30 seconds cooldown after sync errors
+
 const triggerSync = async () => {
   try {
-    const sync = await importSyncService();
-    if (sync) {
-      // Use quickSync for immediate updates without full merge logic
-      sync.quickSync().catch(error => {
-        console.warn('Background sync failed:', error);
-      });
+    // Check if we're in a cooldown period due to recent sync errors
+    if (lastSyncError && (Date.now() - lastSyncError) < SYNC_ERROR_COOLDOWN) {
+      console.log('Sync skipped: in cooldown period due to recent errors');
+      return;
     }
+
+    // Clear any existing timeout to prevent multiple rapid sync calls
+    if (syncTimeout) {
+      clearTimeout(syncTimeout);
+    }
+
+    // Debounce sync calls to prevent rapid successive calls
+    syncTimeout = setTimeout(async () => {
+      try {
+        const sync = await importSyncService();
+        if (sync) {
+          // Use quickSync for immediate updates without full merge logic
+          const result = await sync.quickSync();
+          if (!result.success) {
+            // Record sync error and start cooldown
+            lastSyncError = Date.now();
+            console.warn('Background sync failed:', result.message);
+          } else {
+            // Clear error state on successful sync
+            lastSyncError = null;
+          }
+        }
+      } catch (error) {
+        // Record sync error and start cooldown
+        lastSyncError = Date.now();
+        console.warn('Failed to trigger sync:', error);
+      } finally {
+        syncTimeout = null;
+      }
+    }, 1000); // Wait 1 second before actually triggering sync
   } catch (error) {
     console.warn('Failed to trigger sync:', error);
   }
@@ -177,8 +209,21 @@ export const getPinnedRecipes = async () => {
   }
 };
 
+// Track ongoing pin operations to prevent duplicates
+const ongoingPinOperations = new Set();
+
 export const togglePinnedRecipe = async (recipeName) => {
   try {
+    // Prevent duplicate operations for the same recipe
+    if (ongoingPinOperations.has(recipeName)) {
+      console.log(`Pin operation already in progress for ${recipeName}, skipping`);
+      const currentPinnedRecipes = await getPinnedRecipes();
+      return currentPinnedRecipes;
+    }
+
+    // Mark this operation as ongoing
+    ongoingPinOperations.add(recipeName);
+
     const currentPinnedRecipes = await getPinnedRecipes();
     const updatedPinnedRecipes = currentPinnedRecipes.includes(recipeName)
       ? currentPinnedRecipes.filter(name => name !== recipeName)
@@ -193,6 +238,9 @@ export const togglePinnedRecipe = async (recipeName) => {
   } catch (error) {
     console.error('Error toggling pinned recipe:', error);
     return [];
+  } finally {
+    // Always remove from ongoing operations
+    ongoingPinOperations.delete(recipeName);
   }
 };
 

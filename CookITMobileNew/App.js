@@ -12,7 +12,6 @@ import InteractivePin from './src/components/InteractivePin';
 import RecipeBookDialog from './src/components/RecipeBookDialog';
 import EmptyRecipeBookDialog from './src/components/EmptyRecipeBookDialog';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
 import {
   loadRecipes,
   addRecipe,
@@ -50,9 +49,6 @@ const theme = {
   },
 };
 
-const CLIENT_ID = '609680746236-fuo5qoefnbqilcuj9p2eimebrf2k5eqo.apps.googleusercontent.com';
-const IOS_CLIENT_ID = '609680746236-3a8sfki001a0f3us91lasc7j36p5m8h3.apps.googleusercontent.com';
-const ANDROID_CLIENT_ID = '609680746236-k1rfu6bfjbn39fiu7bj2m4er2kaeqfhs.apps.googleusercontent.com';
 const SCOPES = [
   'openid',
   'profile',
@@ -111,27 +107,7 @@ const AppContent = () => {
   const buttonPositionAnim = useRef(new Animated.Value(0)).current; // 0 = center, 1 = top
   const recipeAnimations = useRef(new Map()).current; // Map to store individual recipe animations
 
-  // Initialize Google Auth Hook directly in the component
-  const [googleAuthRequest, googleAuthResponse, googlePromptAsync] = Google.useAuthRequest({
-    expoClientId: CLIENT_ID,
-    iosClientId: IOS_CLIENT_ID,
-    androidClientId: ANDROID_CLIENT_ID,
-    webClientId: CLIENT_ID,
-    scopes: SCOPES,
-    additionalParameters: {
-      access_type: 'offline',
-      prompt: 'consent',
-    },
-  });
-
-  // Pass the promptAsync function to the sync service
-  useEffect(() => {
-    if (googlePromptAsync) {
-      syncService.setPromptAsync(googlePromptAsync);
-    }
-  }, [googlePromptAsync]);
-
-  // Function to get or create animation for a recipe
+  // Helper function to get or create recipe animations
   const getRecipeAnimation = (recipeName) => {
     if (!recipeAnimations.has(recipeName)) {
       recipeAnimations.set(recipeName, new Animated.Value(0));
@@ -139,18 +115,26 @@ const AppContent = () => {
     return recipeAnimations.get(recipeName);
   };
 
+  // Initialize Google Auth Hook directly in the component
+  // (Removed expo-auth-session; using native Google Sign-In)
+
+  // Pass the promptAsync function to the sync service
+  // useEffect(() => {
+  //   if (googlePromptAsync) {
+  //     syncService.setPromptAsync(googlePromptAsync);
+  //   }
+  // }, [googlePromptAsync]);
+
   // Handle Google Auth Response
-  useEffect(() => {
-    if (googleAuthResponse?.type === 'success') {
-      console.log('Google authentication successful from hook!');
-      // The authentication is handled automatically by the service
-      // Just trigger a sync status update
-      handleSyncCheck();
-    } else if (googleAuthResponse?.type === 'error') {
-      console.error('Google authentication failed:', googleAuthResponse.error);
-      Alert.alert('Authentication Failed', 'Failed to connect to Google Drive. Please try again.');
-    }
-  }, [googleAuthResponse]);
+  // useEffect(() => {
+  //   if (googleAuthResponse?.type === 'success') {
+  //     console.log('Google authentication successful from hook!');
+  //     handleSyncCheck();
+  //   } else if (googleAuthResponse?.type === 'error') {
+  //     console.error('Google authentication failed:', googleAuthResponse.error);
+  //     Alert.alert('Authentication Failed', 'Failed to connect to Google Drive. Please try again.');
+  //   }
+  // }, [googleAuthResponse]);
 
   useEffect(() => {
     // Hide status bar when component mounts
@@ -544,6 +528,12 @@ const AppContent = () => {
   };
 
   const handleTogglePinned = async (recipeName) => {
+    // Prevent multiple rapid calls
+    if (isLoading) {
+      console.log('Toggle pinned skipped: operation already in progress');
+      return;
+    }
+
     // Configure layout animation for smooth removal
     LayoutAnimation.configureNext({
       duration: 300,
@@ -560,8 +550,14 @@ const AppContent = () => {
       },
     });
 
-    const updatedPinnedRecipes = await togglePinnedRecipe(recipeName);
-    setPinnedRecipes(updatedPinnedRecipes);
+    try {
+      const updatedPinnedRecipes = await togglePinnedRecipe(recipeName);
+      setPinnedRecipes(updatedPinnedRecipes);
+    } catch (error) {
+      console.error('Error toggling pinned recipe:', error);
+      // Optionally show an error message to the user
+      Alert.alert('Error', 'Failed to update recipe pin status. Please try again.');
+    }
   };
 
   const handleAddSampleRecipes = async () => {
@@ -1261,6 +1257,7 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     maxHeight: '85%',
     alignSelf: 'center',
+    borderRadius: 16,
   },
   titleIcon: {
     // marginRight is no longer needed, gap is used instead

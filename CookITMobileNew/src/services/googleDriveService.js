@@ -1,11 +1,6 @@
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Complete redirect URI setup for Expo
-WebBrowser.maybeCompleteAuthSession();
-
-const CLIENT_ID = '609680746236-fuo5qoefnbqilcuj9p2eimebrf2k5eqo.apps.googleusercontent.com';
 const SCOPES = [
   'openid',
   'profile',
@@ -13,7 +8,6 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive.file'
 ];
 
-// Storage keys for tokens
 const ACCESS_TOKEN_KEY = '@cookit_access_token';
 const REFRESH_TOKEN_KEY = '@cookit_refresh_token';
 const TOKEN_EXPIRY_KEY = '@cookit_token_expiry';
@@ -26,18 +20,17 @@ class GoogleDriveService {
     this.tokenExpiry = null;
     this.driveFileId = null;
     this.isInitialized = false;
-    this.promptAsync = null;
-  }
-
-  // Set the prompt function from the React component
-  setPromptAsync(promptAsync) {
-    this.promptAsync = promptAsync;
   }
 
   async initialize() {
     if (this.isInitialized) return true;
 
     try {
+      // Configure Google Sign-In
+      GoogleSignin.configure({
+        scopes: SCOPES,
+      });
+
       // Load stored tokens
       const [accessToken, refreshToken, tokenExpiry, driveFileId] = await Promise.all([
         AsyncStorage.getItem(ACCESS_TOKEN_KEY),
@@ -51,8 +44,9 @@ class GoogleDriveService {
       this.tokenExpiry = tokenExpiry ? new Date(tokenExpiry) : null;
       this.driveFileId = driveFileId;
 
-      // Check if token is valid and refresh if needed
-      if (this.accessToken && this.isTokenExpired()) {
+      // If signed in, try to refresh access token silently
+      const isSignedIn = await GoogleSignin.isSignedIn();
+      if (isSignedIn) {
         await this.refreshAccessToken();
       }
 
@@ -65,7 +59,7 @@ class GoogleDriveService {
   }
 
   isAuthenticated() {
-    return this.accessToken && !this.isTokenExpired();
+    return !!this.accessToken;
   }
 
   isTokenExpired() {
@@ -75,108 +69,53 @@ class GoogleDriveService {
 
   async authenticate() {
     try {
-      if (!this.promptAsync) {
-        throw new Error('Authentication not initialized. Please set promptAsync from React component.');
-      }
-
-      const result = await this.promptAsync();
-
-      if (result.type === 'success') {
-        const { authentication } = result;
-        console.log('Google authentication successful!', authentication);
-
-        // Store tokens using the authentication object from the hook
-        await this.storeTokensFromAuth(authentication);
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      // Interactive sign in
+      await GoogleSignin.signIn();
+      // Get tokens
+      const tokens = await GoogleSignin.getTokens();
+      if (tokens?.accessToken) {
+        await this.storeTokensFromAccessToken(tokens.accessToken);
         return true;
-      } else if (result.type === 'error') {
-        console.error('Google authentication failed:', result.error);
-        return false;
-      } else {
-        console.log('Authentication cancelled or dismissed');
-        return false;
       }
+      return false;
     } catch (error) {
       console.error('Authentication error:', error);
       return false;
     }
   }
 
-  async storeTokensFromAuth(authentication) {
-    this.accessToken = authentication.accessToken;
-    this.refreshToken = authentication.refreshToken;
-
-    // Calculate expiry time
-    if (authentication.expiresIn) {
-      this.tokenExpiry = new Date(Date.now() + (authentication.expiresIn * 1000));
-    } else {
-      // Default to 1 hour if not provided
-      this.tokenExpiry = new Date(Date.now() + (3600 * 1000));
-    }
-
-    const promises = [
-      AsyncStorage.setItem(ACCESS_TOKEN_KEY, this.accessToken),
-      AsyncStorage.setItem(TOKEN_EXPIRY_KEY, this.tokenExpiry.toISOString()),
-    ];
-
-    if (this.refreshToken) {
-      promises.push(AsyncStorage.setItem(REFRESH_TOKEN_KEY, this.refreshToken));
-    }
-
-    await Promise.all(promises);
-    console.log('Tokens stored successfully');
-  }
-
   async refreshAccessToken() {
-    if (!this.refreshToken) {
-      throw new Error('No refresh token available');
-    }
-
     try {
-      const response = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          client_id: CLIENT_ID,
-          refresh_token: this.refreshToken,
-          grant_type: 'refresh_token',
-        }),
-      });
-
-      const tokenData = await response.json();
-
-      if (response.ok) {
-        await this.storeTokens(tokenData, false); // Don't update refresh token
-        return true;
-      } else {
-        throw new Error(tokenData.error || 'Failed to refresh token');
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      let tokens = await GoogleSignin.getTokens();
+      if (!tokens?.accessToken) {
+        // Try silent sign in then get tokens
+        await GoogleSignin.signInSilently();
+        tokens = await GoogleSignin.getTokens();
       }
+      if (tokens?.accessToken) {
+        await this.storeTokensFromAccessToken(tokens.accessToken);
+        return true;
+      }
+      return false;
     } catch (error) {
-      console.error('Error refreshing token:', error);
+      console.warn('Silent token refresh failed, clearing tokens', error);
       await this.clearTokens();
       return false;
     }
   }
 
-  async storeTokens(tokenData, updateRefreshToken = true) {
-    this.accessToken = tokenData.access_token;
-    this.tokenExpiry = new Date(Date.now() + (tokenData.expires_in * 1000));
+  async storeTokensFromAccessToken(accessToken) {
+    this.accessToken = accessToken;
+    // Assume ~55 minutes validity and proactively refresh earlier if needed
+    this.tokenExpiry = new Date(Date.now() + (55 * 60 * 1000));
 
-    if (updateRefreshToken && tokenData.refresh_token) {
-      this.refreshToken = tokenData.refresh_token;
-    }
-
-    const promises = [
+    await Promise.all([
       AsyncStorage.setItem(ACCESS_TOKEN_KEY, this.accessToken),
       AsyncStorage.setItem(TOKEN_EXPIRY_KEY, this.tokenExpiry.toISOString()),
-    ];
-
-    if (updateRefreshToken && tokenData.refresh_token) {
-      promises.push(AsyncStorage.setItem(REFRESH_TOKEN_KEY, tokenData.refresh_token));
-    }
-
-    await Promise.all(promises);
+    ]);
+    console.log('Access token stored successfully');
   }
 
   async clearTokens() {
@@ -192,33 +131,52 @@ class GoogleDriveService {
   }
 
   async makeAuthenticatedRequest(url, options = {}) {
-    if (!this.isAuthenticated()) {
-      throw new Error('Not authenticated');
-    }
+    // Prevent infinite retry loops
+    const maxRetries = 2;
+    let retryCount = 0;
 
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...options.headers,
-        'Authorization': `Bearer ${this.accessToken}`,
-      },
-    });
+    while (retryCount <= maxRetries) {
+      try {
+        if (!this.isAuthenticated() || this.isTokenExpired()) {
+          const refreshed = await this.refreshAccessToken();
+          if (!refreshed) {
+            throw new Error('Not authenticated');
+          }
+        }
 
-    // If token expired, try to refresh and retry once
-    if (response.status === 401 && this.refreshToken) {
-      const refreshed = await this.refreshAccessToken();
-      if (refreshed) {
-        return fetch(url, {
+        const response = await fetch(url, {
           ...options,
           headers: {
             ...options.headers,
             'Authorization': `Bearer ${this.accessToken}`,
           },
         });
+
+        // If token expired or unauthorized, attempt one refresh and retry
+        if (response.status === 401 && retryCount < maxRetries) {
+          console.log(`Token expired, attempting refresh (attempt ${retryCount + 1}/${maxRetries})`);
+          const refreshed = await this.refreshAccessToken();
+          if (refreshed) {
+            retryCount++;
+            continue; // Retry the request
+          } else {
+            throw new Error('Failed to refresh token');
+          }
+        }
+
+        return response;
+      } catch (error) {
+        if (retryCount >= maxRetries) {
+          console.error(`Max retries (${maxRetries}) reached for request to ${url}:`, error);
+          throw error;
+        }
+        retryCount++;
+        console.warn(`Request failed, retrying (${retryCount}/${maxRetries}):`, error);
+
+        // Wait a bit before retrying to avoid hammering the API
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
       }
     }
-
-    return response;
   }
 
   async findOrCreateRecipesFile() {

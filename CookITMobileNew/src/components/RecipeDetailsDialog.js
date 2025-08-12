@@ -170,24 +170,95 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     onUncook(recipe.name);
   };
 
-  const handleCook = () => {
+  const handleCook = async () => {
     if (!recipe) return;
-    setHasClickedCook(true);
-    onCook(recipe.name);
+
+    try {
+      console.log('=== handleCook Debug ===');
+      console.log('Recipe:', recipe);
+      console.log('Recipe URL:', recipe.url);
+
+      setHasClickedCook(true);
+      onCook(recipe.name);
+
+      // If recipe has a URL, open it in browser
+      if (recipe.url) {
+        console.log('Attempting to open recipe URL:', recipe.url);
+
+        // Check if URL is valid
+        if (!recipe.url.startsWith('http://') && !recipe.url.startsWith('https://')) {
+          console.log('URL missing protocol, adding https://');
+          const formattedUrl = `https://${recipe.url}`;
+          console.log('Formatted URL:', formattedUrl);
+
+          const supported = await Linking.canOpenURL(formattedUrl);
+          console.log('Can open formatted URL?', supported);
+
+          if (supported) {
+            await Linking.openURL(formattedUrl);
+            console.log('Successfully opened formatted URL');
+          } else {
+            console.error('Cannot open formatted URL:', formattedUrl);
+          }
+        } else {
+          const supported = await Linking.canOpenURL(recipe.url);
+          console.log('Can open original URL?', supported);
+
+          if (supported) {
+            await Linking.openURL(recipe.url);
+            console.log('Successfully opened original URL');
+          } else {
+            console.error('Cannot open original URL:', recipe.url);
+          }
+        }
+      } else {
+        console.log('No URL to open for this recipe');
+      }
+    } catch (error) {
+      console.error('Error in handleCook:', error);
+      console.error('Error stack:', error.stack);
+      // Don't crash the app, just log the error
+    }
   };
 
   const handleOpenURL = async () => {
     if (!recipe || !recipe.url) return;
 
     try {
-      const supported = await Linking.canOpenURL(recipe.url);
-      if (supported) {
-        await Linking.openURL(recipe.url);
+      console.log('=== handleOpenURL Debug ===');
+      console.log('Recipe:', recipe);
+      console.log('Recipe URL:', recipe.url);
+
+      // Check if URL is valid
+      if (!recipe.url.startsWith('http://') && !recipe.url.startsWith('https://')) {
+        console.log('URL missing protocol, adding https://');
+        const formattedUrl = `https://${recipe.url}`;
+        console.log('Formatted URL:', formattedUrl);
+
+        const supported = await Linking.canOpenURL(formattedUrl);
+        console.log('Can open formatted URL?', supported);
+
+        if (supported) {
+          await Linking.openURL(formattedUrl);
+          console.log('Successfully opened formatted URL');
+        } else {
+          console.error('Cannot open formatted URL:', formattedUrl);
+        }
       } else {
-        console.error('Cannot open URL:', recipe.url);
+        const supported = await Linking.canOpenURL(recipe.url);
+        console.log('Can open original URL?', supported);
+
+        if (supported) {
+          await Linking.openURL(recipe.url);
+          console.log('Successfully opened original URL');
+        } else {
+          console.error('Cannot open original URL:', recipe.url);
+        }
       }
     } catch (error) {
       console.error('Error opening URL:', error);
+      console.error('Error stack:', error.stack);
+      // Don't crash the app, just log the error
     }
   };
 
