@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Cook-IT-Mobile",
+    "slug": "cookit-mobile",
+    "originalFullName": "@worrador/cookit-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/ChefHatColored.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/ChefHatColored.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "scheme": "cook-it-mobile"
+    },
+    "android": {
+      "package": "com.worrador.cookitmobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/ChefHatColored.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "scheme": "cook-it-mobile"
+    },
+    "web": {
+      "favicon": "./assets/ChefHatColored.png"
+    },
+    "scheme": "cook-it-mobile",
+    "plugins": [],
+    "extra": {
+      "eas": {
+        "projectId": "7c196cfa-6a72-4f0b-9cc7-a9aa007d9009"
+      }
+    }
+  }
+}

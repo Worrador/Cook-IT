@@ -4,7 +4,6 @@ token.json
 *.xlsx
 *.pyc
 node_modules
-CookITMobile/**/*
 
 # Ignore sensitive files
 source/token.json
