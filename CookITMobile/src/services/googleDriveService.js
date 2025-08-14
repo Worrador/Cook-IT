@@ -373,6 +373,148 @@ class GoogleDriveService {
       return null;
     }
   }
+
+  /**
+   * Get the Drive file ID for recipes
+   */
+  async getDriveFileId() {
+    if (!this.driveFileId) {
+      await this.findOrCreateRecipesFile();
+    }
+    return this.driveFileId;
+  }
+
+  /**
+   * Download any file from Google Drive by ID
+   */
+  async downloadFile(fileId) {
+    try {
+      const response = await this.makeAuthenticatedRequest(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`
+      );
+
+      if (response.ok) {
+        const content = await response.arrayBuffer();
+        // Convert ArrayBuffer to base64 string
+        const bytes = new Uint8Array(content);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+      } else {
+        throw new Error(`Failed to download file: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update an existing file in Google Drive
+   */
+  async updateFile(fileId, content, mimeType) {
+    try {
+      const response = await this.makeAuthenticatedRequest(
+        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': mimeType,
+          },
+          body: content,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to update file: ${response.status}`);
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error updating file:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new file in Google Drive
+   */
+  async createFile(fileName, content, mimeType) {
+    try {
+      // First create the file metadata
+      const createResponse = await this.makeAuthenticatedRequest(
+        'https://www.googleapis.com/drive/v3/files',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: fileName,
+            parents: [], // Root folder
+            mimeType: mimeType,
+          }),
+        }
+      );
+
+      if (!createResponse.ok) {
+        throw new Error(`Failed to create file metadata: ${createResponse.status}`);
+      }
+
+      const createData = await createResponse.json();
+      const fileId = createData.id;
+
+      // Then upload the file content
+      const uploadResponse = await this.makeAuthenticatedRequest(
+        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': mimeType,
+          },
+          body: content,
+        }
+      );
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Failed to upload file content: ${uploadResponse.status}`);
+      }
+
+      return fileId;
+    } catch (error) {
+      console.error('Error creating file:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get detailed file information including size and modification time
+   */
+  async getFileInfo(fileId) {
+    try {
+      const response = await this.makeAuthenticatedRequest(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,size,modifiedTime,mimeType`
+      );
+
+      if (response.ok) {
+        const fileInfo = await response.json();
+        return {
+          id: fileInfo.id,
+          name: fileInfo.name,
+          size: fileInfo.size,
+          modifiedTime: fileInfo.modifiedTime,
+          mimeType: fileInfo.mimeType
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error getting file info:', error);
+      return null;
+    }
+  }
 }
 
 // Export singleton instance
