@@ -4,10 +4,15 @@ const RECIPES_KEY = '@cookit_recipes';
 const COOKED_RECIPES_KEY = '@cookit_cooked_recipes';
 const TUTORIAL_COUNT_KEY = '@cookit_tutorial_count';
 const PINNED_RECIPES_KEY = '@cookit_pinned_recipes';
+const EXCEL_SYNC_ENABLED_KEY = '@cookit_excel_sync_enabled';
+const LAST_EXCEL_SYNC_KEY = '@cookit_last_excel_sync';
+const LAST_COOKED_DATES_KEY = '@cookit_last_cooked_dates';
 
-// Import sync service
+// Import services
 let syncService = null;
-const importSyncService = async () => {
+let excelService = null;
+
+const importServices = async () => {
   if (!syncService) {
     try {
       const module = await import('../services/syncService');
@@ -16,10 +21,78 @@ const importSyncService = async () => {
       console.warn('SyncService not available:', error);
     }
   }
-  return syncService;
+
+  if (!excelService) {
+    try {
+      const module = await import('../services/excelService');
+      excelService = module.default;
+    } catch (error) {
+      console.warn('ExcelService not available:', error);
+    }
+  }
+
+  return { syncService, excelService };
 };
 
-// Helper function to trigger sync after data changes
+// Helper function to trigger Excel sync after data changes
+let excelSyncTimeout = null;
+let lastExcelSyncError = null;
+const EXCEL_SYNC_ERROR_COOLDOWN = 30000; // 30 seconds cooldown after sync errors
+
+const triggerExcelSync = async () => {
+  try {
+    // Check if Excel sync is enabled
+    const excelSyncEnabled = await AsyncStorage.getItem(EXCEL_SYNC_ENABLED_KEY);
+    if (excelSyncEnabled !== 'true') {
+      return; // Excel sync is disabled
+    }
+
+    // Check if we're in a cooldown period due to recent sync errors
+    if (lastExcelSyncError && (Date.now() - lastExcelSyncError) < EXCEL_SYNC_ERROR_COOLDOWN) {
+      return;
+    }
+
+    // Clear any existing timeout to prevent multiple rapid sync calls
+    if (excelSyncTimeout) {
+      clearTimeout(excelSyncTimeout);
+    }
+
+    // Debounce sync calls to prevent rapid successive calls
+    excelSyncTimeout = setTimeout(async () => {
+      try {
+        const { excelService } = await importServices();
+        if (excelService) {
+          // Update local Excel file with current data
+          const updateResult = await excelService.createLocalExcelFile();
+          if (updateResult) {
+            // Upload updated Excel to Drive
+            const uploadResult = await excelService.uploadToDrive();
+            if (uploadResult) {
+              // Record successful Excel sync
+              await AsyncStorage.setItem(LAST_EXCEL_SYNC_KEY, new Date().toISOString());
+              lastExcelSyncError = null;
+              console.log('Excel sync completed successfully');
+            } else {
+              throw new Error('Excel upload failed');
+            }
+          } else {
+            throw new Error('Excel update failed');
+          }
+        }
+      } catch (error) {
+        // Record sync error and start cooldown
+        lastExcelSyncError = Date.now();
+        console.warn('Excel sync failed:', error);
+      } finally {
+        excelSyncTimeout = null;
+      }
+    }, 1000); // Wait 1 second before actually triggering sync
+  } catch (error) {
+    console.warn('Failed to trigger Excel sync:', error);
+  }
+};
+
+// Legacy sync trigger for backward compatibility
 let syncTimeout = null;
 let lastSyncError = null;
 const SYNC_ERROR_COOLDOWN = 30000; // 30 seconds cooldown after sync errors
@@ -39,10 +112,10 @@ const triggerSync = async () => {
     // Debounce sync calls to prevent rapid successive calls
     syncTimeout = setTimeout(async () => {
       try {
-        const sync = await importSyncService();
-        if (sync) {
+        const { syncService } = await importServices();
+        if (syncService) {
           // Use quickSync for immediate updates without full merge logic
-          const result = await sync.quickSync();
+          const result = await syncService.quickSync();
           if (!result.success) {
             // Record sync error and start cooldown
             lastSyncError = Date.now();
@@ -65,9 +138,53 @@ const triggerSync = async () => {
   }
 };
 
+// Excel sync management functions
+export const enableExcelSync = async () => {
+  try {
+    await AsyncStorage.setItem(EXCEL_SYNC_ENABLED_KEY, 'true');
+    console.log('Excel sync enabled');
+  } catch (error) {
+    console.error('Error enabling Excel sync:', error);
+  }
+};
+
+export const disableExcelSync = async () => {
+  try {
+    await AsyncStorage.setItem(EXCEL_SYNC_ENABLED_KEY, 'false');
+    console.log('Excel sync disabled');
+  } catch (error) {
+    console.error('Error disabling Excel sync:', error);
+  }
+};
+
+export const isExcelSyncEnabled = async () => {
+  try {
+    const enabled = await AsyncStorage.getItem(EXCEL_SYNC_ENABLED_KEY);
+    return enabled === 'true';
+  } catch (error) {
+    console.error('Error checking Excel sync status:', error);
+    return false;
+  }
+};
+
+export const getLastExcelSyncTime = async () => {
+  try {
+    const lastSync = await AsyncStorage.getItem(LAST_EXCEL_SYNC_KEY);
+    return lastSync ? new Date(lastSync) : null;
+  } catch (error) {
+    console.error('Error getting last Excel sync time:', error);
+    return null;
+  }
+};
+
+// Enhanced recipe management with Excel sync
 export const saveRecipes = async (recipes) => {
   try {
+    // Save to local JSON storage for app functionality
     await AsyncStorage.setItem(RECIPES_KEY, JSON.stringify(recipes));
+
+    // Trigger Excel sync if enabled
+    await triggerExcelSync();
   } catch (error) {
     console.error('Error saving recipes:', error);
   }
@@ -94,8 +211,9 @@ export const addRecipe = async (recipe) => {
     recipes.push(newRecipe);
     await saveRecipes(recipes);
 
-    // Trigger sync after adding recipe
+    // Trigger both legacy and Excel sync for backward compatibility
     triggerSync();
+    triggerExcelSync();
 
     return recipes;
   } catch (error) {
@@ -122,8 +240,16 @@ export const deleteRecipe = async (recipeName) => {
       await AsyncStorage.setItem(COOKED_RECIPES_KEY, JSON.stringify(cookedRecipes));
     }
 
-    // Trigger sync after deleting recipe
+    // Clean up last cooked dates
+    const lastCookedDates = await getLastCookedDates();
+    if (lastCookedDates[recipeName] !== undefined) {
+      delete lastCookedDates[recipeName];
+      await AsyncStorage.setItem(LAST_COOKED_DATES_KEY, JSON.stringify(lastCookedDates));
+    }
+
+    // Trigger both legacy and Excel sync for backward compatibility
     triggerSync();
+    triggerExcelSync();
 
     return updatedRecipes;
   } catch (error) {
@@ -140,8 +266,9 @@ export const updateRecipe = async (recipeName, updates) => {
     );
     await saveRecipes(updatedRecipes);
 
-    // Trigger sync after updating recipe
+    // Trigger both legacy and Excel sync for backward compatibility
     triggerSync();
+    triggerExcelSync();
 
     return updatedRecipes;
   } catch (error) {
@@ -160,14 +287,43 @@ export const getCookedRecipes = async () => {
   }
 };
 
+export const getLastCookedDates = async () => {
+  try {
+    const lastCooked = await AsyncStorage.getItem(LAST_COOKED_DATES_KEY);
+    return lastCooked ? JSON.parse(lastCooked) : {};
+  } catch (error) {
+    console.error('Error loading last cooked dates:', error);
+    return {};
+  }
+};
+
+export const setLastCookedDates = async (datesObject) => {
+  try {
+    await AsyncStorage.setItem(LAST_COOKED_DATES_KEY, JSON.stringify(datesObject || {}));
+  } catch (error) {
+    console.error('Error saving last cooked dates:', error);
+  }
+};
+
 export const setCookedStatus = async (recipeName, isCooked) => {
   try {
     const cookedRecipes = await getCookedRecipes();
     cookedRecipes[recipeName] = isCooked;
     await AsyncStorage.setItem(COOKED_RECIPES_KEY, JSON.stringify(cookedRecipes));
 
-    // Trigger sync after changing cooked status
+    // Maintain last cooked date alongside cooked status
+    const lastCookedDates = await getLastCookedDates();
+    if (isCooked) {
+      lastCookedDates[recipeName] = new Date().toISOString();
+    } else {
+      // If uncooked, clear last cooked date
+      delete lastCookedDates[recipeName];
+    }
+    await AsyncStorage.setItem(LAST_COOKED_DATES_KEY, JSON.stringify(lastCookedDates));
+
+    // Trigger both legacy and Excel sync for backward compatibility
     triggerSync();
+    triggerExcelSync();
 
     return cookedRecipes;
   } catch (error) {
@@ -229,8 +385,9 @@ export const togglePinnedRecipe = async (recipeName) => {
 
     await AsyncStorage.setItem(PINNED_RECIPES_KEY, JSON.stringify(updatedPinnedRecipes));
 
-    // Trigger sync after toggling pin status
+    // Trigger both legacy and Excel sync for backward compatibility
     triggerSync();
+    triggerExcelSync();
 
     return updatedPinnedRecipes;
   } catch (error) {
@@ -242,12 +399,131 @@ export const togglePinnedRecipe = async (recipeName) => {
   }
 };
 
+// Excel-specific storage functions
+export const exportToExcel = async () => {
+  try {
+    const { excelService } = await importServices();
+    if (excelService) {
+      const result = await excelService.createLocalExcelFile();
+      if (result) {
+        // Record successful export
+        await AsyncStorage.setItem(LAST_EXCEL_SYNC_KEY, new Date().toISOString());
+        return { success: true, message: 'Excel file created successfully' };
+      } else {
+        throw new Error('Failed to create Excel file');
+      }
+    } else {
+      throw new Error('Excel service not available');
+    }
+  } catch (error) {
+    console.error('Error exporting to Excel:', error);
+    throw error;
+  }
+};
+
+export const importFromExcel = async () => {
+  try {
+    const { excelService } = await importServices();
+    if (excelService) {
+      const result = await excelService.importFromExcel();
+      if (result) {
+        // Record successful import
+        await AsyncStorage.setItem(LAST_EXCEL_SYNC_KEY, new Date().toISOString());
+        return { success: true, message: 'Excel file imported successfully', data: result };
+      } else {
+        throw new Error('Failed to import Excel file');
+      }
+    } else {
+      throw new Error('Excel service not available');
+    }
+  } catch (error) {
+    console.error('Error importing from Excel:', error);
+    throw error;
+  }
+};
+
+export const syncWithExcel = async () => {
+  try {
+    const { excelService } = await importServices();
+    if (excelService) {
+      // Update local Excel with current data
+      const updateResult = await excelService.createLocalExcelFile();
+      if (updateResult) {
+        // Upload to Drive
+        const uploadResult = await excelService.uploadToDrive();
+        if (uploadResult) {
+          // Record successful sync
+          await AsyncStorage.setItem(LAST_EXCEL_SYNC_KEY, new Date().toISOString());
+          return { success: true, message: 'Excel sync completed successfully' };
+        } else {
+          throw new Error('Upload failed');
+        }
+      } else {
+        throw new Error('Update failed');
+      }
+    } else {
+      throw new Error('Excel service not available');
+    }
+  } catch (error) {
+    console.error('Error syncing with Excel:', error);
+    throw error;
+  }
+};
+
+export const getExcelFileInfo = async () => {
+  try {
+    const { excelService } = await importServices();
+    if (excelService) {
+      return await excelService.getLocalFileInfo();
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error('Error getting Excel file info:', error);
+    return null;
+  }
+};
+
+export const checkExcelConflicts = async () => {
+  try {
+    const { excelService } = await importServices();
+    if (excelService) {
+      return await excelService.checkConflicts();
+    } else {
+      return { hasConflict: false, message: 'Excel service not available' };
+    }
+  } catch (error) {
+    console.error('Error checking Excel conflicts:', error);
+    return { hasConflict: false, message: error.message };
+  }
+};
+
+export const resolveExcelConflict = async (resolution) => {
+  try {
+    const { excelService } = await importServices();
+    if (excelService) {
+      const result = await excelService.resolveConflict(resolution);
+      if (result) {
+        // Record successful conflict resolution
+        await AsyncStorage.setItem(LAST_EXCEL_SYNC_KEY, new Date().toISOString());
+      }
+      return { success: true, message: 'Conflict resolved successfully' };
+    } else {
+      throw new Error('Excel service not available');
+    }
+  } catch (error) {
+    console.error('Error resolving Excel conflict:', error);
+    throw error;
+  }
+};
+
 // Clean up stale references in pinned and cooked recipes
 export const cleanupStaleReferences = async () => {
   try {
     const recipes = await loadRecipes();
     const cookedRecipes = await getCookedRecipes();
     const pinnedRecipes = await getPinnedRecipes();
+    const lastCookedDates = await getLastCookedDates();
 
     // Clean up cooked recipes that reference non-existent recipes
     const validRecipeNames = new Set(recipes.map(recipe => recipe.name));
@@ -266,15 +542,35 @@ export const cleanupStaleReferences = async () => {
       await AsyncStorage.setItem(COOKED_RECIPES_KEY, JSON.stringify(cleanedCookedRecipes));
     }
 
+    // Clean up last cooked dates that reference non-existent recipes
+    const cleanedLastCookedDates = {};
+    let lastCookedDatesChanged = false;
+    for (const [recipeName, cookedDate] of Object.entries(lastCookedDates)) {
+      if (validRecipeNames.has(recipeName)) {
+        cleanedLastCookedDates[recipeName] = cookedDate;
+      } else {
+        lastCookedDatesChanged = true;
+      }
+    }
+    if (lastCookedDatesChanged) {
+      await AsyncStorage.setItem(LAST_COOKED_DATES_KEY, JSON.stringify(cleanedLastCookedDates));
+    }
+
     // Clean up pinned recipes that reference non-existent recipes
     const cleanedPinnedRecipes = pinnedRecipes.filter(name => validRecipeNames.has(name));
     if (cleanedPinnedRecipes.length !== pinnedRecipes.length) {
       await AsyncStorage.setItem(PINNED_RECIPES_KEY, JSON.stringify(cleanedPinnedRecipes));
     }
 
+    // Trigger Excel sync after cleanup if changes were made
+    if (cookedRecipesChanged || lastCookedDatesChanged || cleanedPinnedRecipes.length !== pinnedRecipes.length) {
+      triggerExcelSync();
+    }
+
     return {
       cookedRecipes: cleanedCookedRecipes,
       pinnedRecipes: cleanedPinnedRecipes,
+      lastCookedDates: cleanedLastCookedDates,
     };
   } catch (error) {
     console.error('Error cleaning up stale references:', error);
@@ -401,12 +697,28 @@ export const addSampleRecipes = async () => {
 
     await saveRecipes(recipes);
 
-    // Trigger sync after adding sample recipes
+    // Trigger both legacy and Excel sync for backward compatibility
     triggerSync();
+    triggerExcelSync();
 
     return recipes;
   } catch (error) {
     console.error('Error adding sample recipes:', error);
     throw error;
+  }
+};
+
+// Initialize Excel sync on first load
+export const initializeExcelSync = async () => {
+  try {
+    // Check if Excel sync is already initialized
+    const excelSyncEnabled = await AsyncStorage.getItem(EXCEL_SYNC_ENABLED_KEY);
+    if (excelSyncEnabled === null) {
+      // First time setup - enable Excel sync by default
+      await enableExcelSync();
+      console.log('Excel sync initialized and enabled by default');
+    }
+  } catch (error) {
+    console.error('Error initializing Excel sync:', error);
   }
 };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Linking, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Linking, ScrollView, Alert } from 'react-native';
 import { Surface, useTheme, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Button } from './Button';
@@ -7,8 +7,18 @@ import { Button } from './Button';
 const BuyCoffeeDialog = ({ visible, onClose }) => {
   const theme = useTheme();
 
-  const handleBuyCoffee = () => {
-    Linking.openURL('https://ko-fi.com/worrador');
+  const handleBuyCoffee = async () => {
+    const url = 'https://ko-fi.com/worrador';
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert('No browser available', 'Install a web browser on the emulator/device to open links.');
+      }
+    } catch (e) {
+      Alert.alert('Could not open link', 'There was a problem opening the browser.');
+    }
   };
 
   return (

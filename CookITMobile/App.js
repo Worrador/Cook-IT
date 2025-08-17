@@ -25,6 +25,7 @@ import {
   togglePinnedRecipe,
   cleanupStaleReferences,
   addSampleRecipes,
+  getLastCookedDates, // Add this import
 } from './src/utils/storage';
 import syncService from './src/services/syncService';
 import { BlurView } from 'expo-blur';
@@ -82,6 +83,7 @@ const AppContent = () => {
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
   const [cookedRecipes, setCookedRecipes] = useState({});
+  const [lastCookedDates, setLastCookedDates] = useState({});
   const [showBuyCoffee, setShowBuyCoffee] = useState(false);
   const [showRecipeBook, setShowRecipeBook] = useState(false);
   const [pinnedRecipes, setPinnedRecipes] = useState([]);
@@ -165,27 +167,6 @@ const AppContent = () => {
       setSyncProgress(0); // Reset progress when sync stops
     }
   }, [syncStatus.inProgress]);
-
-  // Initialize Google Auth Hook directly in the component
-  // (Removed expo-auth-session; using native Google Sign-In)
-
-  // Pass the promptAsync function to the sync service
-  // useEffect(() => {
-  //   if (googlePromptAsync) {
-  //     syncService.setPromptAsync(googlePromptAsync);
-  //   }
-  // }, [googlePromptAsync]);
-
-  // Handle Google Auth Response
-  // useEffect(() => {
-  //   if (googleAuthResponse?.type === 'success') {
-  //     console.log('Google authentication successful from hook!');
-  //     handleSyncCheck();
-  //   } else if (googleAuthResponse?.type === 'error') {
-  //     console.error('Google authentication failed:', googleAuthResponse.error);
-  //     Alert.alert('Authentication Failed', 'Failed to connect to Google Drive. Please try again.');
-  //   }
-  // }, [googleAuthResponse]);
 
   useEffect(() => {
     // Hide status bar when component mounts
@@ -367,11 +348,12 @@ const AppContent = () => {
 
   const loadInitialData = async () => {
     try {
-      const [loadedRecipes, loadedCookedRecipes, tutorialCount, loadedPinnedRecipes] = await Promise.all([
+      const [loadedRecipes, loadedCookedRecipes, tutorialCount, loadedPinnedRecipes, loadedLastCookedDates] = await Promise.all([
         loadRecipes(),
         getCookedRecipes(),
         getTutorialCount(),
         getPinnedRecipes(),
+        getLastCookedDates(),
       ]);
 
       // Clean up any stale references before setting state
@@ -382,9 +364,11 @@ const AppContent = () => {
       if (cleanupResult) {
         setCookedRecipes(cleanupResult.cookedRecipes);
         setPinnedRecipes(cleanupResult.pinnedRecipes);
+        setLastCookedDates(cleanupResult.lastCookedDates || loadedLastCookedDates);
       } else {
         setCookedRecipes(loadedCookedRecipes);
         setPinnedRecipes(loadedPinnedRecipes);
+        setLastCookedDates(loadedLastCookedDates);
       }
       setTutorialCountState(tutorialCount);
       setIsLoading(false);
@@ -488,42 +472,93 @@ const AppContent = () => {
       setSyncStatus(prev => ({ ...prev, inProgress: true }));
       setSyncProgress(0); // Reset progress - keep empty until connection confirmed
 
-      const syncResult = await syncService.performSync();
+      // Check if we're authenticated first
+      const status = await syncService.checkSyncStatus();
 
-      // Only start filling progress after we know we can connect
-      if (syncResult.success) {
-        // Gradually fill to 90% over 2 seconds
-        const fillDuration = 2000; // 2 seconds
-        const startTime = Date.now();
+      if (!status.isAuthenticated) {
+        // Not authenticated - start authentication process
+        console.log('Starting Google Drive authentication...');
 
-        const progressInterval = setInterval(() => {
-          const elapsed = Date.now() - startTime;
-          const progress = Math.min((elapsed / fillDuration) * 90, 90);
-          setSyncProgress(progress);
+        // Initialize sync service (which will handle authentication)
+        const initResult = await syncService.initializeSync();
 
-          if (progress >= 90) {
-            clearInterval(progressInterval);
+        if (initResult.success) {
+          // Authentication successful, now sync
+          const syncResult = await syncService.performSync();
+
+          if (syncResult.success) {
+            // Gradually fill to 90% over 2 seconds
+            const fillDuration = 2000; // 2 seconds
+            const startTime = Date.now();
+
+            const progressInterval = setInterval(() => {
+              const elapsed = Date.now() - startTime;
+              const progress = Math.min((elapsed / fillDuration) * 90, 90);
+              setSyncProgress(progress);
+
+              if (progress >= 90) {
+                clearInterval(progressInterval);
+              }
+            }, 50); // Update every 50ms for smooth animation
+
+            // Complete to 100% after a short delay
+            setTimeout(() => {
+              setSyncProgress(100);
+              clearInterval(progressInterval);
+            }, fillDuration + 500);
+
+            showCustomAlert('Authentication & Sync Complete', 'Successfully connected to Google Drive and synced your recipes!', 'success');
+            if (syncResult.hasChanges) {
+              // Reload data after successful sync with changes
+              await loadInitialData();
+            }
+          } else {
+            showCustomAlert('Sync Failed', syncResult.message, 'error');
           }
-        }, 50); // Update every 50ms for smooth animation
-
-        // Complete to 100% after a short delay
-        setTimeout(() => {
-          setSyncProgress(100);
-          clearInterval(progressInterval);
-        }, fillDuration + 500);
-
-        showCustomAlert('Sync Complete', syncResult.message, 'success');
-        if (syncResult.hasChanges) {
-          // Reload data after successful sync with changes
-          await loadInitialData();
+        } else {
+          // Authentication failed
+          showCustomAlert('Authentication Failed', initResult.message, 'error');
         }
       } else {
-        // If sync failed, keep progress at 0 (empty vibrating bar)
-        showCustomAlert('Sync Failed', syncResult.message, 'error');
+        // Already authenticated - just sync
+        console.log('Already authenticated, performing sync...');
+        const syncResult = await syncService.performSync();
+
+        if (syncResult.success) {
+          // Gradually fill to 90% over 2 seconds
+          const fillDuration = 2000; // 2 seconds
+          const startTime = Date.now();
+
+          const progressInterval = setInterval(() => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min((elapsed / fillDuration) * 90, 90);
+            setSyncProgress(progress);
+
+            if (progress >= 90) {
+              clearInterval(progressInterval);
+            }
+          }, 50); // Update every 50ms for smooth animation
+
+          // Complete to 100% after a short delay
+          setTimeout(() => {
+            setSyncProgress(100);
+            clearInterval(progressInterval);
+          }, fillDuration + 500);
+
+          showCustomAlert('Sync Complete', syncResult.message, 'success');
+          if (syncResult.hasChanges) {
+            // Reload data after successful sync with changes
+            await loadInitialData();
+          }
+        } else {
+          // If sync failed, keep progress at 0 (empty vibrating bar)
+          showCustomAlert('Sync Failed', syncResult.message, 'error');
+        }
       }
 
-      const status = await syncService.checkSyncStatus();
-      setSyncStatus(status);
+      // Update sync status
+      const updatedStatus = await syncService.checkSyncStatus();
+      setSyncStatus(updatedStatus);
     } catch (error) {
       console.error('Manual sync error:', error);
       showCustomAlert('Sync Error', error.message, 'error');
@@ -1080,6 +1115,7 @@ const AppContent = () => {
             cookedRecipes={cookedRecipes}
             pinnedRecipes={pinnedRecipes}
             onTogglePin={handleTogglePinned}
+            lastCookedDates={lastCookedDates}
           />
         </Dialog>
       </Portal>
@@ -1223,10 +1259,24 @@ const AppContent = () => {
               ) : (
                 <Button
                   onPress={handleManualSync}
-                  style={[styles.syncActionButton, { backgroundColor: theme.colors.secondary }]}
-                  labelStyle={[styles.syncActionButtonLabel, { color: 'white' }]}
+                  disabled={syncStatus.inProgress}
+                  style={[styles.syncActionButton, {
+                    backgroundColor: syncStatus.inProgress ? theme.colors.outline : theme.colors.secondary,
+                    marginRight: 12
+                  }]}
+                  labelStyle={[styles.syncActionButtonLabel, {
+                    color: syncStatus.inProgress ? theme.colors.onSurfaceDisabled : 'white',
+                    fontSize: 16
+                  }]}
+                  icon={({ size, color }) => (
+                    <MaterialCommunityIcons
+                      name={syncStatus.inProgress ? "account-key" : "google"}
+                      size={20}
+                      color={color}
+                    />
+                  )}
                 >
-                  Connect to Google Drive
+                  {syncStatus.inProgress ? 'Connecting...' : ' Connect to Google Drive'}
                 </Button>
               )}
               <Button

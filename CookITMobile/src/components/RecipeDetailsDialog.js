@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Keyboard, Linking } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Keyboard, Linking, Alert } from 'react-native';
 import { Dialog, Portal, Text, Button, TextInput, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -25,6 +25,26 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
   const urlInputRef = useRef(null);
   const [isNameFocused, setIsNameFocused] = useState(false);
   const [isUrlFocused, setIsUrlFocused] = useState(false);
+
+  const openUrlSafely = async (rawUrl) => {
+    try {
+      if (!rawUrl) return;
+      const url = rawUrl.startsWith('http://') || rawUrl.startsWith('https://') ? rawUrl : `https://${rawUrl}`;
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert(
+          'No browser available',
+          `Cannot open this link on your device/emulator. Install a web browser or copy the link:\n\n${url}`,
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (e) {
+      console.warn('Safe URL open failed:', e?.message);
+      Alert.alert('Could not open link', 'There was a problem opening this link.');
+    }
+  };
 
   // Keyboard listeners for dialog positioning
   useEffect(() => {
@@ -170,47 +190,16 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     onUncook(recipe.name);
   };
 
-  const handleCook = async () => {
-    if (!recipe) return;
-
+  const handleCookPress = async () => {
     try {
-      console.log('=== handleCook Debug ===');
-      console.log('Recipe:', recipe);
-      console.log('Recipe URL:', recipe.url);
+      if (!recipe) return;
 
       setHasClickedCook(true);
       onCook(recipe.name);
 
       // If recipe has a URL, open it in browser
       if (recipe.url) {
-        console.log('Attempting to open recipe URL:', recipe.url);
-
-        // Check if URL is valid
-        if (!recipe.url.startsWith('http://') && !recipe.url.startsWith('https://')) {
-          console.log('URL missing protocol, adding https://');
-          const formattedUrl = `https://${recipe.url}`;
-          console.log('Formatted URL:', formattedUrl);
-
-          const supported = await Linking.canOpenURL(formattedUrl);
-          console.log('Can open formatted URL?', supported);
-
-          if (supported) {
-            await Linking.openURL(formattedUrl);
-            console.log('Successfully opened formatted URL');
-          } else {
-            console.error('Cannot open formatted URL:', formattedUrl);
-          }
-        } else {
-          const supported = await Linking.canOpenURL(recipe.url);
-          console.log('Can open original URL?', supported);
-
-          if (supported) {
-            await Linking.openURL(recipe.url);
-            console.log('Successfully opened original URL');
-          } else {
-            console.error('Cannot open original URL:', recipe.url);
-          }
-        }
+        await openUrlSafely(recipe.url);
       } else {
         console.log('No URL to open for this recipe');
       }
@@ -223,43 +212,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
 
   const handleOpenURL = async () => {
     if (!recipe || !recipe.url) return;
-
-    try {
-      console.log('=== handleOpenURL Debug ===');
-      console.log('Recipe:', recipe);
-      console.log('Recipe URL:', recipe.url);
-
-      // Check if URL is valid
-      if (!recipe.url.startsWith('http://') && !recipe.url.startsWith('https://')) {
-        console.log('URL missing protocol, adding https://');
-        const formattedUrl = `https://${recipe.url}`;
-        console.log('Formatted URL:', formattedUrl);
-
-        const supported = await Linking.canOpenURL(formattedUrl);
-        console.log('Can open formatted URL?', supported);
-
-        if (supported) {
-          await Linking.openURL(formattedUrl);
-          console.log('Successfully opened formatted URL');
-        } else {
-          console.error('Cannot open formatted URL:', formattedUrl);
-        }
-      } else {
-        const supported = await Linking.canOpenURL(recipe.url);
-        console.log('Can open original URL?', supported);
-
-        if (supported) {
-          await Linking.openURL(recipe.url);
-          console.log('Successfully opened original URL');
-        } else {
-          console.error('Cannot open original URL:', recipe.url);
-        }
-      }
-    } catch (error) {
-      console.error('Error opening URL:', error);
-      console.error('Error stack:', error.stack);
-      // Don't crash the app, just log the error
-    }
+    await openUrlSafely(recipe.url);
   };
 
   const handleNext = async () => {
@@ -523,7 +476,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                 )}
                 <Button
                   mode="contained"
-                  onPress={handleCook}
+                  onPress={handleCookPress}
                   style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
                   icon="chef-hat"
                 >

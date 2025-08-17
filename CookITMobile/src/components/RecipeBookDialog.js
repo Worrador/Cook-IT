@@ -4,24 +4,88 @@ import { Surface, useTheme, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Button } from './Button';
 
-const RecipeBookDialog = ({ 
-  onClose, 
-  recipes, 
-  onRecipePress, 
-  cookedRecipes, 
+const RecipeBookDialog = ({
+  onClose,
+  recipes,
+  onRecipePress,
+  cookedRecipes,
   pinnedRecipes,
-  onTogglePin 
+  onTogglePin,
+  lastCookedDates = {} // Add this prop for last cooked dates
 }) => {
   const theme = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // Sort recipes alphabetically and filter by search query
+  const [sortBy, setSortBy] = useState('name'); // 'name', 'dateCreated', 'lastCooked'
+  const [sortOrder, setSortOrder] = useState('asc'); // 'asc', 'desc'
+
+  // Sort recipes based on current sort settings and filter by search query
   const sortedRecipes = [...recipes]
-    .filter(recipe => 
+    .filter(recipe =>
       recipe.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (recipe.comment && recipe.comment.toLowerCase().includes(searchQuery.toLowerCase()))
     )
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortBy) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'dateCreated':
+          comparison = new Date(a.createdAt) - new Date(b.createdAt);
+          break;
+        case 'lastCooked':
+          const aLastCooked = lastCookedDates[a.name] ? new Date(lastCookedDates[a.name]) : new Date(0);
+          const bLastCooked = lastCookedDates[b.name] ? new Date(lastCookedDates[b.name]) : new Date(0);
+          comparison = aLastCooked - bLastCooked;
+          break;
+        default:
+          comparison = a.name.localeCompare(b.name);
+      }
+
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+  const handleSort = (newSortBy) => {
+    if (sortBy === newSortBy) {
+      // Toggle sort order if same column
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new sort column with ascending order
+      setSortBy(newSortBy);
+      setSortOrder('asc');
+    }
+  };
+
+  const getSortIcon = (column) => {
+    if (sortBy !== column) {
+      return 'unfold-more-horizontal'; // Neutral icon
+    }
+    return sortOrder === 'asc' ? 'chevron-up' : 'chevron-down';
+  };
+
+  const renderSortButton = (column, label) => (
+    <TouchableOpacity
+      style={styles.sortButton}
+      onPress={() => handleSort(column)}
+    >
+      <Text
+        style={[styles.sortButtonText, {
+          color: sortBy === column ? theme.colors.primary : theme.colors.onSurfaceVariant,
+          fontWeight: sortBy === column ? 'bold' : 'normal'
+        }]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+      <MaterialCommunityIcons
+        name={getSortIcon(column)}
+        size={14}
+        color={sortBy === column ? theme.colors.primary : theme.colors.onSurfaceVariant}
+        style={styles.sortIcon}
+      />
+    </TouchableOpacity>
+  );
 
   const renderRecipe = (recipe) => (
     <TouchableOpacity
@@ -33,16 +97,22 @@ const RecipeBookDialog = ({
         <View style={styles.recipeHeader}>
           <View style={styles.recipeTitleContainer}>
             <Text style={[styles.recipeName, { color: theme.colors.primary }]}>{recipe.name}</Text>
-
           </View>
           {recipe.comment && (
             <Text style={[styles.recipeComment, { color: theme.colors.primary }]} numberOfLines={2}>
               {recipe.comment}
             </Text>
           )}
-          <Text style={[styles.recipeDate, { color: '#A0A0A0' }]}>
-            Added: {new Date(recipe.createdAt).toLocaleDateString()}
-          </Text>
+          <View style={styles.recipeDates}>
+            <Text style={[styles.recipeDate, { color: '#A0A0A0' }]}>
+              Added: {new Date(recipe.createdAt).toLocaleDateString()}
+            </Text>
+            {lastCookedDates[recipe.name] && (
+              <Text style={[styles.recipeDate, { color: '#A0A0A0' }]}>
+                Last cooked: {new Date(lastCookedDates[recipe.name]).toLocaleDateString()}
+              </Text>
+            )}
+          </View>
         </View>
       </Surface>
     </TouchableOpacity>
@@ -65,7 +135,17 @@ const RecipeBookDialog = ({
             onChangeText={setSearchQuery}
           />
         </View>
-        
+
+        {/* Sort Bar */}
+        <View style={styles.sortBar}>
+          <Text style={[styles.sortLabel, { color: theme.colors.onSurfaceVariant }]}></Text>
+          <View style={styles.sortButtons}>
+            {renderSortButton('name', 'Name')}
+            {renderSortButton('dateCreated', 'Date Created')}
+            {renderSortButton('lastCooked', 'Last Cooked')}
+          </View>
+        </View>
+
         <ScrollView
           showsVerticalScrollIndicator={true}
           style={styles.recipesList}
@@ -190,7 +270,46 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   recipeDate: {
+    fontSize: 11,
+  },
+  recipeDates: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  sortBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#FBE7A0',
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  sortLabel: {
     fontSize: 12,
+  },
+  sortButtons: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minWidth: 0,
+  },
+  sortButtonText: {
+    fontSize: 12,
+    maxWidth: '100%',
+  },
+  sortIcon: {
+    // No specific styling needed, icons will inherit color from sortButtonText
   },
   emptyState: {
     alignItems: 'center',
@@ -216,4 +335,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default RecipeBookDialog; 
+export default RecipeBookDialog;

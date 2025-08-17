@@ -1,13 +1,12 @@
-import * as AuthSession from 'expo-auth-session';
-import * as Crypto from 'expo-crypto';
-import * as WebBrowser from 'expo-web-browser';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GOOGLE_OAUTH_CONFIG } from '../config/googleAuth';
 
-// Complete the auth session
-WebBrowser.maybeCompleteAuthSession();
-
-const SCOPES = GOOGLE_OAUTH_CONFIG.SCOPES;
+const SCOPES = [
+  'openid',
+  'profile',
+  'email',
+  'https://www.googleapis.com/auth/drive.file'
+];
 
 const ACCESS_TOKEN_KEY = '@cookit_access_token';
 const REFRESH_TOKEN_KEY = '@cookit_refresh_token';
@@ -21,27 +20,15 @@ class GoogleDriveService {
     this.tokenExpiry = null;
     this.driveFileId = null;
     this.isInitialized = false;
-    this.authRequest = null;
-    this.authResponse = null;
   }
 
   async initialize() {
     if (this.isInitialized) return true;
 
     try {
-      // Create auth request
-      this.authRequest = new AuthSession.AuthRequest({
-        clientId: GOOGLE_OAUTH_CONFIG.CLIENT_ID,
+      // Configure Google Sign-In
+      GoogleSignin.configure({
         scopes: SCOPES,
-        redirectUri: AuthSession.makeRedirectUri({
-          scheme: 'cook-it-mobile',
-          path: 'auth'
-        }),
-        responseType: AuthSession.ResponseType.Code,
-        additionalParameters: {
-          access_type: 'offline',
-          prompt: 'consent'
-        }
       });
 
       // Load stored tokens
@@ -57,23 +44,14 @@ class GoogleDriveService {
       this.tokenExpiry = tokenExpiry ? new Date(tokenExpiry) : null;
       this.driveFileId = driveFileId;
 
-      // Check if we have valid tokens
-      if (this.isAuthenticated() && !this.isTokenExpired()) {
-        this.isInitialized = true;
-        return true;
-      }
-
-      // If we have a refresh token, try to refresh
-      if (this.refreshToken) {
-        const refreshed = await this.refreshAccessToken();
-        if (refreshed) {
-          this.isInitialized = true;
-          return true;
-        }
+      // If signed in, try to refresh access token silently
+      const isSignedIn = await GoogleSignin.isSignedIn();
+      if (isSignedIn) {
+        await this.refreshAccessToken();
       }
 
       this.isInitialized = true;
-      return false;
+      return this.isAuthenticated();
     } catch (error) {
       console.error('Error initializing Google Drive service:', error);
       return false;
@@ -91,21 +69,14 @@ class GoogleDriveService {
 
   async authenticate() {
     try {
-      if (!this.authRequest) {
-        await this.initialize();
-      }
-
-      // Start authentication
-      const result = await this.authRequest.promptAsync({
-        authUrl: this.authRequest.makeAuthUrlAsync()
-      });
-
-      if (result.type === 'success') {
-        // Exchange authorization code for tokens
-        const tokenResult = await this.exchangeCodeForTokens(result.params.code);
-        if (tokenResult) {
-          return true;
-        }
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      // Interactive sign in
+      await GoogleSignin.signIn();
+      // Get tokens
+      const tokens = await GoogleSignin.getTokens();
+      if (tokens?.accessToken) {
+        await this.storeTokensFromAccessToken(tokens.accessToken);
+        return true;
       }
       return false;
     } catch (error) {
@@ -114,85 +85,37 @@ class GoogleDriveService {
     }
   }
 
-  async exchangeCodeForTokens(authCode) {
-    try {
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          code: authCode,
-          client_id: GOOGLE_OAUTH_CONFIG.CLIENT_ID,
-          client_secret: GOOGLE_OAUTH_CONFIG.CLIENT_SECRET,
-          redirect_uri: this.authRequest.redirectUri,
-          grant_type: 'authorization_code',
-        }),
-      });
-
-      const tokens = await tokenResponse.json();
-
-      if (tokens.access_token) {
-        await this.storeTokens(
-          tokens.access_token,
-          tokens.refresh_token,
-          tokens.expires_in
-        );
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error exchanging code for tokens:', error);
-      return false;
-    }
-  }
-
   async refreshAccessToken() {
     try {
-      if (!this.refreshToken) {
-        return false;
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      let tokens = await GoogleSignin.getTokens();
+      if (!tokens?.accessToken) {
+        // Try silent sign in then get tokens
+        await GoogleSignin.signInSilently();
+        tokens = await GoogleSignin.getTokens();
       }
-
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          refresh_token: this.refreshToken,
-          client_id: GOOGLE_OAUTH_CONFIG.CLIENT_ID,
-          client_secret: GOOGLE_OAUTH_CONFIG.CLIENT_SECRET,
-          grant_type: 'refresh_token',
-        }),
-      });
-
-      const tokens = await tokenResponse.json();
-
-      if (tokens.access_token) {
-        await this.storeTokens(
-          tokens.access_token,
-          this.refreshToken, // Keep the existing refresh token
-          tokens.expires_in
-        );
+      if (tokens?.accessToken) {
+        await this.storeTokensFromAccessToken(tokens.accessToken);
         return true;
       }
       return false;
     } catch (error) {
-      console.error('Error refreshing access token:', error);
+      console.warn('Silent token refresh failed, clearing tokens', error);
+      await this.clearTokens();
       return false;
     }
   }
 
-  async storeTokens(accessToken, refreshToken, expiresIn) {
+  async storeTokensFromAccessToken(accessToken) {
     this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
-    this.tokenExpiry = new Date(Date.now() + (expiresIn * 1000));
+    // Assume ~55 minutes validity and proactively refresh earlier if needed
+    this.tokenExpiry = new Date(Date.now() + (55 * 60 * 1000));
 
     await Promise.all([
-      AsyncStorage.setItem(ACCESS_TOKEN_KEY, accessToken),
-      AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken),
+      AsyncStorage.setItem(ACCESS_TOKEN_KEY, this.accessToken),
       AsyncStorage.setItem(TOKEN_EXPIRY_KEY, this.tokenExpiry.toISOString()),
     ]);
+    console.log('Access token stored successfully');
   }
 
   async clearTokens() {
@@ -231,6 +154,7 @@ class GoogleDriveService {
 
         // If token expired or unauthorized, attempt one refresh and retry
         if (response.status === 401 && retryCount < maxRetries) {
+          console.log(`Token expired, attempting refresh (attempt ${retryCount + 1}/${maxRetries})`);
           const refreshed = await this.refreshAccessToken();
           if (refreshed) {
             retryCount++;
@@ -247,6 +171,7 @@ class GoogleDriveService {
           throw error;
         }
         retryCount++;
+        console.warn(`Request failed, retrying (${retryCount}/${maxRetries}):`, error);
 
         // Wait a bit before retrying to avoid hammering the API
         await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
@@ -254,268 +179,159 @@ class GoogleDriveService {
     }
   }
 
-  async findOrCreateRecipesFile() {
-    try {
-      // First, try to find existing file
-      const searchResponse = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/drive/v3/files?q=name='CookIT_Recipes.json'&trashed=false`
-      );
-
-      const searchData = await searchResponse.json();
-
-      if (searchData.files && searchData.files.length > 0) {
-        this.driveFileId = searchData.files[0].id;
-        await AsyncStorage.setItem(DRIVE_FILE_ID_KEY, this.driveFileId);
-        return this.driveFileId;
-      }
-
-      // Create new file if not found
-      const createResponse = await this.makeAuthenticatedRequest(
-        'https://www.googleapis.com/drive/v3/files',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            name: 'CookIT_Recipes.json',
-            parents: [], // Root folder
-          }),
-        }
-      );
-
-      const createData = await createResponse.json();
-      this.driveFileId = createData.id;
-      await AsyncStorage.setItem(DRIVE_FILE_ID_KEY, this.driveFileId);
-
-      // Initialize with empty data
-      await this.uploadRecipes([]);
-
-      return this.driveFileId;
-    } catch (error) {
-      console.error('Error finding or creating recipes file:', error);
-      throw error;
-    }
-  }
-
-  async downloadRecipes() {
-    try {
-      if (!this.driveFileId) {
-        await this.findOrCreateRecipesFile();
-      }
-
-      const response = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/drive/v3/files/${this.driveFileId}?alt=media`
-      );
-
-      if (response.ok) {
-        const content = await response.text();
-        return content ? JSON.parse(content) : [];
-      } else if (response.status === 404) {
-        // File doesn't exist, create it
-        await this.findOrCreateRecipesFile();
-        return [];
-      } else {
-        throw new Error(`Failed to download recipes: ${response.status}`);
-      }
-    } catch (error) {
-      console.error('Error downloading recipes:', error);
-      throw error;
-    }
-  }
-
-  async uploadRecipes(recipes) {
-    try {
-      if (!this.driveFileId) {
-        await this.findOrCreateRecipesFile();
-      }
-
-      const response = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/upload/drive/v3/files/${this.driveFileId}?uploadType=media`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(recipes),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to upload recipes: ${response.status}`);
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error uploading recipes:', error);
-      throw error;
-    }
-  }
-
-  async getFileMetadata() {
-    try {
-      if (!this.driveFileId) {
-        await this.findOrCreateRecipesFile();
-      }
-
-      const response = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/drive/v3/files/${this.driveFileId}?fields=modifiedTime`
-      );
-
-      if (response.ok) {
-        const metadata = await response.json();
-        return metadata;
-      }
-
-      return null;
-    } catch (error) {
-      console.error('Error getting file metadata:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Get the Drive file ID for recipes
-   */
   async getDriveFileId() {
-    if (!this.driveFileId) {
-      await this.findOrCreateRecipesFile();
-    }
     return this.driveFileId;
   }
 
-  /**
-   * Download any file from Google Drive by ID
-   */
-  async downloadFile(fileId) {
-    try {
-      const response = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`
-      );
-
-      if (response.ok) {
-        const content = await response.arrayBuffer();
-        // Convert ArrayBuffer to base64 string
-        const bytes = new Uint8Array(content);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binary);
-      } else {
-        throw new Error(`Failed to download file: ${response.status}`);
-      }
-    } catch (error) {
-      console.error('Error downloading file:', error);
-      throw error;
-    }
+  async setDriveFileId(fileId) {
+    this.driveFileId = fileId;
+    await AsyncStorage.setItem(DRIVE_FILE_ID_KEY, fileId);
   }
 
-  /**
-   * Update an existing file in Google Drive
-   */
-  async updateFile(fileId, content, mimeType) {
+  async createFile(fileName, content) {
     try {
+      const metadata = {
+        name: fileName,
+        mimeType: 'application/vnd.google-apps.spreadsheet',
+        parents: ['root']
+      };
+
       const response = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
         {
-          method: 'PATCH',
+          method: 'POST',
           headers: {
-            'Content-Type': mimeType,
+            'Content-Type': 'multipart/related; boundary=foo_bar_baz',
           },
-          body: content,
+          body: this.createMultipartBody(metadata, content),
         }
       );
 
       if (!response.ok) {
-        throw new Error(`Failed to update file: ${response.status}`);
+        throw new Error(`Failed to create file: ${response.statusText}`);
       }
 
-      return true;
-    } catch (error) {
-      console.error('Error updating file:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Create a new file in Google Drive
-   */
-  async createFile(fileName, content, mimeType) {
-    try {
-      // First create the file metadata
-      const createResponse = await this.makeAuthenticatedRequest(
-        'https://www.googleapis.com/drive/v3/files',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            name: fileName,
-            parents: [], // Root folder
-            mimeType: mimeType,
-          }),
-        }
-      );
-
-      if (!createResponse.ok) {
-        throw new Error(`Failed to create file metadata: ${createResponse.status}`);
-      }
-
-      const createData = await createResponse.json();
-      const fileId = createData.id;
-
-      // Then upload the file content
-      const uploadResponse = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': mimeType,
-          },
-          body: content,
-        }
-      );
-
-      if (!uploadResponse.ok) {
-        throw new Error(`Failed to upload file content: ${uploadResponse.status}`);
-      }
-
-      return fileId;
+      const result = await response.json();
+      await this.setDriveFileId(result.id);
+      return result.id;
     } catch (error) {
       console.error('Error creating file:', error);
       throw error;
     }
   }
 
-  /**
-   * Get detailed file information including size and modification time
-   */
+  async updateFile(fileId, content) {
+    try {
+      const response = await this.makeAuthenticatedRequest(
+        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          },
+          body: content,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to update file: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error updating file:', error);
+      throw error;
+    }
+  }
+
+  async downloadFile(fileId) {
+    try {
+      const response = await this.makeAuthenticatedRequest(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.statusText}`);
+      }
+
+      return await response.arrayBuffer();
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      throw error;
+    }
+  }
+
   async getFileInfo(fileId) {
     try {
       const response = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,size,modifiedTime,mimeType`
+        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,modifiedTime,size`
       );
 
-      if (response.ok) {
-        const fileInfo = await response.json();
-        return {
-          id: fileInfo.id,
-          name: fileInfo.name,
-          size: fileInfo.size,
-          modifiedTime: fileInfo.modifiedTime,
-          mimeType: fileInfo.mimeType
-        };
+      if (!response.ok) {
+        throw new Error(`Failed to get file info: ${response.statusText}`);
       }
 
-      return null;
+      return await response.json();
     } catch (error) {
       console.error('Error getting file info:', error);
-      return null;
+      throw error;
+    }
+  }
+
+  async deleteFile(fileId) {
+    try {
+      const response = await this.makeAuthenticatedRequest(
+        `https://www.googleapis.com/drive/v3/files/${fileId}`,
+        {
+          method: 'DELETE',
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete file: ${response.statusText}`);
+      }
+
+      // Clear the stored file ID if it was the current one
+      if (this.driveFileId === fileId) {
+        await this.setDriveFileId(null);
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      throw error;
+    }
+  }
+
+  createMultipartBody(metadata, content) {
+    const boundary = 'foo_bar_baz';
+    const delimiter = '\r\n--' + boundary + '\r\n';
+    const close_delim = '\r\n--' + boundary + '--';
+
+    const multipartRequestBody =
+      delimiter +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      JSON.stringify(metadata) +
+      delimiter +
+      'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n' +
+      content +
+      close_delim;
+
+    return multipartRequestBody;
+  }
+
+  async signOut() {
+    try {
+      await GoogleSignin.signOut();
+      await this.clearTokens();
+      await this.setDriveFileId(null);
+      this.isInitialized = false;
+      return true;
+    } catch (error) {
+      console.error('Error signing out:', error);
+      return false;
     }
   }
 }
 
-// Export singleton instance
 export default new GoogleDriveService();
