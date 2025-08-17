@@ -1,22 +1,34 @@
-import googleDriveService from './googleDriveService';
-import excelService from './excelService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { loadRecipes, saveRecipes, getPinnedRecipes } from '../utils/storage';
-import { getLastCookedDates, setLastCookedDates } from '../utils/storage';
-
-const LAST_SYNC_KEY = '@cookit_last_sync';
-const SYNC_IN_PROGRESS_KEY = '@cookit_sync_in_progress';
-const EXCEL_SYNC_MODE_KEY = '@cookit_excel_sync_mode';
+// Pure JS module - no React Native dependencies
+// Can be imported and tested in Node.js environment
 
 class SyncService {
-  constructor() {
+  constructor(dependencies = {}) {
+    // Dependency injection for testability
+    this.storageProvider = dependencies.storageProvider || null;
+    this.driveClient = dependencies.driveClient || null;
+    this.excelProcessor = dependencies.excelProcessor || null;
+
+    // Internal state
     this.isSyncing = false;
     this.syncMode = 'excel'; // Default to Excel sync mode
+
+    // Configuration
+    this.config = {
+      lastSyncKey: '@cookit_last_sync',
+      syncInProgressKey: '@cookit_sync_in_progress',
+      excelSyncModeKey: '@cookit_excel_sync_mode',
+      ...dependencies.config
+    };
   }
 
+  // Core sync logic - pure functions that can be unit tested
   async getLastSyncTime() {
+    if (!this.storageProvider) {
+      throw new Error('Storage provider not initialized');
+    }
+
     try {
-      const lastSync = await AsyncStorage.getItem(LAST_SYNC_KEY);
+      const lastSync = await this.storageProvider.getItem(this.config.lastSyncKey);
       return lastSync ? new Date(lastSync) : null;
     } catch (error) {
       console.error('Error getting last sync time:', error);
@@ -25,16 +37,24 @@ class SyncService {
   }
 
   async setLastSyncTime(time = new Date()) {
+    if (!this.storageProvider) {
+      throw new Error('Storage provider not initialized');
+    }
+
     try {
-      await AsyncStorage.setItem(LAST_SYNC_KEY, time.toISOString());
+      await this.storageProvider.setItem(this.config.lastSyncKey, time.toISOString());
     } catch (error) {
       console.error('Error setting last sync time:', error);
     }
   }
 
   async isSyncInProgress() {
+    if (!this.storageProvider) {
+      throw new Error('Storage provider not initialized');
+    }
+
     try {
-      const inProgress = await AsyncStorage.getItem(SYNC_IN_PROGRESS_KEY);
+      const inProgress = await this.storageProvider.getItem(this.config.syncInProgressKey);
       return inProgress === 'true';
     } catch (error) {
       console.error('Error checking sync progress:', error);
@@ -43,11 +63,15 @@ class SyncService {
   }
 
   async setSyncInProgress(inProgress) {
+    if (!this.storageProvider) {
+      throw new Error('Storage provider not initialized');
+    }
+
     try {
       if (inProgress) {
-        await AsyncStorage.setItem(SYNC_IN_PROGRESS_KEY, 'true');
+        await this.storageProvider.setItem(this.config.syncInProgressKey, 'true');
       } else {
-        await AsyncStorage.removeItem(SYNC_IN_PROGRESS_KEY);
+        await this.storageProvider.removeItem(this.config.syncInProgressKey);
       }
     } catch (error) {
       console.error('Error setting sync progress:', error);
@@ -55,8 +79,12 @@ class SyncService {
   }
 
   async getSyncMode() {
+    if (!this.storageProvider) {
+      throw new Error('Storage provider not initialized');
+    }
+
     try {
-      const mode = await AsyncStorage.getItem(EXCEL_SYNC_MODE_KEY);
+      const mode = await this.storageProvider.getItem(this.config.excelSyncModeKey);
       return mode || 'excel';
     } catch (error) {
       console.error('Error getting sync mode:', error);
@@ -65,17 +93,27 @@ class SyncService {
   }
 
   async setSyncMode(mode) {
+    if (!this.storageProvider) {
+      throw new Error('Storage provider not initialized');
+    }
+
     try {
-      await AsyncStorage.setItem(EXCEL_SYNC_MODE_KEY, mode);
+      await this.storageProvider.setItem(this.config.excelSyncModeKey, mode);
       this.syncMode = mode;
     } catch (error) {
       console.error('Error setting sync mode:', error);
     }
   }
 
+  // Pure business logic - can be unit tested without external dependencies
   async initializeSync() {
     try {
-      console.log('Initializing Google Drive sync with Excel...');
+      console.log('Initializing sync service...');
+
+      // Validate dependencies
+      if (!this.storageProvider || !this.driveClient || !this.excelProcessor) {
+        throw new Error('Required dependencies not initialized');
+      }
 
       // Check if already syncing
       if (await this.isSyncInProgress()) {
@@ -83,40 +121,25 @@ class SyncService {
         return { success: false, message: 'Sync already in progress' };
       }
 
-      // Initialize Excel service (which also initializes Google Drive service)
-      const excelInitialized = await excelService.initialize();
+      // Initialize Excel processor
+      const excelInitialized = await this.excelProcessor.initialize();
       if (!excelInitialized) {
-        console.log('Excel service initialization failed');
-        return { success: false, message: 'Excel service initialization failed' };
+        console.log('Excel processor initialization failed');
+        return { success: false, message: 'Excel processor initialization failed' };
       }
 
-      // Check if Google Drive is authenticated
-      if (!googleDriveService.isAuthenticated()) {
-        console.log('Google Drive not authenticated, attempting authentication...');
-
+      // Check if Drive is authenticated
+      if (!this.driveClient.isAuthenticated()) {
+        console.log('Drive not authenticated, attempting authentication...');
 
         try {
-          const authenticated = await googleDriveService.authenticate();
+          const authenticated = await this.driveClient.authenticate();
           if (!authenticated) {
             return { success: false, message: 'Authentication failed - please try again' };
           }
         } catch (authError) {
-          console.error('Google Drive authentication error:', authError);
-
-          // Provide user-friendly error messages
-          let userMessage = 'Failed to connect to Google Drive. ';
-
-          if (authError.message?.includes('browser')) {
-            userMessage += 'Unable to open web browser for authentication. This may happen in certain environments. Please try again later.';
-          } else if (authError.message?.includes('network')) {
-            userMessage += 'Network error. Please check your internet connection and try again.';
-          } else if (authError.message?.includes('OAuth configuration')) {
-            userMessage += 'Configuration error. Please contact support.';
-          } else {
-            userMessage += authError.message || 'Please try again.';
-          }
-
-          return { success: false, message: userMessage };
+          console.error('Drive authentication error:', authError);
+          return this.handleAuthError(authError);
         }
       }
 
@@ -130,6 +153,24 @@ class SyncService {
     }
   }
 
+  // Pure error handling logic
+  handleAuthError(authError) {
+    let userMessage = 'Failed to connect to Drive. ';
+
+    if (authError.message?.includes('browser')) {
+      userMessage += 'Unable to open web browser for authentication. This may happen in certain environments. Please try again later.';
+    } else if (authError.message?.includes('network')) {
+      userMessage += 'Network error. Please check your internet connection and try again.';
+    } else if (authError.message?.includes('OAuth configuration')) {
+      userMessage += 'Configuration error. Please contact support.';
+    } else {
+      userMessage += authError.message || 'Please try again.';
+    }
+
+    return { success: false, message: userMessage };
+  }
+
+  // Core sync logic - pure function for unit testing
   async performExcelSync(forcePush = false) {
     if (this.isSyncing) {
       console.log('Sync already in progress');
@@ -143,14 +184,14 @@ class SyncService {
       console.log('Starting Excel-based sync process...');
 
       // Load local data
-      const localRecipes = await loadRecipes();
-      const localLastCookedDates = await getLastCookedDates();
-      const localPinnedRecipes = await getPinnedRecipes();
+      const localRecipes = await this.storageProvider.loadRecipes();
+      const localLastCookedDates = await this.storageProvider.getLastCookedDates();
+      const localPinnedRecipes = await this.storageProvider.getPinnedRecipes();
 
       console.log(`Found ${localRecipes.length} local recipes`);
 
       // Check for conflicts
-      const conflictCheck = await excelService.checkConflicts();
+      const conflictCheck = await this.excelProcessor.checkConflicts();
 
       if (conflictCheck.hasConflicts) {
         console.log('Excel conflicts detected, resolving...');
@@ -169,6 +210,7 @@ class SyncService {
     }
   }
 
+  // Pure conflict resolution logic
   async handleExcelConflicts(conflictCheck, forcePush) {
     try {
       console.log('Handling Excel conflicts...');
@@ -176,8 +218,8 @@ class SyncService {
       if (forcePush) {
         // Force push local data to Drive
         console.log('Force push mode: uploading local Excel to Drive');
-        await excelService.updateWithLocalData();
-        const uploadResult = await excelService.uploadToDrive();
+        await this.excelProcessor.updateWithLocalData();
+        const uploadResult = await this.driveClient.upload(this.excelProcessor.getLocalFilePath());
 
         if (uploadResult.success) {
           await this.setLastSyncTime();
@@ -193,13 +235,13 @@ class SyncService {
       }
 
       // Get conflict resolution options for user decision
-      const resolutionOptions = excelService.getConflictResolutionOptions();
+      const resolutionOptions = this.excelProcessor.getConflictResolutionOptions();
 
       // For now, we'll use merge resolution as default
       // In a real app, this would be presented to the user for choice
       console.log('Auto-resolving conflicts using merge strategy...');
 
-      const resolutionResult = await excelService.resolveConflict('merge');
+      const resolutionResult = await this.excelProcessor.resolveConflict('merge');
 
       if (resolutionResult.success) {
         await this.setLastSyncTime();
@@ -220,6 +262,7 @@ class SyncService {
     }
   }
 
+  // Pure merge logic - core business logic for unit testing
   async performExcelMerge(localRecipes, localLastCookedDates, localPinnedRecipes, forcePush) {
     try {
       console.log('Performing Excel merge...');
@@ -227,8 +270,8 @@ class SyncService {
       if (forcePush) {
         // Force push: update local Excel and upload to Drive
         console.log('Force push mode: updating local Excel and uploading to Drive');
-        await excelService.createLocalExcelFile();
-        const uploadResult = await excelService.uploadToDrive();
+        await this.excelProcessor.createLocalExcelFile();
+        const uploadResult = await this.driveClient.upload(this.excelProcessor.getLocalFilePath());
 
         if (uploadResult.success) {
           await this.setLastSyncTime();
@@ -248,16 +291,20 @@ class SyncService {
       }
 
       // Normal sync: download from Drive, merge, and upload back
-      let driveData = null;
+      let driveData = {
+        recipes: [],
+        lastCookedDates: {},
+        pinnedRecipes: []
+      };
 
       try {
         // Try to download Excel from Drive
-        console.log('Downloading Excel from Google Drive...');
-        const downloadResult = await excelService.downloadFromDrive();
+        console.log('Downloading Excel from Drive...');
+        const downloadResult = await this.driveClient.download(this.excelProcessor.getRemoteFilePath());
 
         if (downloadResult.success) {
           // Import the downloaded Excel data
-          const importResult = await excelService.importFromExcel();
+          const importResult = await this.excelProcessor.importFromExcel(downloadResult.filePath);
 
           if (importResult.success) {
             driveData = {
@@ -270,11 +317,7 @@ class SyncService {
         }
       } catch (error) {
         console.log('No Drive Excel file found or error downloading, will create new one');
-        driveData = {
-          recipes: [],
-          lastCookedDates: {},
-          pinnedRecipes: []
-        };
+        // driveData is already initialized with empty values above
       }
 
       // Perform merge logic
@@ -291,19 +334,19 @@ class SyncService {
         console.log('Changes detected, updating Excel and syncing...');
 
         // Save merged data locally
-        await saveRecipes(mergeResult.mergedRecipes);
+        await this.storageProvider.saveRecipes(mergeResult.mergedRecipes);
 
         // Update last cooked dates
-        await setLastCookedDates(mergeResult.mergedLastCookedDates);
+        await this.storageProvider.setLastCookedDates(mergeResult.mergedLastCookedDates);
 
         // Update pinned recipes
-        await AsyncStorage.setItem('@cookit_pinned_recipes', JSON.stringify(mergeResult.mergedPinnedRecipes));
+        await this.storageProvider.setPinnedRecipes(mergeResult.mergedPinnedRecipes);
 
         // Update local Excel file with current data
-        await excelService.createLocalExcelFile();
+        await this.excelProcessor.createLocalExcelFile();
 
         // Upload updated Excel to Drive
-        const uploadResult = await excelService.uploadToDrive();
+        const uploadResult = await this.driveClient.upload(this.excelProcessor.getLocalFilePath());
 
         if (!uploadResult.success) {
           throw new Error('Failed to upload merged Excel to Drive');
@@ -333,6 +376,7 @@ class SyncService {
     }
   }
 
+  // Pure merge algorithm - perfect for unit testing
   async mergeExcelData(localRecipes, localLastCookedDates, localPinnedRecipes,
                        driveRecipes, driveLastCookedDates, drivePinnedRecipes) {
     console.log('Merging Excel data...');
@@ -351,6 +395,12 @@ class SyncService {
       driveRecipeMap.set(key, recipe);
     });
 
+    // Create a name-based map for easier recipe updates
+    const driveRecipeNameMap = new Map();
+    (driveRecipes || []).forEach(recipe => {
+      driveRecipeNameMap.set(recipe.name, recipe);
+    });
+
     const localRecipeMap = new Map();
     (localRecipes || []).forEach(recipe => {
       const key = this.getRecipeKey(recipe);
@@ -363,10 +413,29 @@ class SyncService {
       const driveRecipe = driveRecipeMap.get(key);
 
       if (!driveRecipe) {
-        // New local recipe - add to merged
-        mergedRecipes.push(localRecipe);
-        hasChanges = true;
-        console.log(`Added new local recipe: ${localRecipe.name}`);
+        // Check if there's a recipe with the same name (for updates)
+        const driveRecipeByName = driveRecipeNameMap.get(localRecipe.name);
+
+        if (driveRecipeByName) {
+          // Recipe with same name exists - check for updates
+          const localModified = new Date(localRecipe.createdAt || localRecipe.lastModified || 0);
+          const driveModified = new Date(driveRecipeByName.createdAt || driveRecipeByName.lastModified || 0);
+
+          if (localModified > driveModified) {
+            // Local is newer - update in merged
+            const index = mergedRecipes.findIndex(r => r.name === localRecipe.name);
+            if (index >= 0) {
+              mergedRecipes[index] = localRecipe;
+              hasChanges = true;
+              console.log(`Updated recipe from local: ${localRecipe.name}`);
+            }
+          }
+        } else {
+          // New local recipe - add to merged
+          mergedRecipes.push(localRecipe);
+          hasChanges = true;
+          console.log(`Added new local recipe: ${localRecipe.name}`);
+        }
       } else {
         // Recipe exists in both - check for updates
         const localModified = new Date(localRecipe.createdAt || localRecipe.lastModified || 0);
@@ -416,14 +485,14 @@ class SyncService {
     };
   }
 
+  // Legacy method - now redirects to Excel sync
   async performSync(forcePush = false) {
-    // Legacy method - now redirects to Excel sync
     console.log('Legacy performSync called, redirecting to Excel sync...');
     return await this.performExcelSync(forcePush);
   }
 
+  // Legacy method - now redirects to Excel merge
   async mergeData(localData, remoteData, forcePush = false) {
-    // Legacy method - now redirects to Excel merge
     console.log('Legacy mergeData called, redirecting to Excel merge...');
 
     const localRecipes = localData.recipes || [];
@@ -450,15 +519,17 @@ class SyncService {
     };
   }
 
+  // Pure utility function
   getRecipeKey(recipe) {
     // Create a unique key based on name, url, and comment
     // Similar to the desktop app's composite key approach
     return `${recipe.name || ''}|${recipe.url || ''}|${recipe.comment || ''}`;
   }
 
+  // Quick sync for immediate updates
   async quickSync() {
     try {
-      if (!googleDriveService.isAuthenticated()) {
+      if (!this.driveClient?.isAuthenticated()) {
         return { success: false, message: 'Not authenticated' };
       }
 
@@ -471,8 +542,8 @@ class SyncService {
       this.isSyncing = true;
 
       // Update local Excel and upload to Drive
-      await excelService.createLocalExcelFile();
-      const uploadResult = await excelService.uploadToDrive();
+      await this.excelProcessor.createLocalExcelFile();
+      const uploadResult = await this.driveClient.upload(this.excelProcessor.getLocalFilePath());
 
       if (uploadResult.success) {
         await this.setLastSyncTime();
@@ -489,20 +560,21 @@ class SyncService {
     }
   }
 
+  // Force download from Drive
   async forceDownloadFromDrive() {
     try {
-      console.log('Force downloading Excel from Google Drive...');
+      console.log('Force downloading Excel from Drive...');
 
-      if (!googleDriveService.isAuthenticated()) {
+      if (!this.driveClient?.isAuthenticated()) {
         throw new Error('Not authenticated');
       }
 
       // Download Excel from Drive
-      const downloadResult = await excelService.downloadFromDrive();
+      const downloadResult = await this.driveClient.download(this.excelProcessor.getRemoteFilePath());
 
       if (downloadResult.success) {
         // Import the downloaded Excel data
-        const importResult = await excelService.importFromExcel();
+        const importResult = await this.excelProcessor.importFromExcel(downloadResult.filePath);
 
         if (importResult.success) {
           await this.setLastSyncTime();
@@ -528,17 +600,18 @@ class SyncService {
     }
   }
 
+  // Export to Excel
   async exportToExcel() {
     try {
       console.log('Exporting local data to Excel...');
 
-      const result = await excelService.createLocalExcelFile();
+      const result = await this.excelProcessor.createLocalExcelFile();
 
       if (result) {
         return {
           success: true,
           message: 'Data exported to Excel successfully',
-          fileInfo: await excelService.getLocalFileInfo()
+          fileInfo: await this.excelProcessor.getLocalFileInfo()
         };
       } else {
         throw new Error('Failed to create Excel file');
@@ -549,20 +622,23 @@ class SyncService {
     }
   }
 
+  // Import from Excel
   async importFromExcel() {
     try {
       console.log('Importing data from Excel...');
 
-      const result = await excelService.importFromExcel();
+      const result = await this.excelProcessor.importFromExcel();
 
-      if (result) {
+      if (result && result.success) {
         return {
           success: true,
-          message: `Imported ${result.recipes.length} recipes from Excel`,
+          message: `Imported ${result.recipes?.length || 0} recipes from Excel`,
           data: result
         };
       } else {
-        throw new Error('Failed to import Excel data');
+        // Handle failed import result
+        const errorMessage = result?.message || 'Failed to import Excel data';
+        return { success: false, message: errorMessage };
       }
     } catch (error) {
       console.error('Import from Excel error:', error);
@@ -570,9 +646,10 @@ class SyncService {
     }
   }
 
+  // Check sync status
   async checkSyncStatus() {
     try {
-      const isAuthenticated = googleDriveService.isAuthenticated();
+      const isAuthenticated = this.driveClient?.isAuthenticated() || false;
       const lastSync = await this.getLastSyncTime();
       const inProgress = await this.isSyncInProgress();
       const syncMode = await this.getSyncMode();
@@ -594,31 +671,34 @@ class SyncService {
     }
   }
 
+  // Get Excel file info
   async getExcelFileInfo() {
     try {
-      return await excelService.getLocalFileInfo();
+      return await this.excelProcessor.getLocalFileInfo();
     } catch (error) {
       console.error('Error getting Excel file info:', error);
       return null;
     }
   }
 
+  // Check for conflicts
   async checkForConflicts() {
     try {
-      if (!googleDriveService.isAuthenticated()) {
-        return { hasConflicts: false, message: 'Not authenticated with Google Drive' };
+      if (!this.driveClient?.isAuthenticated()) {
+        return { hasConflicts: false, message: 'Not authenticated with Drive' };
       }
 
-      return await excelService.checkConflicts();
+      return await this.excelProcessor.checkConflicts();
     } catch (error) {
       console.error('Error checking for conflicts:', error);
       return { hasConflicts: false, message: error.message };
     }
   }
 
+  // Resolve Excel conflict
   async resolveExcelConflict(resolution) {
     try {
-      const result = await excelService.resolveConflict(resolution);
+      const result = await this.excelProcessor.resolveConflict(resolution);
 
       if (result) {
         await this.setLastSyncTime();
@@ -632,4 +712,13 @@ class SyncService {
   }
 }
 
-export default new SyncService();
+// Export the class for testing, not an instance
+export { SyncService };
+
+// For React Native usage, create a factory function
+export const createSyncService = (dependencies) => {
+  return new SyncService(dependencies);
+};
+
+// Legacy default export for backward compatibility
+export default SyncService;

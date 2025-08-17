@@ -3,10 +3,19 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "start": "react-native start",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:sync": "jest src/services/__tests__/syncService.test.js",
+    "test:sync:watch": "jest src/services/__tests__/syncService.test.js --watch",
+    "test:sync:coverage": "jest src/services/__tests__/syncService.test.js --coverage",
+    "test:unit": "jest --testPathPattern=__tests__ --testNamePattern='(Unit|should)'",
+    "test:integration": "jest --testPathPattern=__tests__ --testNamePattern='Integration'",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",
