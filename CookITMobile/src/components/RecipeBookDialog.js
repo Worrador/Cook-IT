@@ -293,15 +293,15 @@ const styles = StyleSheet.create({
   sortButtons: {
     flex: 1,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'flex-end',
+    justifyContent: 'space-around', // Changed from 'flex-end' to distribute buttons evenly
     alignItems: 'center',
   },
   sortButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center', // Center content within each button
     gap: 4,
+    flex: 1, // Give each button equal space
     minWidth: 0,
   },
   sortButtonText: {

@@ -1,17 +1,25 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Dimensions } from 'react-native';
 import { Surface, useTheme, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Button } from './Button';
 
 const HelpDialog = ({ onClose }) => {
   const theme = useTheme();
+  const screenWidth = Dimensions.get('window').width;
+
+  // Adjust title font size based on screen width
+  const getTitleFontSize = () => {
+    if (screenWidth < 400) return 20;  // Very small phones
+    if (screenWidth < 500) return 22;  // Small phones
+    return 24;  // Normal and large phones
+  };
 
   return (
     <>
       <View style={styles.header}>
         <MaterialCommunityIcons name="chef-hat" size={28} color={theme.colors.primary} style={styles.headerIcon} />
-        <Text style={[styles.title, { color: theme.colors.primary }]}>How does Cook-IT work?</Text>
+        <Text style={[styles.title, { color: theme.colors.primary, fontSize: getTitleFontSize() }]}>How does Cook-IT work?</Text>
       </View>
       <Dialog.Content style={styles.content}>
         <ScrollView
@@ -141,10 +149,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingTop: 16,
     paddingBottom: 16,
+    paddingHorizontal: 2, // Added horizontal padding
   },
   title: {
-    fontSize: 24,
     fontWeight: 'bold',
+    flexShrink: 1, // Allow text to shrink if needed
   },
   headerIcon: {
     marginRight: 8,
