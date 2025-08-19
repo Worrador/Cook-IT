@@ -72,7 +72,7 @@ const AddRecipeDialog = ({ visible, onDismiss, onAddRecipe }) => {
               <TextInput
                 value={newRecipe.name}
                 onChangeText={(text) => setNewRecipe({ ...newRecipe, name: text })}
-                style={[styles.input, { backgroundColor: theme.colors.background }]}
+                style={[styles.input, { backgroundColor: '#fbf7f0' }]}
                 placeholder="Enter recipe name"
                 placeholderTextColor={`${theme.colors.primary}66`}
                 error={!!error}
@@ -85,7 +85,7 @@ const AddRecipeDialog = ({ visible, onDismiss, onAddRecipe }) => {
               <TextInput
                 value={newRecipe.url}
                 onChangeText={(text) => setNewRecipe({ ...newRecipe, url: text })}
-                style={[styles.input, { backgroundColor: theme.colors.background }]}
+                style={[styles.input, { backgroundColor: '#fbf7f0' }]}
                 placeholder="Enter recipe URL"
                 placeholderTextColor={`${theme.colors.primary}66`}
                 keyboardType="url"
@@ -99,7 +99,7 @@ const AddRecipeDialog = ({ visible, onDismiss, onAddRecipe }) => {
               <TextInput
                 value={newRecipe.comment}
                 onChangeText={(text) => setNewRecipe({ ...newRecipe, comment: text })}
-                style={[styles.input, { backgroundColor: theme.colors.background, textAlignVertical: 'center' }]}
+                style={[styles.input, { backgroundColor: '#fbf7f0', textAlignVertical: 'center' }]}
                 placeholder="Add any comments"
                 placeholderTextColor={`${theme.colors.primary}66`}
                 multiline={!!newRecipe.comment}
@@ -117,16 +117,27 @@ const AddRecipeDialog = ({ visible, onDismiss, onAddRecipe }) => {
               onPress={handleAdd}
               style={[styles.actionButton, {
                 backgroundColor: (newRecipe.name)
-                  ? theme.colors.primary
-                  : theme.colors.background,
-                opacity: (newRecipe.name) ? 1 : 0.7,
+                  ? theme.colors.secondary // Orange color when enabled
+                  : '#D86A3A66', // Grayed out version of orange when disabled
                 borderRadius: 12
               }]}
-              textColor={(newRecipe.name) ? theme.colors.surface : theme.colors.onSurface}
+              textColor={theme.colors.surface}
               disabled={!newRecipe.name}
               icon="plus"
             >
               Add Recipe
+            </Button>
+            <Button
+              mode="contained"
+              onPress={onDismiss}
+              style={[styles.actionButton, {
+                backgroundColor: theme.colors.primary, // Brown color for cancel button
+                borderRadius: 12
+              }]}
+              textColor={theme.colors.surface}
+              icon="close"
+            >
+              Cancel
             </Button>
           </View>
         </Dialog.Actions>

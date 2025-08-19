@@ -104,14 +104,14 @@ const RecipeBookDialog = ({
             </Text>
           )}
           <View style={styles.recipeDates}>
-            <Text style={[styles.recipeDate, { color: '#A0A0A0' }]}>
-              Added: {new Date(recipe.createdAt).toLocaleDateString()}
-            </Text>
             {lastCookedDates[recipe.name] && (
               <Text style={[styles.recipeDate, { color: '#A0A0A0' }]}>
                 Last cooked: {new Date(lastCookedDates[recipe.name]).toLocaleDateString()}
               </Text>
             )}
+            <Text style={[styles.recipeDate, { color: '#A0A0A0', textAlign: 'right' }]}>
+              Added: {new Date(recipe.createdAt).toLocaleDateString()}
+            </Text>
           </View>
         </View>
       </Surface>
@@ -141,8 +141,8 @@ const RecipeBookDialog = ({
           <Text style={[styles.sortLabel, { color: theme.colors.onSurfaceVariant }]}></Text>
           <View style={styles.sortButtons}>
             {renderSortButton('name', 'Name')}
-            {renderSortButton('dateCreated', 'Date Created')}
-            {renderSortButton('lastCooked', 'Last Cooked')}
+            {renderSortButton('lastCooked', 'Last cooked')}
+            {renderSortButton('dateCreated', 'Added')}
           </View>
         </View>
 
@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
   },
   recipeDates: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     gap: 6,
   },
   sortBar: {

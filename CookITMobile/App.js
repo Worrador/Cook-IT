@@ -1019,23 +1019,24 @@ const AppContent = () => {
                         <View style={styles.recipeHeader}>
                           <View style={styles.recipeTitleContainer}>
                             <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{item.name}</Text>
-                            <View style={styles.recipeBadges}>
-                              {cookedRecipes[item.name] && (
-                                <View style={[styles.badge, { backgroundColor: theme.colors.secondary }]}>
-                                  <MaterialCommunityIcons name="check-circle" size={16} color="white" />
-                                  <Text style={styles.badgeText}>Cooked</Text>
-                                </View>
-                              )}
-                            </View>
                           </View>
                           {item.comment && (
                             <Text style={[styles.recipeComment, { color: theme.colors.onSurface }]} numberOfLines={2}>
                               {item.comment}
                             </Text>
                           )}
-                          <Text style={[styles.recipeDate, { color: theme.colors.onSurface }]}>
-                            Added: {new Date(item.createdAt).toLocaleDateString()}
-                          </Text>
+                          <View style={styles.recipeDates}>
+                            {lastCookedDates[item.name] && (
+                              <Text style={[styles.recipeDate, { color: '#A0A0A0' }]}>
+                                Last cooked: {new Date(lastCookedDates[item.name]).toLocaleDateString()}
+                              </Text>
+                            )}
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.recipeDate, { color: '#A0A0A0', textAlign: 'right' }]}>
+                                Added: {new Date(item.createdAt).toLocaleDateString()}
+                              </Text>
+                            </View>
+                          </View>
                         </View>
                       </Surface>
                     </TouchableOpacity>
@@ -1515,6 +1516,12 @@ const styles = StyleSheet.create({
   recipeDate: {
     fontSize: 12,
   },
+  recipeDates: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    gap: 8,
+  },
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1775,5 +1782,11 @@ const styles = StyleSheet.create({
   alertButtonLabel: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  recipeDates: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    gap: 8,
   },
 });
