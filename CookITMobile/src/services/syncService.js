@@ -720,5 +720,118 @@ export const createSyncService = (dependencies) => {
   return new SyncService(dependencies);
 };
 
-// Legacy default export for backward compatibility
-export default SyncService;
+// Create adapters to bridge the interface differences
+class DriveClientAdapter {
+  constructor(googleDriveService, excelService) {
+    this.googleDriveService = googleDriveService;
+    this.excelService = excelService;
+  }
+
+  async upload(filePath) {
+    try {
+      // Use the excelService uploadToDrive method which I fixed earlier
+      const result = await this.excelService.uploadToDrive();
+      return { success: result }; // Convert boolean to object with success property
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+}
+
+class StorageProviderAdapter {
+  async getItem(key) {
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    return AsyncStorage.getItem(key);
+  }
+
+  async setItem(key, value) {
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    return AsyncStorage.setItem(key, value);
+  }
+
+  async removeItem(key) {
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    return AsyncStorage.removeItem(key);
+  }
+}
+
+class ExcelProcessorAdapter {
+  constructor(excelService) {
+    this.excelService = excelService;
+  }
+
+  async initialize() {
+    return this.excelService.initialize();
+  }
+
+  async createLocalExcelFile() {
+    return this.excelService.createLocalExcelFile();
+  }
+
+  async updateWithLocalData() {
+    return this.excelService.createLocalExcelFile();
+  }
+
+  getLocalFilePath() {
+    return this.excelService.localFilePath;
+  }
+
+  async resolveConflict(strategy) {
+    return this.excelService.resolveConflict(strategy);
+  }
+
+  getConflictResolutionOptions() {
+    return this.excelService.getConflictResolutionOptions();
+  }
+
+  async importFromExcel() {
+    return this.excelService.importFromExcel();
+  }
+}
+
+// Create the configured instance
+let configuredSyncService = null;
+
+const createConfiguredSyncService = async () => {
+  if (configuredSyncService) return configuredSyncService;
+
+  try {
+    // Import the services
+    const googleDriveServiceModule = await import('./googleDriveService');
+    const excelServiceModule = await import('./excelService');
+
+    const googleDriveService = googleDriveServiceModule.default;
+    const excelService = excelServiceModule.default;
+
+    // Create adapters
+    const storageProvider = new StorageProviderAdapter();
+    const driveClient = new DriveClientAdapter(googleDriveService, excelService);
+    const excelProcessor = new ExcelProcessorAdapter(excelService);
+
+    // Create the configured sync service
+    configuredSyncService = new SyncService({
+      storageProvider,
+      driveClient,
+      excelProcessor
+    });
+
+    return configuredSyncService;
+  } catch (error) {
+    console.error('Error creating configured sync service:', error);
+    return null;
+  }
+};
+
+// Legacy default export - return a proxy that lazy-loads the configured instance
+export default new Proxy({}, {
+  get(target, prop) {
+    return async function(...args) {
+      const service = await createConfiguredSyncService();
+      if (service && typeof service[prop] === 'function') {
+        return service[prop](...args);
+      } else {
+        throw new Error(`Method ${prop} not available on sync service`);
+      }
+    };
+  }
+});

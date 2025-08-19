@@ -192,7 +192,7 @@ class GoogleDriveService {
     try {
       const metadata = {
         name: fileName,
-        mimeType: 'application/vnd.google-apps.spreadsheet',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         parents: ['root']
       };
 
