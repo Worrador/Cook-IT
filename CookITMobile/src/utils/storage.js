@@ -7,6 +7,7 @@ const PINNED_RECIPES_KEY = '@cookit_pinned_recipes';
 const EXCEL_SYNC_ENABLED_KEY = '@cookit_excel_sync_enabled';
 const LAST_EXCEL_SYNC_KEY = '@cookit_last_excel_sync';
 const LAST_COOKED_DATES_KEY = '@cookit_last_cooked_dates';
+const COOK_COUNTS_KEY = '@cookit_cook_counts';
 
 // Import services
 let syncService = null;
@@ -247,6 +248,13 @@ export const deleteRecipe = async (recipeName) => {
       await AsyncStorage.setItem(LAST_COOKED_DATES_KEY, JSON.stringify(lastCookedDates));
     }
 
+    // Clean up cook counts
+    const cookCounts = await getCookCounts();
+    if (cookCounts[recipeName] !== undefined) {
+      delete cookCounts[recipeName];
+      await AsyncStorage.setItem(COOK_COUNTS_KEY, JSON.stringify(cookCounts));
+    }
+
     // Trigger both legacy and Excel sync for backward compatibility
     triggerSync();
     triggerExcelSync();
@@ -314,9 +322,25 @@ export const setCookedStatus = async (recipeName, isCooked) => {
     // Maintain last cooked date alongside cooked status
     const lastCookedDates = await getLastCookedDates();
     if (isCooked) {
-      lastCookedDates[recipeName] = new Date().toISOString();
+      const currentDate = new Date();
+      const lastCookedDate = lastCookedDates[recipeName];
+
+      // Check if the recipe was cooked within the last 3 days
+      const threeDaysAgo = new Date(currentDate.getTime() - 3 * 24 * 60 * 60 * 1000);
+      const wasRecentlyCooked = lastCookedDate && new Date(lastCookedDate) >= threeDaysAgo;
+
+      // Always update the last cooked date
+      lastCookedDates[recipeName] = currentDate.toISOString();
+
+      // Only increment cook count if it wasn't cooked within 3 days
+      if (!wasRecentlyCooked) {
+        await incrementCookCount(recipeName);
+        console.log(`Cook count incremented for ${recipeName}`);
+      } else {
+        console.log(`Recipe ${recipeName} was cooked recently, only updating date`);
+      }
     } else {
-      // If uncooked, clear last cooked date
+      // If uncooked, clear last cooked date but don't reset count
       delete lastCookedDates[recipeName];
     }
     await AsyncStorage.setItem(LAST_COOKED_DATES_KEY, JSON.stringify(lastCookedDates));
@@ -524,6 +548,7 @@ export const cleanupStaleReferences = async () => {
     const cookedRecipes = await getCookedRecipes();
     const pinnedRecipes = await getPinnedRecipes();
     const lastCookedDates = await getLastCookedDates();
+    const cookCounts = await getCookCounts();
 
     // Clean up cooked recipes that reference non-existent recipes
     const validRecipeNames = new Set(recipes.map(recipe => recipe.name));
@@ -556,15 +581,37 @@ export const cleanupStaleReferences = async () => {
       await AsyncStorage.setItem(LAST_COOKED_DATES_KEY, JSON.stringify(cleanedLastCookedDates));
     }
 
+    // Clean up cook counts that reference non-existent recipes
+    const cleanedCookCounts = {};
+    let cookCountsChanged = false;
+    for (const [recipeName, count] of Object.entries(cookCounts)) {
+      if (validRecipeNames.has(recipeName)) {
+        cleanedCookCounts[recipeName] = count;
+      } else {
+        cookCountsChanged = true;
+      }
+    }
+    if (cookCountsChanged) {
+      await AsyncStorage.setItem(COOK_COUNTS_KEY, JSON.stringify(cleanedCookCounts));
+    }
+
     // Clean up pinned recipes that reference non-existent recipes
     const cleanedPinnedRecipes = pinnedRecipes.filter(name => validRecipeNames.has(name));
     if (cleanedPinnedRecipes.length !== pinnedRecipes.length) {
       await AsyncStorage.setItem(PINNED_RECIPES_KEY, JSON.stringify(cleanedPinnedRecipes));
     }
 
-    // Trigger Excel sync after cleanup if changes were made
-    if (cookedRecipesChanged || lastCookedDatesChanged || cleanedPinnedRecipes.length !== pinnedRecipes.length) {
+    // Return cleaned data if any changes were made
+    if (cookedRecipesChanged || lastCookedDatesChanged || cookCountsChanged || cleanedPinnedRecipes.length !== pinnedRecipes.length) {
+      console.log('Stale references found and cleaned up');
+      triggerSync();
       triggerExcelSync();
+      return {
+        cookedRecipes: cleanedCookedRecipes,
+        pinnedRecipes: cleanedPinnedRecipes,
+        lastCookedDates: cleanedLastCookedDates,
+        cookCounts: cleanedCookCounts,
+      };
     }
 
     return {
@@ -720,5 +767,79 @@ export const initializeExcelSync = async () => {
     }
   } catch (error) {
     console.error('Error initializing Excel sync:', error);
+  }
+};
+
+export const getCookCounts = async () => {
+  try {
+    const cookCounts = await AsyncStorage.getItem(COOK_COUNTS_KEY);
+    return cookCounts ? JSON.parse(cookCounts) : {};
+  } catch (error) {
+    console.error('Error loading cook counts:', error);
+    return {};
+  }
+};
+
+export const incrementCookCount = async (recipeName) => {
+  try {
+    const cookCounts = await getCookCounts();
+    cookCounts[recipeName] = (cookCounts[recipeName] || 0) + 1;
+    await AsyncStorage.setItem(COOK_COUNTS_KEY, JSON.stringify(cookCounts));
+    return cookCounts[recipeName];
+  } catch (error) {
+    console.error('Error incrementing cook count:', error);
+    return 0;
+  }
+};
+
+export const getRecipeCookCount = async (recipeName) => {
+  try {
+    const cookCounts = await getCookCounts();
+    return cookCounts[recipeName] || 0;
+  } catch (error) {
+    console.error('Error getting recipe cook count:', error);
+    return 0;
+  }
+};
+
+export const resetCookCount = async (recipeName) => {
+  try {
+    const cookCounts = await getCookCounts();
+    cookCounts[recipeName] = 0;
+    await AsyncStorage.setItem(COOK_COUNTS_KEY, JSON.stringify(cookCounts));
+    return cookCounts[recipeName];
+  } catch (error) {
+    console.error('Error resetting cook count:', error);
+    return 0;
+  }
+};
+
+export const getCookedRecipesWithinThreeDays = async () => {
+  try {
+    const lastCookedDates = await getLastCookedDates();
+    const cookCounts = await getCookCounts();
+    const recipes = await loadRecipes();
+
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    const cookedRecipesWithinThreeDays = [];
+
+    for (const recipe of recipes) {
+      const recipeName = recipe.name;
+      const lastCookedDate = lastCookedDates[recipeName];
+      const cookCount = cookCounts[recipeName];
+
+      if (lastCookedDate && new Date(lastCookedDate) >= threeDaysAgo) {
+        cookedRecipesWithinThreeDays.push({
+          name: recipeName,
+          lastCooked: lastCookedDate,
+          cookCount: cookCount,
+        });
+      }
+    }
+
+    return cookedRecipesWithinThreeDays;
+  } catch (error) {
+    console.error('Error getting cooked recipes within three days:', error);
+    return [];
   }
 };

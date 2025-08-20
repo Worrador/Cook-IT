@@ -11,11 +11,12 @@ const RecipeBookDialog = ({
   cookedRecipes,
   pinnedRecipes,
   onTogglePin,
-  lastCookedDates = {} // Add this prop for last cooked dates
+  lastCookedDates = {}, // Add this prop for last cooked dates
+  cookCounts = {} // Add this prop for cook counts
 }) => {
   const theme = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('name'); // 'name', 'dateCreated', 'lastCooked'
+  const [sortBy, setSortBy] = useState('name'); // 'name', 'timesCooked', 'lastCooked'
   const [sortOrder, setSortOrder] = useState('asc'); // 'asc', 'desc'
 
   // Sort recipes based on current sort settings and filter by search query
@@ -31,8 +32,10 @@ const RecipeBookDialog = ({
         case 'name':
           comparison = a.name.localeCompare(b.name);
           break;
-        case 'dateCreated':
-          comparison = new Date(a.createdAt) - new Date(b.createdAt);
+        case 'timesCooked':
+          const aCookCount = cookCounts[a.name] || 0;
+          const bCookCount = cookCounts[b.name] || 0;
+          comparison = aCookCount - bCookCount;
           break;
         case 'lastCooked':
           const aLastCooked = lastCookedDates[a.name] ? new Date(lastCookedDates[a.name]) : new Date(0);
@@ -109,9 +112,11 @@ const RecipeBookDialog = ({
                 Last cooked: {new Date(lastCookedDates[recipe.name]).toLocaleDateString()}
               </Text>
             )}
-            <Text style={[styles.recipeDate, { color: '#A0A0A0', textAlign: 'right' }]}>
-              Added: {new Date(recipe.createdAt).toLocaleDateString()}
-            </Text>
+            {cookCounts[recipe.name] > 0 && (
+              <Text style={[styles.recipeDate, { color: '#A0A0A0', textAlign: 'right' }]}>
+                Times cooked: {cookCounts[recipe.name]}
+              </Text>
+            )}
           </View>
         </View>
       </Surface>
@@ -140,9 +145,9 @@ const RecipeBookDialog = ({
         <View style={styles.sortBar}>
           <Text style={[styles.sortLabel, { color: theme.colors.onSurfaceVariant }]}></Text>
           <View style={styles.sortButtons}>
-            {renderSortButton('name', 'Name')}
+            {renderSortButton('name', 'Recipe name')}
             {renderSortButton('lastCooked', 'Last cooked')}
-            {renderSortButton('dateCreated', 'Added')}
+            {renderSortButton('timesCooked', 'Times cooked')}
           </View>
         </View>
 

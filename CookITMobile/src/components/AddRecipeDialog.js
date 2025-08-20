@@ -118,7 +118,7 @@ const AddRecipeDialog = ({ visible, onDismiss, onAddRecipe }) => {
               style={[styles.actionButton, {
                 backgroundColor: (newRecipe.name)
                   ? theme.colors.secondary // Orange color when enabled
-                  : '#D86A3A66', // Grayed out version of orange when disabled
+                  : '#f3d1c2', // Grayed out version of orange when disabled
                 borderRadius: 12
               }]}
               textColor={theme.colors.surface}

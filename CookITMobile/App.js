@@ -26,6 +26,7 @@ import {
   cleanupStaleReferences,
   addSampleRecipes,
   getLastCookedDates, // Add this import
+  getCookCounts,
 } from './src/utils/storage';
 import syncService from './src/services/syncService';
 import { BlurView } from 'expo-blur';
@@ -84,6 +85,7 @@ const AppContent = () => {
   const [showHelp, setShowHelp] = useState(false);
   const [cookedRecipes, setCookedRecipes] = useState({});
   const [lastCookedDates, setLastCookedDates] = useState({});
+  const [cookCounts, setCookCounts] = useState({});
   const [showBuyCoffee, setShowBuyCoffee] = useState(false);
   const [showRecipeBook, setShowRecipeBook] = useState(false);
   const [pinnedRecipes, setPinnedRecipes] = useState([]);
@@ -348,12 +350,13 @@ const AppContent = () => {
 
   const loadInitialData = async () => {
     try {
-      const [loadedRecipes, loadedCookedRecipes, tutorialCount, loadedPinnedRecipes, loadedLastCookedDates] = await Promise.all([
+      const [loadedRecipes, loadedCookedRecipes, tutorialCount, loadedPinnedRecipes, loadedLastCookedDates, loadedCookCounts] = await Promise.all([
         loadRecipes(),
         getCookedRecipes(),
         getTutorialCount(),
         getPinnedRecipes(),
         getLastCookedDates(),
+        getCookCounts(),
       ]);
 
       // Clean up any stale references before setting state
@@ -365,10 +368,12 @@ const AppContent = () => {
         setCookedRecipes(cleanupResult.cookedRecipes);
         setPinnedRecipes(cleanupResult.pinnedRecipes);
         setLastCookedDates(cleanupResult.lastCookedDates || loadedLastCookedDates);
+        setCookCounts(cleanupResult.cookCounts || loadedCookCounts);
       } else {
         setCookedRecipes(loadedCookedRecipes);
         setPinnedRecipes(loadedPinnedRecipes);
         setLastCookedDates(loadedLastCookedDates);
+        setCookCounts(loadedCookCounts);
       }
       setTutorialCountState(tutorialCount);
       setIsLoading(false);
@@ -597,6 +602,14 @@ const AppContent = () => {
   const handleCook = async (recipeName) => {
     const updatedCookedRecipes = await setCookedStatus(recipeName, true);
     setCookedRecipes(updatedCookedRecipes);
+
+    // Reload last cooked dates and cook counts after cooking
+    const [updatedLastCookedDates, updatedCookCounts] = await Promise.all([
+      getLastCookedDates(),
+      getCookCounts(),
+    ]);
+    setLastCookedDates(updatedLastCookedDates);
+    setCookCounts(updatedCookCounts);
   };
 
   const handleUncook = async (recipeName) => {
@@ -1031,11 +1044,13 @@ const AppContent = () => {
                                 Last cooked: {new Date(lastCookedDates[item.name]).toLocaleDateString()}
                               </Text>
                             )}
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.recipeDate, { color: '#A0A0A0', textAlign: 'right' }]}>
-                                Added: {new Date(item.createdAt).toLocaleDateString()}
-                              </Text>
-                            </View>
+                            {cookCounts[item.name] > 0 && (
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.recipeDate, { color: '#A0A0A0', textAlign: 'right' }]}>
+                                  Times cooked: {cookCounts[item.name]}
+                                </Text>
+                              </View>
+                            )}
                           </View>
                         </View>
                       </Surface>
@@ -1117,6 +1132,7 @@ const AppContent = () => {
             pinnedRecipes={pinnedRecipes}
             onTogglePin={handleTogglePinned}
             lastCookedDates={lastCookedDates}
+            cookCounts={cookCounts}
           />
         </Dialog>
       </Portal>
