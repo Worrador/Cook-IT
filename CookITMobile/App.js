@@ -818,7 +818,8 @@ const AppContent = () => {
               inputRange: [0, 1],
               outputRange: [centerOffset, 0], // Use dynamic centering when disabled, move up when enabled
             })
-          }]
+          }],
+          zIndex: 10, // Higher z-index to ensure buttons are always above pinned recipes
         }
       ]} onLayout={e => setButtonAreaHeight(e.nativeEvent.layout.height)}>
         <Button
@@ -864,75 +865,35 @@ const AppContent = () => {
                 })
               }],
               opacity: 1, // Keep full opacity for pinned recipes on cork
-              zIndex: 12, // Lower z-index so pins appear above the border
+              zIndex: 1, // Lower z-index so buttons appear above
             }
           ]}
         >
-          {/* Combined cork surface with borders */}
-          <View style={{
-            flex: 1,
-            position: 'relative',
-            overflow: 'hidden', // Clip content at corkboard boundaries
-          }}>
-            {/* Combined cork background with borders */}
-            <ImageBackground
-              source={require('./assets/wine-cork-wp4.png')}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                zIndex: 1,
-              }}
-              resizeMode="cover"
-            >
-              {/* Top border */}
+            {/* Combined cork surface with borders */}
+            <View style={{
+              flex: 1,
+              position: 'relative',
+              overflow: 'hidden', // Clip content at corkboard boundaries
+            }}>
+              {/* Combined cork background with borders */}
               <ImageBackground
-                source={require('./assets/cork-wood2.png')}
+                source={require('./assets/wine-cork-wp4.png')}
                 style={{
                   position: 'absolute',
                   top: 0,
                   left: 0,
                   right: 0,
-                  height: 10,
-                  zIndex: 3, // Higher than recipes but lower than pins
-                }}
-                resizeMode="stretch"
-              />
-              {/* Left border */}
-              <ImageBackground
-                source={require('./assets/cork-wood.png')}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
                   bottom: 0,
-                  width: 10,
-                  zIndex: 3, // Higher than recipes but lower than pins
+                  zIndex: 1,
                 }}
-                resizeMode="stretch"
-              />
-              {/* Right border */}
-              <ImageBackground
-                source={require('./assets/cork-wood.png')}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  width: 10,
-                  zIndex: 3, // Higher than recipes but lower than pins
-                }}
-                resizeMode="stretch"
-              />
-              {/* Bottom border - only when scrolled to bottom */}
-              {showScrollBorder && (
+                resizeMode="cover"
+              >
+                {/* Top border */}
                 <ImageBackground
                   source={require('./assets/cork-wood2.png')}
                   style={{
                     position: 'absolute',
-                    bottom: 0,
+                    top: 0,
                     left: 0,
                     right: 0,
                     height: 10,
@@ -940,128 +901,168 @@ const AppContent = () => {
                   }}
                   resizeMode="stretch"
                 />
-              )}
-            </ImageBackground>
-
-            {/* ScrollView for pinned recipes on top of combined surface */}
-            <FlatList
-              data={recipes.filter(recipe => pinnedRecipes.includes(recipe.name))}
-              keyExtractor={(item) => item.name}
-              onScroll={(event) => {
-                const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-                // Show border if content is shorter than container OR if scrolled to bottom
-                const isAtBottom = contentSize.height <= layoutMeasurement.height ||
-                                  contentOffset.y + layoutMeasurement.height >= contentSize.height - 10;
-                setShowScrollBorder(isAtBottom);
-              }}
-              onContentSizeChange={(width, height) => {
-                // Also check on content size change
-                const isAtBottom = height <= 400; // Approximate container height
-                setShowScrollBorder(isAtBottom);
-              }}
-              scrollEventThrottle={16}
-              style={[
-                styles.list,
-                {
-                  backgroundColor: 'transparent',
-                  marginTop: 10,
-                  marginLeft: 10,
-                  marginRight: 10,
-                  marginBottom: showScrollBorder ? 10 : 0,
-                  zIndex: 2, // Above cork background but below borders
-                  overflow: 'hidden', // Clip recipes at container boundaries
-                }
-              ]}
-              renderItem={({ item, index }) => {
-                const recipeAnim = getRecipeAnimation(item.name);
-                return (
-                  <Animated.View
+                {/* Left border */}
+                <ImageBackground
+                  source={require('./assets/cork-wood.png')}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    bottom: 0,
+                    width: 10,
+                    zIndex: 3, // Higher than recipes but lower than pins
+                  }}
+                  resizeMode="stretch"
+                />
+                {/* Right border */}
+                <ImageBackground
+                  source={require('./assets/cork-wood.png')}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    width: 10,
+                    zIndex: 3, // Higher than recipes but lower than pins
+                  }}
+                  resizeMode="stretch"
+                />
+                {/* Bottom border - only when scrolled to bottom */}
+                {showScrollBorder && (
+                  <ImageBackground
+                    source={require('./assets/cork-wood2.png')}
                     style={{
-                      transform: [
-                        {
-                          translateY: recipeAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [windowHeight, 0], // Start from bottom of screen, slide to final position
-                          })
-                        },
-                        {
-                          scale: pressedRecipe === item.name ? 1.05 : 1, // Scale up while pressed
-                        }
-                      ],
-                      opacity: recipeAnim.interpolate({
-                        inputRange: [0, 0.3, 1],
-                        outputRange: [0, 0, 1], // Fade out when sliding down, but stay opaque when sliding up
-                      }),
-                      zIndex: 2, // Above cork background but below borders
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: 10,
+                      zIndex: 3, // Higher than recipes but lower than pins
                     }}
-                  >
-                    <TouchableOpacity
-                      activeOpacity={1}
-                      onPressIn={() => {
-                        setPressedRecipe(item.name);
-                      }}
-                      onPressOut={() => {
-                        setPressedRecipe(null);
-                      }}
-                      onPress={() => {
-                        setSelectedRecipe(item);
-                        setIsSuggestionFlow(false);
-                        setShowRecipeDetails(true);
+                    resizeMode="stretch"
+                  />
+                )}
+              </ImageBackground>
+
+              {/* ScrollView for pinned recipes on top of combined surface */}
+              <FlatList
+                data={recipes.filter(recipe => pinnedRecipes.includes(recipe.name))}
+                keyExtractor={(item) => item.name}
+                onScroll={(event) => {
+                  const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+                  // Show border if content is shorter than container OR if scrolled to bottom
+                  const isAtBottom = contentSize.height <= layoutMeasurement.height ||
+                                    contentOffset.y + layoutMeasurement.height >= contentSize.height - 10;
+                  setShowScrollBorder(isAtBottom);
+                }}
+                onContentSizeChange={(width, height) => {
+                  // Also check on content size change
+                  const isAtBottom = height <= 400; // Approximate container height
+                  setShowScrollBorder(isAtBottom);
+                }}
+                scrollEventThrottle={16}
+                style={[
+                  styles.list,
+                  {
+                    backgroundColor: 'transparent',
+                    marginTop: 10,
+                    marginLeft: 10,
+                    marginRight: 10,
+                    marginBottom: showScrollBorder ? 10 : 0,
+                    zIndex: 2, // Above cork background but below borders
+                    overflow: 'hidden', // Clip recipes at container boundaries
+                  }
+                ]}
+                renderItem={({ item, index }) => {
+                  const recipeAnim = getRecipeAnimation(item.name);
+                  return (
+                    <Animated.View
+                      style={{
+                        transform: [
+                          {
+                            translateY: recipeAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [windowHeight, 0], // Start from bottom of screen, slide to final position
+                            })
+                          },
+                          {
+                            scale: pressedRecipe === item.name ? 1.05 : 1, // Scale up while pressed
+                          }
+                        ],
+                        opacity: recipeAnim.interpolate({
+                          inputRange: [0, 0.3, 1],
+                          outputRange: [0, 0, 1], // Fade out when sliding down, but stay opaque when sliding up
+                        }),
+                        zIndex: 2, // Above cork background but below borders
                       }}
                     >
-                      <Surface
-                        style={[
-                          styles.recipeCard,
-                          { backgroundColor: theme.colors.surface },
-                          styles.pinnedRecipeCard,
-                          { overflow: 'visible' } // Allow pin to extend beyond card boundaries
-                        ]}
-                        elevation={4}
+                      <TouchableOpacity
+                        activeOpacity={1}
+                        onPressIn={() => {
+                          setPressedRecipe(item.name);
+                        }}
+                        onPressOut={() => {
+                          setPressedRecipe(null);
+                        }}
+                        onPress={() => {
+                          setSelectedRecipe(item);
+                          setIsSuggestionFlow(false);
+                          setShowRecipeDetails(true);
+                        }}
                       >
-                        <InteractivePin
-                          isPinned={pinnedRecipes.includes(item.name)}
-                          onToggle={() => handleTogglePinned(item.name)}
-                          size={32}
-                          triggerBounce={bouncingPins.has(item.name)}
-                          key={`pin-${item.name}-${showPinnedOnly}`} // Force re-mount to trigger bounce animation
-                          style={{
-                            zIndex: 4, // Highest z-index to appear above borders
-                          }}
-                        />
+                        <Surface
+                          style={[
+                            styles.recipeCard,
+                            { backgroundColor: theme.colors.surface },
+                            styles.pinnedRecipeCard,
+                            { overflow: 'visible' } // Allow pin to extend beyond card boundaries
+                          ]}
+                          elevation={4}
+                        >
+                          <InteractivePin
+                            isPinned={pinnedRecipes.includes(item.name)}
+                            onToggle={() => handleTogglePinned(item.name)}
+                            size={32}
+                            triggerBounce={bouncingPins.has(item.name)}
+                            key={`pin-${item.name}-${showPinnedOnly}`} // Force re-mount to trigger bounce animation
+                            style={{
+                              zIndex: 4, // Highest z-index to appear above borders
+                            }}
+                          />
 
-                        <View style={styles.recipeHeader}>
-                          <View style={styles.recipeTitleContainer}>
-                            <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{item.name}</Text>
-                          </View>
-                          {item.comment && (
-                            <Text style={[styles.recipeComment, { color: theme.colors.onSurface }]} numberOfLines={2}>
-                              {item.comment}
-                            </Text>
-                          )}
-                          <View style={styles.recipeDates}>
-                            {lastCookedDates[item.name] && (
-                              <Text style={[styles.recipeDate, { color: '#A0A0A0' }]}>
-                                Last cooked: {new Date(lastCookedDates[item.name]).toLocaleDateString()}
+                          <View style={styles.recipeHeader}>
+                            <View style={styles.recipeTitleContainer}>
+                              <Text style={[styles.recipeName, { color: theme.colors.onSurface }]}>{item.name}</Text>
+                            </View>
+                            {item.comment && (
+                              <Text style={[styles.recipeComment, { color: theme.colors.onSurface }]} numberOfLines={2}>
+                                {item.comment}
                               </Text>
                             )}
-                            {cookCounts[item.name] > 0 && (
-                              <View style={{ flex: 1 }}>
-                                <Text style={[styles.recipeDate, { color: '#A0A0A0', textAlign: 'right' }]}>
-                                  Times cooked: {cookCounts[item.name]}
+                            <View style={styles.recipeDates}>
+                              {lastCookedDates[item.name] && (
+                                <Text style={[styles.recipeDate, { color: '#A0A0A0' }]}>
+                                  Last cooked: {new Date(lastCookedDates[item.name]).toLocaleDateString()}
                                 </Text>
-                              </View>
-                            )}
+                              )}
+                              {cookCounts[item.name] > 0 && (
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[styles.recipeDate, { color: '#A0A0A0', textAlign: 'right' }]}>
+                                    Times cooked: {cookCounts[item.name]}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
                           </View>
-                        </View>
-                      </Surface>
-                    </TouchableOpacity>
-                  </Animated.View>
-                );
-              }}
-              contentContainerStyle={styles.listContent}
-            />
-          </View>
-        </Animated.View>
+                        </Surface>
+                      </TouchableOpacity>
+                    </Animated.View>
+                  );
+                }}
+                contentContainerStyle={styles.listContent}
+              />
+            </View>
+          </Animated.View>
 
       </View>
 
