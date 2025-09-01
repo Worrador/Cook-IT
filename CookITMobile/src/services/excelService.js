@@ -269,10 +269,15 @@ class ExcelService {
       // Add worksheet to workbook
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Recipes');
 
-      // Write to file
-      const excelBuffer = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
+      // Create pinned recipes worksheet
+      const pinnedSheet = XLSX.utils.json_to_sheet(pinnedRecipes.map(name => ({ 'Recipe Name': name })));
+      XLSX.utils.book_append_sheet(workbook, pinnedSheet, 'Pinned Recipes');
 
-      await fileSystem.writeFile(this.localFilePath, excelBuffer);
+      // Write workbook directly to a base64 string
+      const excelBase64 = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
+
+      // Write file
+      await fileSystem.writeFile(this.localFilePath, excelBase64);
 
       // Update metadata
       const fileInfo = await fileSystem.getInfo(this.localFilePath);
@@ -306,22 +311,21 @@ class ExcelService {
       // Read file content
       const fileContent = await fileSystem.readFile(this.localFilePath);
 
-      // Convert base64 to buffer
-      const buffer = Buffer.from(fileContent, 'base64');
+      const workbook = XLSX.read(fileContent, { type: 'base64' });
 
-      // Parse Excel file
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      // Process recipes
+      const recipesSheet = workbook.Sheets['Recipes'];
+      const recipesData = XLSX.utils.sheet_to_json(recipesSheet);
 
-      // Convert to JSON
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      // Process pinned recipes
+      const pinnedSheet = workbook.Sheets['Pinned Recipes'];
+      const pinnedData = XLSX.utils.sheet_to_json(pinnedSheet);
 
-      // Process imported data
       const recipes = [];
       const lastCookedDates = {};
       const pinnedRecipes = [];
 
-      for (const row of jsonData) {
+      for (const row of recipesData) {
         if (row['Recipe Name']) {
           // Create recipe object
           const recipe = {
@@ -344,6 +348,12 @@ class ExcelService {
           if (row['Pinned'] === 'Yes') {
             pinnedRecipes.push(recipe.name);
           }
+        }
+      }
+
+      for (const row of pinnedData) {
+        if (row['Recipe Name']) {
+          pinnedRecipes.push(row['Recipe Name']);
         }
       }
 
@@ -483,12 +493,29 @@ class ExcelService {
       const localLastCookedDates = await getLastCookedDates();
       const localPinnedRecipes = await getPinnedRecipes();
 
-      // Merge recipes (keep all unique recipes)
+      // Create a mutable copy of local recipes to serve as the base for the merge.
       const mergedRecipes = [...localRecipes];
+      
+      // Process each recipe from the remote file.
       for (const remoteRecipe of remoteData.recipes) {
-        const exists = mergedRecipes.find(r => r.name === remoteRecipe.name);
-        if (!exists) {
+        const localRecipeIndex = mergedRecipes.findIndex(r => r.name === remoteRecipe.name);
+
+        if (localRecipeIndex === -1) {
+          // This is a brand new recipe from the Drive file. Add it to our list.
           mergedRecipes.push(remoteRecipe);
+          console.log(`Merge: Adding new recipe from Drive: '${remoteRecipe.name}'`);
+        } else {
+          // The recipe already exists. We must check which version is newer.
+          const localRecipe = mergedRecipes[localRecipeIndex];
+          
+          const localDate = new Date(localRecipe.createdAt || 0);
+          const remoteDate = new Date(remoteRecipe.createdAt || 0);
+
+          // If the remote recipe's date is more recent, replace the local one.
+          if (remoteDate > localDate) {
+            mergedRecipes[localRecipeIndex] = remoteRecipe;
+            console.log(`Merge: Updating recipe with newer version from Drive: '${remoteRecipe.name}'`);
+          }
         }
       }
 
@@ -496,7 +523,7 @@ class ExcelService {
       const mergedLastCookedDates = { ...localLastCookedDates };
       for (const [recipeName, cookedDate] of Object.entries(remoteData.lastCookedDates)) {
         const localDate = localLastCookedDates[recipeName];
-        if (!localDate || cookedDate > localDate) {
+        if (!localDate || new Date(cookedDate) > new Date(localDate)) {
           mergedLastCookedDates[recipeName] = cookedDate;
         }
       }

@@ -173,7 +173,7 @@ class SyncService {
   }
 
   // Core sync logic - pure function for unit testing
-  async performExcelSync(forcePush = false) {
+  async performExcelSync(forcePush = false, onProgress = () => {}) {
     if (this.isSyncing) {
       console.log('Sync already in progress');
       return { success: false, message: 'Sync already in progress' };
@@ -181,11 +181,13 @@ class SyncService {
 
     this.isSyncing = true;
     await this.setSyncInProgress(true);
+    onProgress(0.05, 'Starting sync...'); // Immediate feedback
 
     try {
       console.log('Starting Excel-based sync process...');
 
       // Load local data
+      onProgress(0.1, 'Loading local data...');
       const localRecipes = await this.storageProvider.loadRecipes();
       const localLastCookedDates = await this.storageProvider.getLastCookedDates();
       const localPinnedRecipes = await this.storageProvider.getPinnedRecipes();
@@ -193,14 +195,17 @@ class SyncService {
       console.log(`Found ${localRecipes.length} local recipes`);
 
       // Check for conflicts. If the remote is newer, we must merge.
+      onProgress(0.15, 'Checking for conflicts...');
       const conflictCheck = await this.excelProcessor.checkConflicts();
 
       if (conflictCheck.hasConflict) {
         console.log('Conflict detected: remote file is newer or sizes differ. Forcing merge.');
+        onProgress(0.2, 'Conflict detected, merging...');
         // Directly call the merge logic by resolving the conflict with 'merge' strategy.
         const resolutionResult = await this.excelProcessor.resolveConflict('merge');
         if (resolutionResult) {
           await this.setLastSyncTime();
+          onProgress(1, 'Merge complete!');
           return {
             success: true,
             hasChanges: true,
@@ -214,7 +219,7 @@ class SyncService {
       }
 
       // No conflict detected, proceed with normal sync (which may upload local changes if any)
-      return await this.performExcelMerge(localRecipes, localLastCookedDates, localPinnedRecipes, forcePush);
+      return await this.performExcelMerge(localRecipes, localLastCookedDates, localPinnedRecipes, forcePush, onProgress);
 
     } catch (error) {
       console.error('Excel sync error:', error);
@@ -278,7 +283,7 @@ class SyncService {
   }
 
   // Pure merge logic - core business logic for unit testing
-  async performExcelMerge(localRecipes, localLastCookedDates, localPinnedRecipes, forcePush) {
+  async performExcelMerge(localRecipes, localLastCookedDates, localPinnedRecipes, forcePush, onProgress = () => {}) {
     try {
       console.log('Performing Excel merge...');
 
@@ -302,11 +307,14 @@ class SyncService {
         const logMessage = forcePush ? 'Force push mode' : 'No remote file found';
         console.log(`${logMessage}: updating local Excel and uploading to Drive`);
         
+        onProgress(0.3, 'Preparing local data...');
         await this.excelProcessor.createLocalExcelFile();
+        onProgress(0.5, 'Uploading to Google Drive...');
         const uploadResult = await this.driveClient.upload(); // Simplified upload call
 
         if (uploadResult.success) {
           await this.setLastSyncTime();
+          onProgress(1, `${logMessage} completed successfully`);
           return {
             success: true,
             hasChanges: true,
@@ -332,9 +340,11 @@ class SyncService {
       try {
         // Try to download Excel from Drive
         console.log('Downloading Excel from Drive...');
+        onProgress(0.3, 'Downloading from Google Drive...');
         const downloadResult = await this.driveClient.download(); // Simplified download call
 
         if (downloadResult.success) {
+          onProgress(0.5, 'Processing downloaded file...');
           // Import the downloaded Excel data
           const importResult = await this.excelProcessor.importFromExcel();
 
@@ -353,6 +363,7 @@ class SyncService {
       }
 
       // Perform merge logic
+      onProgress(0.7, 'Merging local and remote data...');
       const mergeResult = await this.mergeExcelData(
         localRecipes,
         localLastCookedDates,
@@ -364,6 +375,7 @@ class SyncService {
 
       if (mergeResult.hasChanges) {
         console.log('Changes detected, updating Excel and syncing...');
+        onProgress(0.8, 'Saving merged data...');
 
         // Save merged data locally
         await this.storageProvider.saveRecipes(mergeResult.mergedRecipes);
@@ -378,6 +390,7 @@ class SyncService {
         await this.excelProcessor.createLocalExcelFile();
 
         // Upload updated Excel to Drive
+        onProgress(0.9, 'Uploading changes to Google Drive...');
         const uploadResult = await this.driveClient.upload(); // Simplified upload call
 
         if (!uploadResult.success) {
@@ -389,6 +402,7 @@ class SyncService {
         console.log('No changes detected in Excel sync');
       }
 
+      onProgress(1, 'Sync complete!');
       await this.setLastSyncTime();
 
       return {
@@ -517,10 +531,12 @@ class SyncService {
     };
   }
 
-  // Legacy method - now redirects to Excel sync
-  async performSync(forcePush = false) {
+  /**
+   * Perform sync with Google Drive
+   */
+  async performSync(forcePush = false, onProgress = () => {}) {
     console.log('Legacy performSync called, redirecting to Excel sync...');
-    return await this.performExcelSync(forcePush);
+    return this.performExcelSync(forcePush, onProgress);
   }
 
   // Legacy method - now redirects to Excel merge

@@ -104,6 +104,7 @@ const AppContent = () => {
   const [syncStatus, setSyncStatus] = useState({ isAuthenticated: false, lastSync: null, inProgress: false });
   const [showSyncInfo, setShowSyncInfo] = useState(false);
   const [syncProgress, setSyncProgress] = useState(0); // Track actual sync progress (0-100)
+  const [syncMessage, setSyncMessage] = useState(''); // Track sync status message
 
   // Empty recipe book dialog states
   const [showEmptyRecipeBookDialog, setShowEmptyRecipeBookDialog] = useState(false);
@@ -170,6 +171,15 @@ const AppContent = () => {
       setSyncProgress(0); // Reset progress when sync stops
     }
   }, [syncStatus.inProgress]);
+
+  // Animate progress bar fill
+  useEffect(() => {
+    Animated.timing(progressBarFill, {
+      toValue: syncProgress,
+      duration: 300, // Smooth transition
+      useNativeDriver: false, // width is not supported by native driver
+    }).start();
+  }, [syncProgress]);
 
   useEffect(() => {
     // Hide status bar when component mounts
@@ -466,7 +476,13 @@ const AppContent = () => {
   const handleManualSync = async () => {
     try {
       setSyncStatus(prev => ({ ...prev, inProgress: true }));
-      setSyncProgress(0); // Reset progress - keep empty until connection confirmed
+      setSyncProgress(0);
+      setSyncMessage('Starting sync...');
+
+      const onProgress = (progress, message) => {
+        setSyncProgress(progress * 100);
+        setSyncMessage(message);
+      };
 
       // Check if we're authenticated first
       const status = await syncService.checkSyncStatus();
@@ -474,38 +490,18 @@ const AppContent = () => {
       if (!status.isAuthenticated) {
         // Not authenticated - start authentication process
         console.log('Starting Google Drive authentication...');
-
-        // Initialize sync service (which will handle authentication)
+        onProgress(0.1, 'Authenticating...');
         const initResult = await syncService.initializeSync();
 
         if (initResult.success) {
           // Authentication successful, now sync
-          const syncResult = await syncService.performSync();
+          onProgress(0.4, 'Syncing data...');
+          const syncResult = await syncService.performSync(false, onProgress);
 
           if (syncResult.success) {
-            // Gradually fill to 90% over 2 seconds
-            const fillDuration = 2000; // 2 seconds
-            const startTime = Date.now();
-
-            const progressInterval = setInterval(() => {
-              const elapsed = Date.now() - startTime;
-              const progress = Math.min((elapsed / fillDuration) * 90, 90);
-              setSyncProgress(progress);
-
-              if (progress >= 90) {
-                clearInterval(progressInterval);
-              }
-            }, 50); // Update every 50ms for smooth animation
-
-            // Complete to 100% after a short delay
-            setTimeout(() => {
-              setSyncProgress(100);
-              clearInterval(progressInterval);
-            }, fillDuration + 500);
-
+            onProgress(1, 'Sync complete');
             showCustomAlert('Authentication & Sync Complete', 'Successfully connected to Google Drive and synced your recipes!', 'success');
             if (syncResult.hasChanges) {
-              // Reload data after successful sync with changes
               await loadInitialData();
             }
           } else {
@@ -514,11 +510,9 @@ const AppContent = () => {
         } else {
           // Authentication failed
           const errorMessage = initResult.message || 'Authentication failed - please try again';
-          
-          // Check if it's a DEVELOPER_ERROR and provide more helpful guidance
           if (errorMessage.includes('not properly configured')) {
             showCustomAlert(
-              'Setup Required', 
+              'Setup Required',
               'Google Drive sync needs to be configured. Please check the GOOGLE_OAUTH_SETUP.md file for setup instructions. You can still use the app without sync for now.',
               'warning'
             );
@@ -529,42 +523,19 @@ const AppContent = () => {
       } else {
         // Already authenticated - just sync
         console.log('Already authenticated, performing sync...');
-        const syncResult = await syncService.performSync();
+        const syncResult = await syncService.performSync(false, onProgress);
 
         if (syncResult.success) {
-          // Gradually fill to 90% over 2 seconds
-          const fillDuration = 2000; // 2 seconds
-          const startTime = Date.now();
-
-          const progressInterval = setInterval(() => {
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min((elapsed / fillDuration) * 90, 90);
-            setSyncProgress(progress);
-
-            if (progress >= 90) {
-              clearInterval(progressInterval);
-            }
-          }, 50); // Update every 50ms for smooth animation
-
-          // Complete to 100% after a short delay
-          setTimeout(() => {
-            setSyncProgress(100);
-            clearInterval(progressInterval);
-          }, fillDuration + 500);
-
+          onProgress(1, 'Sync complete');
           showCustomAlert('Sync Complete', syncResult.message || 'Sync completed successfully', 'success');
           if (syncResult.hasChanges) {
-            // Reload data after successful sync with changes
             await loadInitialData();
           }
         } else {
-          // If sync failed, keep progress at 0 (empty vibrating bar)
           const errorMessage = syncResult.message || 'Sync failed - please try again';
-          
-          // Check if it's a DEVELOPER_ERROR and provide more helpful guidance
           if (errorMessage.includes('not properly configured')) {
             showCustomAlert(
-              'Setup Required', 
+              'Setup Required',
               'Google Drive sync needs to be configured. Please check the GOOGLE_OAUTH_SETUP.md file for setup instructions. You can still use the app without sync for now.',
               'warning'
             );
@@ -1235,14 +1206,17 @@ const AppContent = () => {
                   </View>
                   <View style={styles.syncProgressContent}>
                     <Text style={[styles.syncProgressText, { color: '#1976D2' }]}>
-                      Syncing recipes with Google Drive...
+                      {syncMessage || 'Syncing recipes with Google Drive...'}
                     </Text>
                     <View style={styles.syncProgressBar}>
                       <Animated.View style={[
                         styles.syncProgressFill,
                         {
                           backgroundColor: '#1976D2',
-                          width: `${syncProgress}%`,
+                          width: progressBarFill.interpolate({
+                            inputRange: [0, 100],
+                            outputRange: ['0%', '100%']
+                          }),
                           opacity: progressBarPulse.interpolate({
                             inputRange: [0, 1],
                             outputRange: [0.6, 1],
