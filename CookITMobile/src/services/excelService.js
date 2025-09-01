@@ -261,6 +261,10 @@ class ExcelService {
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.json_to_sheet(excelData);
 
+      // Hide the 'Pinned' column (it's the 6th column, index 5)
+      if (!worksheet['!cols']) worksheet['!cols'] = [];
+      worksheet['!cols'][5] = { hidden: true };
+
       // Add worksheet to workbook
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Recipes');
 
@@ -525,8 +529,8 @@ class ExcelService {
       'Recipe Name': recipe.name,
       'URL': recipe.url || '',
       'Comment': recipe.comment || '',
-      'Created Date': recipe.createdAt ? new Date(recipe.createdAt).toISOString() : '',
-      'Last Cooked Date': lastCookedDates[recipe.name] ? new Date(lastCookedDates[recipe.name]).toISOString() : '',
+      'Created Date': recipe.createdAt ? new Date(recipe.createdAt).toISOString().split('T')[0] : '',
+      'Last Cooked Date': lastCookedDates[recipe.name] ? new Date(lastCookedDates[recipe.name]).toISOString().split('T')[0] : '',
       'Pinned': pinnedRecipes.includes(recipe.name) ? 'Yes' : 'No'
     }));
   }

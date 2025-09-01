@@ -1,5 +1,6 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Buffer } from 'buffer'; // Import Buffer
 
 const SCOPES = [
   'openid',
@@ -228,30 +229,54 @@ class GoogleDriveService {
 
   async createFile(fileName, content) {
     try {
+      // Step 1: Initiate a resumable upload session
       const metadata = {
         name: fileName,
         mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         parents: ['root']
       };
 
-      const response = await this.makeAuthenticatedRequest(
-        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+      const initResponse = await this.makeAuthenticatedRequest(
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
         {
           method: 'POST',
           headers: {
-            'Content-Type': 'multipart/related; boundary=foo_bar_baz',
+            'Content-Type': 'application/json; charset=UTF-8',
           },
-          body: this.createMultipartBody(metadata, content),
+          body: JSON.stringify(metadata),
         }
       );
 
-      if (!response.ok) {
-        throw new Error(`Failed to create file: ${response.statusText}`);
+      if (!initResponse.ok) {
+        throw new Error(`Failed to initiate resumable upload: ${initResponse.statusText}`);
       }
 
-      const result = await response.json();
+      const location = initResponse.headers.get('Location');
+      if (!location) {
+        throw new Error('Failed to get resumable upload URL');
+      }
+
+      // Step 2: Upload the file content to the session URL
+      const buffer = Buffer.from(content, 'base64');
+      const uploadResponse = await this.makeAuthenticatedRequest(
+        location,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          },
+          body: buffer,
+        }
+      );
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Failed to upload file: ${uploadResponse.statusText}`);
+      }
+
+      const result = await uploadResponse.json();
       await this.setDriveFileId(result.id);
       return result.id;
+
     } catch (error) {
       console.error('Error creating file:', error);
       throw error;
@@ -260,23 +285,46 @@ class GoogleDriveService {
 
   async updateFile(fileId, content) {
     try {
-      const response = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+      // For updates, we can use a simpler resumable upload, starting with a PATCH to the file's upload URL
+      const initResponse = await this.makeAuthenticatedRequest(
+        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=resumable`,
         {
           method: 'PATCH',
+          // No body needed for initiation, just headers
           headers: {
-            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'Content-Transfer-Encoding': 'base64',
-          },
-          body: content,
+             'Content-Type': 'application/json; charset=UTF-8',
+          }
         }
       );
 
-      if (!response.ok) {
-        throw new Error(`Failed to update file: ${response.statusText}`);
+      if (!initResponse.ok) {
+        throw new Error(`Failed to initiate resumable update: ${initResponse.statusText}`);
       }
 
-      return await response.json();
+      const location = initResponse.headers.get('Location');
+      if (!location) {
+        throw new Error('Failed to get resumable update URL');
+      }
+
+      // Step 2: Upload the new file content
+      const buffer = Buffer.from(content, 'base64');
+      const uploadResponse = await this.makeAuthenticatedRequest(
+        location,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          },
+          body: buffer,
+        }
+      );
+
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Failed to update file: ${uploadResponse.statusText}`);
+      }
+
+      return await uploadResponse.json();
     } catch (error) {
       console.error('Error updating file:', error);
       throw error;
@@ -349,24 +397,6 @@ class GoogleDriveService {
       console.error('Error deleting file:', error);
       throw error;
     }
-  }
-
-  createMultipartBody(metadata, content) {
-    const boundary = 'foo_bar_baz';
-    const delimiter = '\r\n--' + boundary + '\r\n';
-    const close_delim = '\r\n--' + boundary + '--';
-
-    const multipartRequestBody =
-      delimiter +
-      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-      JSON.stringify(metadata) +
-      delimiter +
-      'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n' +
-      'Content-Transfer-Encoding: base64\r\n\r\n' +
-      content +
-      close_delim;
-
-    return multipartRequestBody;
   }
 
   async signOut() {

@@ -269,18 +269,33 @@ class SyncService {
     try {
       console.log('Performing Excel merge...');
 
-      if (forcePush) {
-        // Force push: update local Excel and upload to Drive
-        console.log('Force push mode: updating local Excel and uploading to Drive');
+      // First, check if a file exists on Drive
+      const driveFileId = await this.driveClient.googleDriveService.getDriveFileId();
+      let remoteFileExists = !!driveFileId;
+
+      if (driveFileId) {
+        // As an extra check, verify the file info
+        const fileInfo = await this.driveClient.getFileInfo(driveFileId);
+        if (!fileInfo || fileInfo.trashed) {
+          remoteFileExists = false;
+          console.log('Drive file is trashed or inaccessible, treating as non-existent.');
+        }
+      }
+
+      if (forcePush || !remoteFileExists) {
+        // If forcing, or if no remote file, just create and upload.
+        const logMessage = forcePush ? 'Force push mode' : 'No remote file found';
+        console.log(`${logMessage}: updating local Excel and uploading to Drive`);
+        
         await this.excelProcessor.createLocalExcelFile();
-        const uploadResult = await this.driveClient.upload(this.excelProcessor.getLocalFilePath());
+        const uploadResult = await this.driveClient.upload(); // Simplified upload call
 
         if (uploadResult.success) {
           await this.setLastSyncTime();
           return {
             success: true,
             hasChanges: true,
-            message: 'Force push completed successfully',
+            message: `${logMessage} completed successfully`,
             data: {
               recipes: localRecipes,
               lastCookedDates: localLastCookedDates,
@@ -288,7 +303,7 @@ class SyncService {
             }
           };
         } else {
-          throw new Error('Force push upload failed');
+          throw new Error('Upload failed during force push or initial creation');
         }
       }
 
@@ -302,13 +317,13 @@ class SyncService {
       try {
         // Try to download Excel from Drive
         console.log('Downloading Excel from Drive...');
-        const downloadResult = await this.driveClient.download(this.excelProcessor.getRemoteFilePath());
+        const downloadResult = await this.driveClient.download(); // Simplified download call
 
         if (downloadResult.success) {
           // Import the downloaded Excel data
-          const importResult = await this.excelProcessor.importFromExcel(downloadResult.filePath);
+          const importResult = await this.excelProcessor.importFromExcel();
 
-          if (importResult.success) {
+          if (importResult) {
             driveData = {
               recipes: importResult.recipes,
               lastCookedDates: importResult.lastCookedDates,
@@ -348,7 +363,7 @@ class SyncService {
         await this.excelProcessor.createLocalExcelFile();
 
         // Upload updated Excel to Drive
-        const uploadResult = await this.driveClient.upload(this.excelProcessor.getLocalFilePath());
+        const uploadResult = await this.driveClient.upload(); // Simplified upload call
 
         if (!uploadResult.success) {
           throw new Error('Failed to upload merged Excel to Drive');
@@ -572,13 +587,13 @@ class SyncService {
       }
 
       // Download Excel from Drive
-      const downloadResult = await this.driveClient.download(this.excelProcessor.getRemoteFilePath());
+      const downloadResult = await this.driveClient.download();
 
       if (downloadResult.success) {
         // Import the downloaded Excel data
-        const importResult = await this.excelProcessor.importFromExcel(downloadResult.filePath);
+        const importResult = await this.excelProcessor.importFromExcel();
 
-        if (importResult.success) {
+        if (importResult) {
           await this.setLastSyncTime();
 
           return {
@@ -631,7 +646,7 @@ class SyncService {
 
       const result = await this.excelProcessor.importFromExcel();
 
-      if (result && result.success) {
+      if (result) {
         return {
           success: true,
           message: `Imported ${result.recipes?.length || 0} recipes from Excel`,
@@ -729,7 +744,7 @@ class DriveClientAdapter {
     this.excelService = excelService;
   }
 
-  async upload(filePath) {
+  async upload() {
     try {
       // Use the excelService uploadToDrive method which I fixed earlier
       if (!this.excelService || typeof this.excelService.uploadToDrive !== 'function') {
@@ -754,7 +769,7 @@ class DriveClientAdapter {
     return this.googleDriveService.authenticate();
   }
 
-  async download(remoteFilePath) {
+  async download() {
     try {
       if (!this.googleDriveService) {
         throw new Error('Google Drive service not initialized');
@@ -763,8 +778,9 @@ class DriveClientAdapter {
       if (!fileId) {
         return { success: false, error: 'No file ID found' };
       }
-      const content = await this.googleDriveService.downloadFile(fileId);
-      return { success: true, filePath: remoteFilePath, content };
+      await this.googleDriveService.downloadFile(fileId);
+      // The content is now in the local file, ready for importFromExcel
+      return { success: true };
     } catch (error) {
       console.error('DriveClientAdapter download error:', error);
       return { success: false, error: error.message };
@@ -914,11 +930,11 @@ class ExcelProcessorAdapter {
     return this.excelService.createLocalExcelFile();
   }
 
-  async importFromExcel(filePath) {
+  async importFromExcel() {
     if (!this.excelService || typeof this.excelService.importFromExcel !== 'function') {
       throw new Error('Excel service importFromExcel method not available');
     }
-    return this.excelService.importFromExcel(filePath);
+    return this.excelService.importFromExcel();
   }
 
   getLocalFilePath() {
