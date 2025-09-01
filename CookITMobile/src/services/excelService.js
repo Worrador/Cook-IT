@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Buffer } from 'buffer'; // Import Buffer
 import googleDriveService from './googleDriveService';
 import { loadRecipes, saveRecipes, getPinnedRecipes } from '../utils/storage';
 import { getLastCookedDates, setLastCookedDates } from '../utils/storage';
@@ -384,18 +385,21 @@ class ExcelService {
       }
 
       const remoteFileInfo = await googleDriveService.getFileInfo(fileId);
-      if (!remoteFileInfo) {
+      if (!remoteFileInfo || remoteFileInfo.trashed) {
         return { hasConflict: false };
       }
 
-      // Compare modification times and sizes
+      // Compare modification times and sizes with a tolerance
       const localModified = new Date(localFileInfo.modificationTime * 1000);
       const remoteModified = new Date(remoteFileInfo.modifiedTime);
-
-      const hasConflict = localModified.getTime() !== remoteModified.getTime() ||
+      const timeDifference = Math.abs(remoteModified.getTime() - localModified.getTime());
+      
+      // Consider it a conflict if the remote file is more than 5 seconds newer, OR if sizes differ.
+      const hasConflict = (remoteModified > localModified && timeDifference > 5000) ||
                          localFileInfo.size !== parseInt(remoteFileInfo.size);
 
       if (hasConflict) {
+        console.log(`Conflict detected. Remote is newer: ${remoteModified > localModified}, Time diff: ${timeDifference}ms, Size diff: ${localFileInfo.size !== parseInt(remoteFileInfo.size)}`);
         // Store conflict data
         this.conflictData = {
           local: {

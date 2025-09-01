@@ -227,6 +227,11 @@ class GoogleDriveService {
     await AsyncStorage.setItem(DRIVE_FILE_ID_KEY, fileId);
   }
 
+  async clearDriveFileId() {
+    this.driveFileId = null;
+    await AsyncStorage.removeItem(DRIVE_FILE_ID_KEY);
+  }
+
   async createFile(fileName, content) {
     try {
       // Step 1: Initiate a resumable upload session

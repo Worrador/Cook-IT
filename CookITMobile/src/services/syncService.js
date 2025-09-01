@@ -192,15 +192,28 @@ class SyncService {
 
       console.log(`Found ${localRecipes.length} local recipes`);
 
-      // Check for conflicts
+      // Check for conflicts. If the remote is newer, we must merge.
       const conflictCheck = await this.excelProcessor.checkConflicts();
 
-      if (conflictCheck.hasConflicts) {
-        console.log('Excel conflicts detected, resolving...');
-        return await this.handleExcelConflicts(conflictCheck, forcePush);
+      if (conflictCheck.hasConflict) {
+        console.log('Conflict detected: remote file is newer or sizes differ. Forcing merge.');
+        // Directly call the merge logic by resolving the conflict with 'merge' strategy.
+        const resolutionResult = await this.excelProcessor.resolveConflict('merge');
+        if (resolutionResult) {
+          await this.setLastSyncTime();
+          return {
+            success: true,
+            hasChanges: true,
+            message: 'Online changes detected and merged successfully.',
+            conflictResolved: true,
+            resolutionStrategy: 'merge'
+          };
+        } else {
+           throw new Error('Automatic conflict resolution via merge failed.');
+        }
       }
 
-      // No conflicts, proceed with normal sync
+      // No conflict detected, proceed with normal sync (which may upload local changes if any)
       return await this.performExcelMerge(localRecipes, localLastCookedDates, localPinnedRecipes, forcePush);
 
     } catch (error) {
@@ -279,6 +292,8 @@ class SyncService {
         if (!fileInfo || fileInfo.trashed) {
           remoteFileExists = false;
           console.log('Drive file is trashed or inaccessible, treating as non-existent.');
+          // Clear the stale file ID
+          await this.driveClient.googleDriveService.clearDriveFileId();
         }
       }
 
