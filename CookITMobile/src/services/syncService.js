@@ -157,7 +157,9 @@ class SyncService {
   handleAuthError(authError) {
     let userMessage = 'Failed to connect to Drive. ';
 
-    if (authError.message?.includes('browser')) {
+    if (authError.code === 'DEVELOPER_ERROR') {
+      userMessage = 'Google Sign-In is not properly configured. This is a development setup issue. Please check the console for details.';
+    } else if (authError.message?.includes('browser')) {
       userMessage += 'Unable to open web browser for authentication. This may happen in certain environments. Please try again later.';
     } else if (authError.message?.includes('network')) {
       userMessage += 'Network error. Please check your internet connection and try again.';
@@ -730,10 +732,79 @@ class DriveClientAdapter {
   async upload(filePath) {
     try {
       // Use the excelService uploadToDrive method which I fixed earlier
+      if (!this.excelService || typeof this.excelService.uploadToDrive !== 'function') {
+        throw new Error('Excel service not properly initialized');
+      }
       const result = await this.excelService.uploadToDrive();
       return { success: result }; // Convert boolean to object with success property
     } catch (error) {
+      console.error('DriveClientAdapter upload error:', error);
       return { success: false, error: error.message };
+    }
+  }
+
+  isAuthenticated() {
+    return this.googleDriveService && this.googleDriveService.isAuthenticated();
+  }
+
+  async authenticate() {
+    if (!this.googleDriveService) {
+      throw new Error('Google Drive service not initialized');
+    }
+    return this.googleDriveService.authenticate();
+  }
+
+  async download(remoteFilePath) {
+    try {
+      if (!this.googleDriveService) {
+        throw new Error('Google Drive service not initialized');
+      }
+      const fileId = await this.googleDriveService.getDriveFileId();
+      if (!fileId) {
+        return { success: false, error: 'No file ID found' };
+      }
+      const content = await this.googleDriveService.downloadFile(fileId);
+      return { success: true, filePath: remoteFilePath, content };
+    } catch (error) {
+      console.error('DriveClientAdapter download error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async listFiles() {
+    try {
+      if (!this.googleDriveService) {
+        throw new Error('Google Drive service not initialized');
+      }
+      // For now, return empty array since we only work with one file
+      return [];
+    } catch (error) {
+      console.error('DriveClientAdapter listFiles error:', error);
+      return [];
+    }
+  }
+
+  async deleteFile(fileId) {
+    try {
+      if (!this.googleDriveService) {
+        throw new Error('Google Drive service not initialized');
+      }
+      return await this.googleDriveService.deleteFile(fileId);
+    } catch (error) {
+      console.error('DriveClientAdapter deleteFile error:', error);
+      return false;
+    }
+  }
+
+  async getFileInfo(fileId) {
+    try {
+      if (!this.googleDriveService) {
+        throw new Error('Google Drive service not initialized');
+      }
+      return await this.googleDriveService.getFileInfo(fileId);
+    } catch (error) {
+      console.error('DriveClientAdapter getFileInfo error:', error);
+      return null;
     }
   }
 }
@@ -753,6 +824,67 @@ class StorageProviderAdapter {
     const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
     return AsyncStorage.removeItem(key);
   }
+
+  // Recipe storage methods
+  async loadRecipes() {
+    try {
+      const recipesJson = await this.getItem('@cookit_recipes');
+      return recipesJson ? JSON.parse(recipesJson) : [];
+    } catch (error) {
+      console.error('Error loading recipes:', error);
+      return [];
+    }
+  }
+
+  async saveRecipes(recipes) {
+    try {
+      await this.setItem('@cookit_recipes', JSON.stringify(recipes));
+      return true;
+    } catch (error) {
+      console.error('Error saving recipes:', error);
+      return false;
+    }
+  }
+
+  async getLastCookedDates() {
+    try {
+      const datesJson = await this.getItem('@cookit_last_cooked_dates');
+      return datesJson ? JSON.parse(datesJson) : {};
+    } catch (error) {
+      console.error('Error loading last cooked dates:', error);
+      return {};
+    }
+  }
+
+  async setLastCookedDates(dates) {
+    try {
+      await this.setItem('@cookit_last_cooked_dates', JSON.stringify(dates));
+      return true;
+    } catch (error) {
+      console.error('Error saving last cooked dates:', error);
+      return false;
+    }
+  }
+
+  async getPinnedRecipes() {
+    try {
+      const pinnedJson = await this.getItem('@cookit_pinned_recipes');
+      return pinnedJson ? JSON.parse(pinnedJson) : [];
+    } catch (error) {
+      console.error('Error loading pinned recipes:', error);
+      return [];
+    }
+  }
+
+  async setPinnedRecipes(recipes) {
+    try {
+      await this.setItem('@cookit_pinned_recipes', JSON.stringify(recipes));
+      return true;
+    } catch (error) {
+      console.error('Error saving pinned recipes:', error);
+      return false;
+    }
+  }
 }
 
 class ExcelProcessorAdapter {
@@ -761,31 +893,79 @@ class ExcelProcessorAdapter {
   }
 
   async initialize() {
+    if (!this.excelService || typeof this.excelService.initialize !== 'function') {
+      console.error('Excel service not properly initialized');
+      return false;
+    }
     return this.excelService.initialize();
   }
 
   async createLocalExcelFile() {
+    if (!this.excelService || typeof this.excelService.createLocalExcelFile !== 'function') {
+      throw new Error('Excel service createLocalExcelFile method not available');
+    }
     return this.excelService.createLocalExcelFile();
   }
 
   async updateWithLocalData() {
+    if (!this.excelService || typeof this.excelService.createLocalExcelFile !== 'function') {
+      throw new Error('Excel service createLocalExcelFile method not available');
+    }
     return this.excelService.createLocalExcelFile();
   }
 
+  async importFromExcel(filePath) {
+    if (!this.excelService || typeof this.excelService.importFromExcel !== 'function') {
+      throw new Error('Excel service importFromExcel method not available');
+    }
+    return this.excelService.importFromExcel(filePath);
+  }
+
   getLocalFilePath() {
+    if (!this.excelService) {
+      throw new Error('Excel service not initialized');
+    }
     return this.excelService.localFilePath;
   }
 
+  getRemoteFilePath() {
+    // Return a default path for remote file
+    return 'CookIT_Recipes.xlsx';
+  }
+
   async resolveConflict(strategy) {
+    if (!this.excelService || typeof this.excelService.resolveConflict !== 'function') {
+      throw new Error('Excel service resolveConflict method not available');
+    }
     return this.excelService.resolveConflict(strategy);
   }
 
   getConflictResolutionOptions() {
+    if (!this.excelService || typeof this.excelService.getConflictResolutionOptions !== 'function') {
+      return ['merge', 'local', 'remote'];
+    }
     return this.excelService.getConflictResolutionOptions();
   }
 
   async importFromExcel() {
+    if (!this.excelService || typeof this.excelService.importFromExcel !== 'function') {
+      throw new Error('Excel service importFromExcel method not available');
+    }
     return this.excelService.importFromExcel();
+  }
+
+  async checkConflicts() {
+    if (!this.excelService || typeof this.excelService.checkConflicts !== 'function') {
+      return { hasConflicts: false, message: 'Conflict checking not available' };
+    }
+    return this.excelService.checkConflicts();
+  }
+
+  async getLocalFileInfo() {
+    if (!this.excelService || typeof this.excelService.getLocalFileInfo !== 'function') {
+      return null;
+    }
+    return this.excelService.getLocalFileInfo();
   }
 }
 
@@ -796,12 +976,16 @@ const createConfiguredSyncService = async () => {
   if (configuredSyncService) return configuredSyncService;
 
   try {
-    // Import the services
+    // Import the services (they are already instances)
     const googleDriveServiceModule = await import('./googleDriveService');
     const excelServiceModule = await import('./excelService');
 
     const googleDriveService = googleDriveServiceModule.default;
     const excelService = excelServiceModule.default;
+
+    // Initialize the services first
+    await googleDriveService.initialize();
+    await excelService.initialize();
 
     // Create adapters
     const storageProvider = new StorageProviderAdapter();
@@ -826,11 +1010,35 @@ const createConfiguredSyncService = async () => {
 export default new Proxy({}, {
   get(target, prop) {
     return async function(...args) {
-      const service = await createConfiguredSyncService();
-      if (service && typeof service[prop] === 'function') {
+      try {
+        const service = await createConfiguredSyncService();
+        if (!service) {
+          throw new Error('Sync service failed to initialize');
+        }
+
+        if (typeof service[prop] !== 'function') {
+          throw new Error(`Method ${prop} is not available on sync service`);
+        }
+
         return service[prop](...args);
-      } else {
-        throw new Error(`Method ${prop} not available on sync service`);
+      } catch (error) {
+        console.error(`Error calling sync service method ${prop}:`, error);
+        // Return a consistent error response for UI handling
+        if (prop === 'checkSyncStatus') {
+          return {
+            isAuthenticated: false,
+            lastSync: null,
+            inProgress: false,
+            syncMode: 'excel'
+          };
+        }
+        if (prop === 'initializeSync' || prop === 'performSync') {
+          return {
+            success: false,
+            message: `Sync service error: ${error.message}`
+          };
+        }
+        throw error;
       }
     };
   }

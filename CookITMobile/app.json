@@ -30,7 +30,15 @@
       "favicon": "./assets/ChefHatColored.png"
     },
     "scheme": "cook-it-mobile",
-    "plugins": [],
+    "plugins": [
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.worrador.cookitmobile",
+          "androidPackageName": "com.worrador.cookitmobile"
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "7c196cfa-6a72-4f0b-9cc7-a9aa007d9009"

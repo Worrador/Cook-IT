@@ -415,6 +415,13 @@ class ExcelService {
   }
 
   /**
+   * Get available conflict resolution options
+   */
+  getConflictResolutionOptions() {
+    return ['local', 'remote', 'merge'];
+  }
+
+  /**
    * Resolve conflict by choosing local or remote version
    */
   async resolveConflict(strategy) {

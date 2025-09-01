@@ -109,6 +109,7 @@ const AppContent = () => {
   const [showEmptyRecipeBookDialog, setShowEmptyRecipeBookDialog] = useState(false);
   const [isAddingSampleRecipes, setIsAddingSampleRecipes] = useState(false);
   const [tutorialCount, setTutorialCountState] = useState(0);
+  const [hasShownSyncDialog, setHasShownSyncDialog] = useState(false);
 
   // Custom alert states
   const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', type: 'info' });
@@ -215,8 +216,45 @@ const AppContent = () => {
   }, []);
 
   useEffect(() => {
-    setIsAnyDialogOpen(showAddModal || showRecipeDetails || showHelp || showBuyCoffee || showEmptyRecipeBookDialog || customAlert.visible);
-  }, [showAddModal, showRecipeDetails, showHelp, showBuyCoffee, showEmptyRecipeBookDialog, customAlert.visible]);
+    setIsAnyDialogOpen(showAddModal || showRecipeDetails || showHelp || showBuyCoffee || showEmptyRecipeBookDialog || customAlert.visible || showSyncInfo);
+  }, [showAddModal, showRecipeDetails, showHelp, showBuyCoffee, showEmptyRecipeBookDialog, customAlert.visible, showSyncInfo]);
+
+  // Show sync info dialog when not authenticated and no other dialogs are open
+  useEffect(() => {
+    // Reset the flag when user becomes authenticated
+    if (syncStatus.isAuthenticated) {
+      setHasShownSyncDialog(false);
+    }
+
+    const shouldShowSyncDialog = !syncStatus.isAuthenticated && 
+                                !syncStatus.inProgress && 
+                                !isLoading && 
+                                !showAddModal && 
+                                !showRecipeDetails && 
+                                !showHelp && 
+                                !showBuyCoffee && 
+                                !showEmptyRecipeBookDialog && 
+                                !customAlert.visible &&
+                                !showSyncInfo &&
+                                !hasShownSyncDialog;
+
+    if (shouldShowSyncDialog) {
+      setShowSyncInfo(true);
+      setHasShownSyncDialog(true);
+    }
+  }, [
+    syncStatus.isAuthenticated, 
+    syncStatus.inProgress, 
+    isLoading, 
+    showAddModal, 
+    showRecipeDetails, 
+    showHelp, 
+    showBuyCoffee, 
+    showEmptyRecipeBookDialog, 
+    customAlert.visible,
+    showSyncInfo,
+    hasShownSyncDialog
+  ]);
 
   // Set initial border state for pinned recipes
   useEffect(() => {
@@ -335,6 +373,10 @@ const AppContent = () => {
         setShowEmptyRecipeBookDialog(false);
         return true;
       }
+      if (showSyncInfo) {
+        setShowSyncInfo(false);
+        return true;
+      }
       // If no modals are open, return false to allow default behavior (e.g., exit app)
       return false;
     };
@@ -346,7 +388,7 @@ const AppContent = () => {
 
     // Cleanup the event listener when the component unmounts
     return () => backHandler.remove();
-  }, [showBuyCoffee, showHelp, showRecipeDetails, showAddModal, showEmptyRecipeBookDialog]); // Dependencies array
+  }, [showBuyCoffee, showHelp, showRecipeDetails, showAddModal, showEmptyRecipeBookDialog, showSyncInfo]); // Dependencies array
 
   const loadInitialData = async () => {
     try {
@@ -389,67 +431,16 @@ const AppContent = () => {
         setShowEmptyRecipeBookDialog(true);
       }
 
-      // Initialize Google Drive sync
-      await initializeSync();
+      // Check sync status without initializing authentication
+      const status = await syncService.checkSyncStatus();
+      setSyncStatus(status);
     } catch (error) {
       console.error('Error loading initial data:', error);
       setIsLoading(false);
     }
   };
 
-  const initializeSync = async () => {
-    try {
-      console.log('Initializing Google Drive sync...');
-      setSyncStatus(prev => ({ ...prev, inProgress: true }));
-      setSyncProgress(0); // Reset progress - keep empty until connection confirmed
 
-      const syncResult = await syncService.initializeSync();
-
-      // Only start filling progress after we know we can connect
-      if (syncResult.success) {
-        // Gradually fill to 90% over 1.5 seconds (faster for initialization)
-        const fillDuration = 1500; // 1.5 seconds
-        const startTime = Date.now();
-
-        const progressInterval = setInterval(() => {
-          const elapsed = Date.now() - startTime;
-          const progress = Math.min((elapsed / fillDuration) * 90, 90);
-          setSyncProgress(progress);
-
-          if (progress >= 90) {
-            clearInterval(progressInterval);
-          }
-        }, 50); // Update every 50ms for smooth animation
-
-        // Complete to 100% after a short delay
-        setTimeout(() => {
-          setSyncProgress(100);
-          clearInterval(progressInterval);
-        }, fillDuration + 300);
-      }
-
-      if (syncResult.success && syncResult.hasChanges) {
-        console.log('Sync completed with changes, reloading data...');
-        // Reload data after successful sync with changes
-        const [loadedRecipes, loadedCookedRecipes, loadedPinnedRecipes] = await Promise.all([
-          loadRecipes(),
-          getCookedRecipes(),
-          getPinnedRecipes(),
-        ]);
-
-        setRecipes(loadedRecipes);
-        setCookedRecipes(loadedCookedRecipes);
-        setPinnedRecipes(loadedPinnedRecipes);
-      }
-
-      // Update sync status
-      const status = await syncService.checkSyncStatus();
-      setSyncStatus(status);
-    } catch (error) {
-      console.error('Error initializing sync:', error);
-      setSyncStatus(prev => ({ ...prev, inProgress: false }));
-    }
-  };
 
   const handleSyncCheck = async () => {
     try {
@@ -518,11 +509,22 @@ const AppContent = () => {
               await loadInitialData();
             }
           } else {
-            showCustomAlert('Sync Failed', syncResult.message, 'error');
+            showCustomAlert('Sync Failed', syncResult.message || 'Unknown sync error', 'error');
           }
         } else {
           // Authentication failed
-          showCustomAlert('Authentication Failed', initResult.message, 'error');
+          const errorMessage = initResult.message || 'Authentication failed - please try again';
+          
+          // Check if it's a DEVELOPER_ERROR and provide more helpful guidance
+          if (errorMessage.includes('not properly configured')) {
+            showCustomAlert(
+              'Setup Required', 
+              'Google Drive sync needs to be configured. Please check the GOOGLE_OAUTH_SETUP.md file for setup instructions. You can still use the app without sync for now.',
+              'warning'
+            );
+          } else {
+            showCustomAlert('Authentication Failed', errorMessage, 'error');
+          }
         }
       } else {
         // Already authenticated - just sync
@@ -550,14 +552,25 @@ const AppContent = () => {
             clearInterval(progressInterval);
           }, fillDuration + 500);
 
-          showCustomAlert('Sync Complete', syncResult.message, 'success');
+          showCustomAlert('Sync Complete', syncResult.message || 'Sync completed successfully', 'success');
           if (syncResult.hasChanges) {
             // Reload data after successful sync with changes
             await loadInitialData();
           }
         } else {
           // If sync failed, keep progress at 0 (empty vibrating bar)
-          showCustomAlert('Sync Failed', syncResult.message, 'error');
+          const errorMessage = syncResult.message || 'Sync failed - please try again';
+          
+          // Check if it's a DEVELOPER_ERROR and provide more helpful guidance
+          if (errorMessage.includes('not properly configured')) {
+            showCustomAlert(
+              'Setup Required', 
+              'Google Drive sync needs to be configured. Please check the GOOGLE_OAUTH_SETUP.md file for setup instructions. You can still use the app without sync for now.',
+              'warning'
+            );
+          } else {
+            showCustomAlert('Sync Failed', errorMessage, 'error');
+          }
         }
       }
 
@@ -566,7 +579,8 @@ const AppContent = () => {
       setSyncStatus(updatedStatus);
     } catch (error) {
       console.error('Manual sync error:', error);
-      showCustomAlert('Sync Error', error.message, 'error');
+      const errorMessage = error.message || 'An unexpected error occurred during sync';
+      showCustomAlert('Sync Error', errorMessage, 'error');
       setSyncStatus(prev => ({ ...prev, inProgress: false }));
     }
   };

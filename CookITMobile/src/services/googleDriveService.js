@@ -8,10 +8,14 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive.file'
 ];
 
+// Configuration constants
 const ACCESS_TOKEN_KEY = '@cookit_access_token';
 const REFRESH_TOKEN_KEY = '@cookit_refresh_token';
 const TOKEN_EXPIRY_KEY = '@cookit_token_expiry';
 const DRIVE_FILE_ID_KEY = '@cookit_drive_file_id';
+
+// Replace with your Web application client ID from Google Cloud Console
+const WEB_CLIENT_ID = '609680746236-fuo5qoefnbqilcuj9p2eimebrf2k5eqo.apps.googleusercontent.com';
 
 class GoogleDriveService {
   constructor() {
@@ -29,6 +33,8 @@ class GoogleDriveService {
       // Configure Google Sign-In
       GoogleSignin.configure({
         scopes: SCOPES,
+        webClientId: WEB_CLIENT_ID,
+        offlineAccess: true, // Enable offline access for refresh tokens
       });
 
       // Load stored tokens
@@ -69,18 +75,50 @@ class GoogleDriveService {
 
   async authenticate() {
     try {
+      console.log('🔍 Starting authentication process...');
+      console.log('🔍 Web Client ID:', WEB_CLIENT_ID);
+      console.log('🔍 Package name: com.worrador.cookitmobile');
+      console.log('🔍 SHA-1 fingerprint: 66:75:4B:A0:24:AF:D9:1E:19:45:DD:D6:59:D5:02:5A:A2:9D:8C:F5');
+      
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      console.log('✅ Google Play Services check passed');
+      
       // Interactive sign in
+      console.log('🔍 Attempting Google Sign-In...');
       await GoogleSignin.signIn();
+      console.log('✅ Google Sign-In successful');
+      
       // Get tokens
+      console.log('🔍 Getting tokens...');
       const tokens = await GoogleSignin.getTokens();
+      console.log('🔍 Tokens received:', tokens ? 'Yes' : 'No');
+      
       if (tokens?.accessToken) {
+        console.log('✅ Access token received, storing...');
         await this.storeTokensFromAccessToken(tokens.accessToken);
         return true;
       }
+      console.log('❌ No access token received');
       return false;
     } catch (error) {
-      console.error('Authentication error:', error);
+      console.error('❌ Authentication error:', error);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error message:', error.message);
+      
+      // Provide more specific error messages
+      if (error.code === 'DEVELOPER_ERROR') {
+        console.error('🔧 DEVELOPER_ERROR: Google Sign-In is not properly configured. Please check:');
+        console.error('1. Web client ID is configured correctly:', WEB_CLIENT_ID);
+        console.error('2. Package name matches Google Cloud Console configuration: com.worrador.cookitmobile');
+        console.error('3. SHA-1 fingerprint is added to Google Cloud Console: 66:75:4B:A0:24:AF:D9:1E:19:45:DD:D6:59:D5:02:5A:A2:9D:8C:F5');
+        console.error('4. OAuth consent screen is configured with required scopes');
+        console.error('5. Your email is added as a test user (if app is in testing mode)');
+      } else if (error.code === 'SIGN_IN_CANCELLED') {
+        console.error('User cancelled the sign-in process');
+      } else if (error.code === 'SIGN_IN_REQUIRED') {
+        console.error('Sign-in is required but user is not signed in');
+      }
+      
       return false;
     }
   }
@@ -228,6 +266,7 @@ class GoogleDriveService {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Transfer-Encoding': 'base64',
           },
           body: content,
         }
@@ -253,8 +292,17 @@ class GoogleDriveService {
       if (!response.ok) {
         throw new Error(`Failed to download file: ${response.statusText}`);
       }
-
-      return await response.arrayBuffer();
+      const blob = await response.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          // result contains the data as a base64 encoded string, remove data url prefix
+          const base64data = reader.result;
+          resolve(base64data.substr(base64data.indexOf(',') + 1));
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
     } catch (error) {
       console.error('Error downloading file:', error);
       throw error;
@@ -313,7 +361,8 @@ class GoogleDriveService {
       'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
       JSON.stringify(metadata) +
       delimiter +
-      'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n' +
+      'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n' +
+      'Content-Transfer-Encoding: base64\r\n\r\n' +
       content +
       close_delim;
 
