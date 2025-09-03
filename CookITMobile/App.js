@@ -112,8 +112,18 @@ const AppContent = () => {
   const [tutorialCount, setTutorialCountState] = useState(0);
   const [hasShownSyncDialog, setHasShownSyncDialog] = useState(false);
 
+  // Dialog sequence states for first-time users
+  const [dialogSequence, setDialogSequence] = useState({
+    helpShown: false,
+    emptyRecipeBookShown: false,
+    syncShown: false
+  });
+
   // Custom alert states
   const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', type: 'info' });
+  
+  // Flag to track manual authentication in progress
+  const [isManualAuthInProgress, setIsManualAuthInProgress] = useState(false);
 
   // Animation values
   const corkSlideAnim = useRef(new Animated.Value(0)).current; // 0 = hidden, 1 = visible
@@ -230,12 +240,16 @@ const AppContent = () => {
   }, [showAddModal, showRecipeDetails, showHelp, showBuyCoffee, showEmptyRecipeBookDialog, customAlert.visible, showSyncInfo]);
 
   // Show sync info dialog when not authenticated and no other dialogs are open
+  // But respect the dialog sequence for first-time users
   useEffect(() => {
     // Reset the flag when user becomes authenticated
     if (syncStatus.isAuthenticated) {
       setHasShownSyncDialog(false);
+      setDialogSequence(prev => ({ ...prev, syncShown: true }));
     }
 
+    // For first-time users (tutorialCount <= 5), only show sync dialog as part of sequence
+    const isFirstTime = tutorialCount <= 5;
     const shouldShowSyncDialog = !syncStatus.isAuthenticated && 
                                 !syncStatus.inProgress && 
                                 !isLoading && 
@@ -246,7 +260,8 @@ const AppContent = () => {
                                 !showEmptyRecipeBookDialog && 
                                 !customAlert.visible &&
                                 !showSyncInfo &&
-                                !hasShownSyncDialog;
+                                !hasShownSyncDialog &&
+                                (!isFirstTime || (isFirstTime && dialogSequence.helpShown && dialogSequence.emptyRecipeBookShown));
 
     if (shouldShowSyncDialog) {
       setShowSyncInfo(true);
@@ -263,7 +278,10 @@ const AppContent = () => {
     showEmptyRecipeBookDialog, 
     customAlert.visible,
     showSyncInfo,
-    hasShownSyncDialog
+    hasShownSyncDialog,
+    tutorialCount,
+    dialogSequence.helpShown,
+    dialogSequence.emptyRecipeBookShown
   ]);
 
   // Set initial border state for pinned recipes
@@ -430,14 +448,14 @@ const AppContent = () => {
       setTutorialCountState(tutorialCount);
       setIsLoading(false);
 
-      // Show tutorial for first 5 times
-      if (tutorialCount < 5) {
+      // Handle dialog sequence for first-time users (tutorial count < 5)
+      const isFirstTime = tutorialCount < 5;
+      if (isFirstTime && !dialogSequence.helpShown) {
+        // Start with help dialog for first-time users (only if not already shown)
         setShowHelp(true);
         await incrementTutorialCount();
-      }
-
-      // Show empty recipe book dialog if no recipes exist
-      if (loadedRecipes.length === 0) {
+      } else if (loadedRecipes.length === 0 && !dialogSequence.emptyRecipeBookShown) {
+        // For returning users with empty recipe book, show empty dialog directly (only if not already shown)
         setShowEmptyRecipeBookDialog(true);
       }
 
@@ -455,7 +473,16 @@ const AppContent = () => {
   const handleSyncCheck = async () => {
     try {
       const status = await syncService.checkSyncStatus();
-      setSyncStatus(status);
+      
+      // Don't override sync status if we're currently in a manual sync process
+      setSyncStatus(prev => {
+        // If we're manually managing sync progress or authentication, don't override it
+        if ((prev.inProgress && !status.inProgress) || isManualAuthInProgress) {
+          console.log('Preserving manual sync/auth progress state');
+          return prev; // Keep the current state
+        }
+        return status; // Use the new status
+      });
 
       if (status.isAuthenticated && !status.inProgress) {
         // Trigger a background sync
@@ -486,29 +513,54 @@ const AppContent = () => {
 
       // Check if we're authenticated first
       const status = await syncService.checkSyncStatus();
+      
+      // Update UI to show we're syncing (this fixes the progress bar not showing)
+      setSyncStatus(prev => ({ ...prev, inProgress: true }));
 
       if (!status.isAuthenticated) {
         // Not authenticated - start authentication process
         console.log('Starting Google Drive authentication...');
-        onProgress(0.1, 'Authenticating...');
+        setIsManualAuthInProgress(true); // Set flag to prevent status override
+        onProgress(0.1, 'Connecting to Google Drive...');
+        
+        // Keep the UI in sync mode during authentication
+        // Don't rely on checkSyncStatus during auth as it will show "not connected" until auth completes
+        
+        // Start monitoring authentication progress
+        const authProgressInterval = setInterval(async () => {
+          // During authentication, keep showing progress instead of checking actual status
+          // The real progress happens inside initializeSync
+        }, 1000);
+        
+        // Update progress messages during authentication
+        setTimeout(() => onProgress(0.2, 'Opening Google authentication...'), 1000);
+        setTimeout(() => onProgress(0.3, 'Waiting for user authentication...'), 3000);
+        setTimeout(() => onProgress(0.5, 'Processing authentication...'), 6000);
+        setTimeout(() => onProgress(0.7, 'Setting up Google Drive access...'), 8000);
+        
         const initResult = await syncService.initializeSync();
+        
+        // Clear the monitoring interval and reset flag
+        clearInterval(authProgressInterval);
+        setIsManualAuthInProgress(false);
 
         if (initResult.success) {
-          // Authentication successful, now sync
-          onProgress(0.4, 'Syncing data...');
-          const syncResult = await syncService.performSync(false, onProgress);
-
-          if (syncResult.success) {
-            onProgress(1, 'Sync complete');
-            showCustomAlert('Authentication & Sync Complete', 'Successfully connected to Google Drive and synced your recipes!', 'success');
-            if (syncResult.hasChanges) {
-              await loadInitialData();
-            }
-          } else {
-            showCustomAlert('Sync Failed', syncResult.message || 'Unknown sync error', 'error');
+          // Authentication and sync completed - initializeSync does both
+          onProgress(0.9, 'Authentication complete, finalizing...');
+          
+          // Update sync status immediately to reflect authentication
+          const updatedStatus = await syncService.checkSyncStatus();
+          setSyncStatus(updatedStatus);
+          
+          onProgress(1, 'Sync complete');
+          showCustomAlert('Authentication & Sync Complete', 'Successfully connected to Google Drive and synced your recipes!', 'success');
+          
+          if (initResult.hasChanges) {
+            await loadInitialData();
           }
         } else {
-          // Authentication failed
+          // Authentication failed - reset flag
+          setIsManualAuthInProgress(false);
           const errorMessage = initResult.message || 'Authentication failed - please try again';
           if (errorMessage.includes('not properly configured')) {
             showCustomAlert(
@@ -691,13 +743,54 @@ const AppContent = () => {
     }
   };
 
+  // Handle dialog sequence for first-time users
+  const handleHelpDialogClose = () => {
+    setShowHelp(false);
+    setDialogSequence(prev => ({ ...prev, helpShown: true }));
+    
+    // Check if we need to show empty recipe book dialog next
+    if (recipes.length === 0) {
+      setTimeout(() => {
+        setShowEmptyRecipeBookDialog(true);
+      }, 300); // Small delay for smooth transition
+    } else {
+      // If there are recipes, check if we should show sync dialog
+      setTimeout(() => {
+        handleNextInSequence('emptyRecipeBookShown');
+      }, 300);
+    }
+  };
+
+  const handleEmptyRecipeBookDialogClose = () => {
+    setShowEmptyRecipeBookDialog(false);
+    setDialogSequence(prev => ({ ...prev, emptyRecipeBookShown: true }));
+    
+    // Show sync dialog next if it's a first-time user and sync hasn't been shown
+    setTimeout(() => {
+      handleNextInSequence('syncShown');
+    }, 300);
+  };
+
+  const handleNextInSequence = (completedStep) => {
+    if (tutorialCount <= 5 && !dialogSequence.syncShown && !syncStatus.isAuthenticated) {
+      setShowSyncInfo(true);
+      setDialogSequence(prev => ({ ...prev, syncShown: true }));
+    }
+  };
+
   const handleAddSampleRecipes = async () => {
     try {
       setIsAddingSampleRecipes(true);
       const updatedRecipes = await addSampleRecipes();
       setRecipes(updatedRecipes);
       setShowEmptyRecipeBookDialog(false);
+      setDialogSequence(prev => ({ ...prev, emptyRecipeBookShown: true }));
       showCustomAlert('Success', 'Sample recipes have been added to your recipe book!', 'success');
+      
+      // Continue with sequence after adding sample recipes
+      setTimeout(() => {
+        handleNextInSequence('emptyRecipeBookShown');
+      }, 1000); // Delay to let success message show
     } catch (error) {
       console.error('Error adding sample recipes:', error);
       showCustomAlert('Error', 'Failed to add sample recipes. Please try again.', 'error');
@@ -1085,7 +1178,10 @@ const AppContent = () => {
           onDismiss={() => setShowHelp(false)}
           style={[styles.dialog, { backgroundColor: theme.colors.surface, maxHeight: dialogMaxHeight }]}
         >
-          <HelpDialog onClose={() => setShowHelp(false)} />
+          <HelpDialog 
+            onClose={handleHelpDialogClose} 
+            isFirstTime={tutorialCount <= 5}
+          />
         </Dialog>
       </Portal>
 
@@ -1142,20 +1238,23 @@ const AppContent = () => {
 
           <Dialog.Content style={styles.content}>
             <ScrollView>
-              {/* Status Section */}
+              {/* 1. CURRENT STATUS - Most Important (What's happening right now?) */}
               <View style={[styles.infoBox, {
                 backgroundColor: syncStatus.isAuthenticated ? '#E8F5E8' : '#FFEBEE',
-                borderColor: syncStatus.isAuthenticated ? '#4CAF50' : '#F44336'
+                borderColor: syncStatus.isAuthenticated ? '#4CAF50' : '#F44336',
+                borderWidth: 2, // Emphasize importance
+                marginBottom: 20 // More space to show hierarchy
               }]}>
                 <MaterialCommunityIcons
-                  name={syncStatus.isAuthenticated ? "cloud-check" : "exclamation-thick"}
-                  size={32}
+                  name={syncStatus.isAuthenticated ? "cloud-check" : "cloud-off-outline"}
+                  size={36} // Larger icon for emphasis
                   color={syncStatus.isAuthenticated ? '#4CAF50' : '#F44336'}
                   style={styles.infoIcon}
                 />
                 <View style={styles.syncStatusText}>
                   <Text style={[styles.syncStatusTitle, {
-                    color: syncStatus.isAuthenticated ? '#2E7D32' : '#C62828'
+                    color: syncStatus.isAuthenticated ? '#2E7D32' : '#C62828',
+                    fontSize: 20 // Larger text for main status
                   }]}>
                     {syncStatus.isAuthenticated ? 'Connected to Google Drive' : 'Not Connected'}
                   </Text>
@@ -1163,31 +1262,16 @@ const AppContent = () => {
                     color: syncStatus.isAuthenticated ? '#388E3C' : '#D32F2F'
                   }]}>
                     {syncStatus.isAuthenticated
-                      ? 'Your recipes are being synced automatically'
-                      : 'Tap "Connect to Google Drive" to get started'
+                      ? 'Recipes sync automatically across devices'
+                      : 'Connect to sync your recipes everywhere'
                     }
                   </Text>
                 </View>
               </View>
 
-              {/* Last Sync Info */}
-              {syncStatus.lastSync && (
-                <View style={[styles.infoBox, { backgroundColor: '#F3F4F6' }]}>
-                  <MaterialCommunityIcons
-                    name="clock-outline"
-                    size={32}
-                    color={theme.colors.onSurfaceVariant}
-                    style={styles.infoIcon}
-                  />
-                  <Text style={[styles.infoText, { color: theme.colors.onSurfaceVariant }]}>
-                    Last synced: {new Date(syncStatus.lastSync).toLocaleString()}
-                  </Text>
-                </View>
-              )}
-
-              {/* Sync Progress */}
+              {/* 2. ACTIVE SYNC PROGRESS - Show when syncing */}
               {syncStatus.inProgress && (
-                <View style={[styles.infoBox, { backgroundColor: '#E3F2FD' }]}>
+                <View style={[styles.infoBox, { backgroundColor: '#E3F2FD', marginBottom: 16 }]}>
                   <View style={styles.syncIconContainer}>
                     <Animated.View style={{
                       transform: [{
@@ -1205,7 +1289,7 @@ const AppContent = () => {
                     </Animated.View>
                   </View>
                   <View style={styles.syncProgressContent}>
-                    <Text style={[styles.syncProgressText, { color: '#1976D2' }]}>
+                    <Text style={[styles.syncProgressText, { color: '#1976D2', fontWeight: '600' }]}>
                       {syncMessage || 'Syncing recipes with Google Drive...'}
                     </Text>
                     <View style={styles.syncProgressBar}>
@@ -1228,24 +1312,57 @@ const AppContent = () => {
                 </View>
               )}
 
-              {/* Info Section */}
-              <View style={[styles.infoBox, { backgroundColor: '#FFF8E1' }]}>
-                <MaterialCommunityIcons
-                  name="information-outline"
-                  size={32}
-                  color="#F57C00"
-                  style={styles.infoIcon}
-                />
-                <Text style={[styles.infoText, { color: '#E65100' }]}>
-                  {syncStatus.isAuthenticated
-                    ? 'Your recipes are automatically synced with Google Drive when you make changes. This ensures your data is safe and accessible across all your devices.'
-                    : 'Connect to Google Drive to automatically sync your recipes across all your devices. Your data will be safely stored and accessible from anywhere.'
-                  }
-                </Text>
-              </View>
+              {/* 4. HELP INFO - Only show when not connected (contextual help) */}
+              {!syncStatus.isAuthenticated && (
+                <View style={[styles.infoBox, { backgroundColor: '#FFF8E1', marginTop: 8 }]}>
+                  <MaterialCommunityIcons
+                    name="information-outline"
+                    size={24}
+                    color="#F57C00"
+                    style={styles.infoIcon}
+                  />
+                  <Text style={[styles.infoText, { color: '#E65100', fontSize: 13 }]}>
+                    Sync keeps your recipes safe and accessible from any device. Your data stays private in your Google Drive.
+                  </Text>
+                </View>
+              )}
             </ScrollView>
           </Dialog.Content>
 
+          {/* 3. LAST SYNC TIME - Secondary info (When did this last work?) */}
+          {syncStatus.lastSync && (
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'transparent',
+              marginBottom: 0,
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+            }}>
+              <MaterialCommunityIcons
+                name="clock-outline"
+                size={16}
+                color={theme.colors.onSurfaceVariant}
+                style={{ marginRight: 6 }}
+              />
+              <Text style={{ 
+                color: theme.colors.onSurfaceVariant,
+                fontSize: 11,
+                textAlign: 'center'
+              }}>
+                Last synced: {(() => {
+                  const date = new Date(syncStatus.lastSync);
+                  const year = date.getFullYear();
+                  const month = String(date.getMonth() + 1).padStart(2, '0');
+                  const day = String(date.getDate()).padStart(2, '0');
+                  const hours = String(date.getHours()).padStart(2, '0');
+                  const minutes = String(date.getMinutes()).padStart(2, '0');
+                  return `${year}/${month}/${day} ${hours}:${minutes}`;
+                })()}
+              </Text>
+            </View>
+          )}
           <Dialog.Actions>
             <View style={styles.buttonContainer}>
               {syncStatus.isAuthenticated ? (
@@ -1305,10 +1422,9 @@ const AppContent = () => {
           style={[styles.dialog, { backgroundColor: theme.colors.surface, maxHeight: dialogMaxHeight }]}
         >
           <EmptyRecipeBookDialog
-            onDismiss={() => setShowEmptyRecipeBookDialog(false)}
+            onDismiss={handleEmptyRecipeBookDialogClose}
             onAddSampleRecipes={handleAddSampleRecipes}
             isLoading={isAddingSampleRecipes}
-            isFirstTime={tutorialCount < 5}
           />
         </Dialog>
       </Portal>
@@ -1320,22 +1436,40 @@ const AppContent = () => {
           onDismiss={() => setCustomAlert({ ...customAlert, visible: false })}
           style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
         >
-          <View style={styles.header}>
-            <MaterialCommunityIcons
-              name={
-                customAlert.type === 'success' ? 'check-circle' :
-                customAlert.type === 'error' ? 'alert-circle' :
-                customAlert.type === 'warning' ? 'alert' : 'information'
-              }
-              size={28}
-              color={
-                customAlert.type === 'success' ? '#4CAF50' :
-                customAlert.type === 'error' ? '#F44336' :
-                customAlert.type === 'warning' ? '#FF9800' : theme.colors.primary
-              }
-              style={styles.headerIcon}
-            />
-            <Text style={[styles.title, { color: theme.colors.primary }]}>{customAlert.title}</Text>
+          <View style={[styles.header, { paddingHorizontal: 16 }]}>
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              justifyContent: 'center',
+              maxWidth: '100%',
+            }}>
+              <MaterialCommunityIcons
+                name={
+                  customAlert.type === 'success' ? 'check-circle' :
+                  customAlert.type === 'error' ? 'alert-circle' :
+                  customAlert.type === 'warning' ? 'alert' : 'information'
+                }
+                size={28}
+                color={
+                  customAlert.type === 'success' ? '#4CAF50' :
+                  customAlert.type === 'error' ? '#F44336' :
+                  customAlert.type === 'warning' ? '#FF9800' : theme.colors.primary
+                }
+                style={{ marginRight: 8, marginTop: 2 }}
+              />
+              <Text 
+                style={[styles.title, { 
+                  color: theme.colors.primary,
+                  textAlign: 'center',
+                  flexShrink: 1,
+                  maxWidth: '85%'
+                }]}
+                numberOfLines={2}
+                adjustsFontSizeToFit
+              >
+                {customAlert.title}
+              </Text>
+            </View>
           </View>
           <Dialog.Content style={styles.content}>
             <Text style={[styles.alertMessage, { color: theme.colors.onSurface }]}>
@@ -1605,7 +1739,7 @@ const styles = StyleSheet.create({
   },
   dialog: {
     width: '90%',
-    maxWidth: 400,
+    maxWidth: 420, // Slightly wider to accommodate longer text
     maxHeight: '85%',
     alignSelf: 'center',
     borderRadius: 16,
@@ -1624,6 +1758,7 @@ const styles = StyleSheet.create({
   content: {
     flexShrink: 1,
     flexGrow: 1,
+    overflow: 'hidden', // Prevent content overflow
   },
   row: {
     flexDirection: 'row',
@@ -1705,7 +1840,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   infoIcon: {
-    marginRight: 12,
+    marginRight: 0,
   },
   syncStatusText: {
     marginLeft: 12,
@@ -1776,6 +1911,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 20,
+    lineHeight: 22,
+    paddingHorizontal: 16, // Proper horizontal padding for centered text
+    paddingVertical: 8, // Add vertical padding for better spacing
   },
   alertButton: {
     borderRadius: 12,

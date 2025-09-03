@@ -4,18 +4,11 @@ import { Text, useTheme, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Button } from './Button';
 
-const EmptyRecipeBookDialog = ({ onDismiss, onAddSampleRecipes, isLoading, isFirstTime = false }) => {
+const EmptyRecipeBookDialog = ({ onDismiss, onAddSampleRecipes, isLoading }) => {
   const theme = useTheme();
 
   return (
     <>
-      {isFirstTime && (
-        <View style={styles.header}>
-          <MaterialCommunityIcons name="chef-hat" size={28} color={theme.colors.primary} style={styles.headerIcon} />
-          <Text style={[styles.title, { color: theme.colors.primary }]}>Welcome to CookIT!</Text>
-        </View>
-      )}
-
       <Dialog.Content style={styles.content}>
         <ScrollView>
           <Text style={[styles.message, { color: theme.colors.onSurface }]}>
@@ -79,20 +72,6 @@ const EmptyRecipeBookDialog = ({ onDismiss, onAddSampleRecipes, isLoading, isFir
 const styles = StyleSheet.create({
   content: {
     flexShrink: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 16,
-    paddingBottom: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  headerIcon: {
-    marginRight: 8,
   },
   message: {
     fontSize: 16,

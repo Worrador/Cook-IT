@@ -4,22 +4,28 @@ import { Surface, useTheme, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Button } from './Button';
 
-const HelpDialog = ({ onClose }) => {
+const HelpDialog = ({ onClose, isFirstTime = false }) => {
   const theme = useTheme();
   const screenWidth = Dimensions.get('window').width;
 
   // Adjust title font size based on screen width
   const getTitleFontSize = () => {
-    if (screenWidth < 400) return 20;  // Very small phones
-    if (screenWidth < 500) return 22;  // Small phones
-    return 24;  // Normal and large phones
+    if (screenWidth < 400) return 18;  // Very small phones (reduced for longer title)
+    if (screenWidth < 500) return 20;  // Small phones (reduced for longer title)
+    return 22;  // Normal and large phones (reduced for longer title)
+  };
+
+  const getTitle = () => {
+    return isFirstTime ? "Welcome to Cook-IT!" : "How does Cook-IT work?";
   };
 
   return (
     <>
       <View style={styles.header}>
         <MaterialCommunityIcons name="chef-hat" size={28} color={theme.colors.primary} style={styles.headerIcon} />
-        <Text style={[styles.title, { color: theme.colors.primary, fontSize: getTitleFontSize() }]}>How does Cook-IT work?</Text>
+        <Text style={[styles.title, { color: theme.colors.primary, fontSize: getTitleFontSize() }]}>
+          {getTitle()}
+        </Text>
       </View>
       <Dialog.Content style={styles.content}>
         <ScrollView
