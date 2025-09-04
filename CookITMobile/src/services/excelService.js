@@ -109,8 +109,8 @@ class ExcelService {
       this.localFilePath = `${fileSystem.documentDirectory}${EXCEL_FILE_NAME}`;
 
       // Log the file path for debugging
-      console.log('📁 Excel file will be stored at:', this.localFilePath);
-      console.log('📁 Document directory:', fileSystem.documentDirectory);
+      // console.log('📁 Excel file will be stored at:', this.localFilePath);
+      // console.log('📁 Document directory:', fileSystem.documentDirectory);
 
       // Load metadata
       await this.loadMetadata();
@@ -332,13 +332,14 @@ class ExcelService {
             name: row['Recipe Name'],
             url: row['URL'] || '',
             comment: row['Comment'] || '',
-            createdAt: row['Created Date'] ? new Date(row['Created Date']).getTime() : Date.now()
+            createdAt: Date.now(),
+            lastModified: Date.now()
           };
           recipes.push(recipe);
 
           // Process last cooked date
           if (row['Last Cooked Date']) {
-            const cookedDate = new Date(row['Last Cooked Date']);
+            const cookedDate = this.safeParseDate(row['Last Cooked Date'], 'Last Cooked Date');
             if (!isNaN(cookedDate.getTime())) {
               lastCookedDates[recipe.name] = cookedDate.getTime();
             }
@@ -357,8 +358,8 @@ class ExcelService {
         }
       }
 
-      // Save imported data
-      await saveRecipes(recipes);
+      // Save imported data (skip modification time update since this is import, not user action)
+      await saveRecipes(recipes, true);
       await setLastCookedDates(lastCookedDates);
 
       // Save pinned recipes
@@ -482,6 +483,13 @@ class ExcelService {
    */
   async mergeWithLocalData() {
     try {
+      console.log('🔄 Starting merge with detailed timing analysis...');
+      
+      // Get last sync time for context
+      const lastSyncTime = await AsyncStorage.getItem('@cookit_last_sync');
+      const lastSync = lastSyncTime ? new Date(lastSyncTime) : new Date(0);
+      console.log(`📅 Last sync was: ${lastSync.toISOString()}`);
+      
       // Download remote version
       await this.downloadFromDrive();
 
@@ -492,6 +500,18 @@ class ExcelService {
       const localRecipes = await loadRecipes();
       const localLastCookedDates = await getLastCookedDates();
       const localPinnedRecipes = await getPinnedRecipes();
+
+      // Get detailed timing information
+      const localTimingInfo = this.getDataTimingInfo(localRecipes, 'Local');
+      const driveTimingInfo = this.getDataTimingInfo(remoteData.recipes, 'Drive');
+      
+      console.log(`📱 ${localTimingInfo.summary}`);
+      console.log(`☁️  ${driveTimingInfo.summary}`);
+      
+      // Determine what changed since last sync
+      const localChanged = localTimingInfo.latestModified > lastSync;
+      const driveChanged = driveTimingInfo.latestModified > lastSync;
+      console.log(`🔄 Since last sync: Local changed=${localChanged}, Drive changed=${driveChanged}`);
 
       // Create a mutable copy of local recipes to serve as the base for the merge.
       const mergedRecipes = [...localRecipes];
@@ -514,7 +534,9 @@ class ExcelService {
           // If the remote recipe's date is more recent, replace the local one.
           if (remoteDate > localDate) {
             mergedRecipes[localRecipeIndex] = remoteRecipe;
-            console.log(`Merge: Updating recipe with newer version from Drive: '${remoteRecipe.name}'`);
+            console.log(`☁️  Using drive version of "${remoteRecipe.name}": local=${localDate.toISOString()}, drive=${remoteDate.toISOString()}`);
+          } else {
+            console.log(`📱 Keeping local version of "${localRecipe.name}": local=${localDate.toISOString()}, drive=${remoteDate.toISOString()}`);
           }
         }
       }
@@ -544,11 +566,85 @@ class ExcelService {
       // Upload merged data to Drive
       await this.uploadToDrive();
 
-      console.log('Data merged successfully');
+      console.log(`🎯 Merge completed: ${mergedRecipes.length} recipes in final result`);
       return { recipes: mergedRecipes, lastCookedDates: mergedLastCookedDates, pinnedRecipes: mergedPinnedRecipes };
     } catch (error) {
       console.error('Error merging data:', error);
       throw error;
+    }
+  }
+
+  // Get detailed timing information about a data source
+  getDataTimingInfo(recipes, sourceName) {
+    if (!recipes || recipes.length === 0) {
+      return {
+        latestModified: new Date(0),
+        summary: `${sourceName}: No recipes (empty dataset)`,
+        recipeCount: 0,
+        modifiedRecipes: []
+      };
+    }
+
+    let latestModified = new Date(0);
+    let oldestModified = new Date();
+    const modifiedRecipes = [];
+
+    recipes.forEach(recipe => {
+      const modified = new Date(recipe.createdAt || recipe.lastModified || 0);
+      if (modified > latestModified) {
+        latestModified = modified;
+      }
+      if (modified < oldestModified) {
+        oldestModified = modified;
+      }
+      modifiedRecipes.push({
+        name: recipe.name,
+        modified: modified.toISOString()
+      });
+    });
+
+    // Sort by modification time (newest first)
+    modifiedRecipes.sort((a, b) => new Date(b.modified) - new Date(a.modified));
+
+    const summary = `${sourceName}: ${recipes.length} recipes, latest modified: ${latestModified.toISOString()}, oldest: ${oldestModified.toISOString()}`;
+    
+    return {
+      latestModified,
+      oldestModified,
+      summary,
+      recipeCount: recipes.length,
+      modifiedRecipes
+    };
+  }
+
+  /**
+   * Safely parse date values from Excel with error handling (for cooked dates only)
+   */
+  safeParseDate(dateValue, fieldName) {
+    try {
+      if (!dateValue) {
+        return new Date(0);
+      }
+      
+      const parsed = new Date(dateValue);
+      if (isNaN(parsed.getTime())) {
+        console.warn(`⚠️  Invalid date in ${fieldName}: "${dateValue}", using epoch`);
+        return new Date(0);
+      }
+      
+      // Check if date is within reasonable bounds (1970-2100)
+      const minDate = new Date('1970-01-01').getTime();
+      const maxDate = new Date('2100-12-31').getTime();
+      
+      if (parsed.getTime() < minDate || parsed.getTime() > maxDate) {
+        console.warn(`⚠️  Date out of bounds in ${fieldName}: "${dateValue}", using epoch`);
+        return new Date(0);
+      }
+      
+      return parsed;
+    } catch (error) {
+      console.error(`❌ Error parsing date in ${fieldName}: "${dateValue}"`, error);
+      return new Date(0);
     }
   }
 
@@ -560,7 +656,6 @@ class ExcelService {
       'Recipe Name': recipe.name,
       'URL': recipe.url || '',
       'Comment': recipe.comment || '',
-      'Created Date': recipe.createdAt ? new Date(recipe.createdAt).toISOString().split('T')[0] : '',
       'Last Cooked Date': lastCookedDates[recipe.name] ? new Date(lastCookedDates[recipe.name]).toISOString().split('T')[0] : '',
       'Pinned': pinnedRecipes.includes(recipe.name) ? 'Yes' : 'No'
     }));
@@ -576,6 +671,7 @@ class ExcelService {
         return {
           exists: true,
           size: fileInfo.size,
+          modificationTime: fileInfo.modificationTime,
           modified: new Date(fileInfo.modificationTime * 1000),
           path: this.localFilePath
         };

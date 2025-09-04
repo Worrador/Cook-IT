@@ -194,32 +194,98 @@ class SyncService {
 
       console.log(`Found ${localRecipes.length} local recipes`);
 
-      // Check for conflicts. If the remote is newer, we must merge.
-      onProgress(0.15, 'Checking for conflicts...');
-      const conflictCheck = await this.excelProcessor.checkConflicts();
-
-      if (conflictCheck.hasConflict) {
-        console.log('Conflict detected: remote file is newer or sizes differ. Forcing merge.');
-        onProgress(0.2, 'Conflict detected, merging...');
-        // Directly call the merge logic by resolving the conflict with 'merge' strategy.
-        const resolutionResult = await this.excelProcessor.resolveConflict('merge');
-        if (resolutionResult) {
-          await this.setLastSyncTime();
-          onProgress(1, 'Merge complete!');
-          return {
-            success: true,
-            hasChanges: true,
-            message: 'Online changes detected and merged successfully.',
-            conflictResolved: true,
-            resolutionStrategy: 'merge'
-          };
-        } else {
-           throw new Error('Automatic conflict resolution via merge failed.');
+      // Always use our intelligent file-based merge instead of old recipe-based logic
+      onProgress(0.2, 'Performing file-based merge analysis...');
+      
+      // Download remote data for comparison
+      onProgress(0.3, 'Downloading remote data...');
+      await this.excelProcessor.downloadFromDrive();
+      const remoteData = await this.excelProcessor.importFromExcel();
+      
+      onProgress(0.5, 'Analyzing file changes...');
+      
+      // Get last sync time and modification times for merge decision
+      const lastSyncTime = await this.getLastSyncTime();
+      const lastSync = lastSyncTime ? new Date(lastSyncTime) : new Date(0);
+      
+      // For local: use data modification time (not file modification time)
+      // For remote: use file modification time from Drive
+      const localModified = await this.storageProvider.getLastDataModificationTime();
+      const fileId = await this.driveClient.getDriveFileId();
+      const remoteFileInfo = await this.driveClient.getFileInfo(fileId);
+      
+      // Safely create remote date
+      let remoteModified;
+      try {
+        remoteModified = new Date(remoteFileInfo.modifiedTime);
+        if (isNaN(remoteModified.getTime())) {
+          throw new Error(`Invalid remote date from: ${remoteFileInfo.modifiedTime}`);
         }
+      } catch (error) {
+        console.error('❌ Error creating remote date:', error);
+        remoteModified = new Date(0); // Fallback to epoch
       }
-
-      // No conflict detected, proceed with normal sync (which may upload local changes if any)
-      return await this.performExcelMerge(localRecipes, localLastCookedDates, localPinnedRecipes, forcePush, onProgress);
+      
+      console.log(`📅 Last sync was: ${lastSync.toISOString()}`);
+      console.log(`📱 Local data modified: ${localModified.toISOString()}`);
+      console.log(`☁️  Drive file modified: ${remoteModified.toISOString()}`);
+      
+      // Apply 2-minute tolerance to avoid unnecessary syncs due to minor timestamp differences
+      const SYNC_TOLERANCE_MS = 60 * 1000; // 1 minute
+      
+      const localTimeDiff = Math.abs(localModified.getTime() - lastSync.getTime());
+      const driveTimeDiff = Math.abs(remoteModified.getTime() - lastSync.getTime());
+      
+      // Logic: 
+      // - If file is newer than sync → always consider changed (even if within tolerance)
+      // - If file is older than sync → only consider changed if outside tolerance
+      const localChanged = (localModified > lastSync) || (localModified < lastSync && localTimeDiff > SYNC_TOLERANCE_MS);
+      const driveChanged = (remoteModified > lastSync) || (remoteModified < lastSync && driveTimeDiff > SYNC_TOLERANCE_MS);
+      
+      console.log(`⏱️  Time differences: Local=${Math.round(localTimeDiff/1000)}s, Drive=${Math.round(driveTimeDiff/1000)}s (tolerance: 120s)`);
+      console.log(`🔄 Since last sync: Local changed=${localChanged}, Drive changed=${driveChanged}`);
+      
+      // Use file-based merge algorithm
+      const mergeResult = await this.mergeExcelDataByFile(
+        localRecipes, 
+        localLastCookedDates, 
+        localPinnedRecipes,
+        remoteData.recipes,
+        remoteData.lastCookedDates,
+        remoteData.pinnedRecipes,
+        localChanged,
+        driveChanged,
+        localModified,
+        remoteModified
+      );
+      
+      if (mergeResult.hasChanges) {
+        onProgress(0.8, 'Saving merged data...');
+        // Save the merged data (skip modification time update during merge decision)
+        await this.storageProvider.saveRecipes(mergeResult.recipes, true);
+        await this.storageProvider.setLastCookedDates(mergeResult.lastCookedDates);
+        await this.storageProvider.setPinnedRecipes(mergeResult.pinnedRecipes);
+        
+        // Create and upload new Excel file
+        onProgress(0.9, 'Uploading merged data...');
+        await this.excelProcessor.createLocalExcelFile();
+        await this.excelProcessor.uploadToDrive();
+      }
+      
+      // Update data modification time after successful sync completion
+      if (mergeResult.hasChanges) {
+        await this.storageProvider.updateDataModificationTime();
+      }
+      
+      await this.setLastSyncTime();
+      onProgress(1, 'File-based merge complete!');
+      return {
+        success: true,
+        hasChanges: mergeResult.hasChanges,
+        message: mergeResult.hasChanges ? 'Files merged using intelligent strategy.' : 'No changes detected.',
+        conflictResolved: false,
+        resolutionStrategy: 'file_based_merge'
+      };
 
     } catch (error) {
       console.error('Excel sync error:', error);
@@ -422,82 +488,125 @@ class SyncService {
     }
   }
 
-  // Pure merge algorithm - perfect for unit testing
-  async mergeExcelData(localRecipes, localLastCookedDates, localPinnedRecipes,
-                       driveRecipes, driveLastCookedDates, drivePinnedRecipes) {
-    console.log('Merging Excel data...');
-
-    // Initialize with drive data
-    const mergedRecipes = [...(driveRecipes || [])];
-    const mergedLastCookedDates = { ...(driveLastCookedDates || {}) };
-    const mergedPinnedRecipes = [...(drivePinnedRecipes || [])];
-
+  // File-based merge algorithm - uses file modification times instead of recipe timestamps
+  async mergeExcelDataByFile(localRecipes, localLastCookedDates, localPinnedRecipes,
+                             driveRecipes, driveLastCookedDates, drivePinnedRecipes,
+                             localChanged, driveChanged, localModified, remoteModified) {
+    
+    console.log('🔄 File-based merge with intelligent conflict resolution...');
+    
+    let mergedRecipes = [];
     let hasChanges = false;
 
-    // Create maps for efficient lookup
-    const driveRecipeMap = new Map();
-    (driveRecipes || []).forEach(recipe => {
-      const key = this.getRecipeKey(recipe);
-      driveRecipeMap.set(key, recipe);
-    });
-
-    // Create a name-based map for easier recipe updates
-    const driveRecipeNameMap = new Map();
-    (driveRecipes || []).forEach(recipe => {
-      driveRecipeNameMap.set(recipe.name, recipe);
-    });
-
-    const localRecipeMap = new Map();
-    (localRecipes || []).forEach(recipe => {
-      const key = this.getRecipeKey(recipe);
-      localRecipeMap.set(key, recipe);
-    });
-
-    // Process local recipes
-    for (const localRecipe of localRecipes || []) {
-      const key = this.getRecipeKey(localRecipe);
-      const driveRecipe = driveRecipeMap.get(key);
-
-      if (!driveRecipe) {
-        // Check if there's a recipe with the same name (for updates)
-        const driveRecipeByName = driveRecipeNameMap.get(localRecipe.name);
-
-        if (driveRecipeByName) {
-          // Recipe with same name exists - check for updates
-          const localModified = new Date(localRecipe.createdAt || localRecipe.lastModified || 0);
-          const driveModified = new Date(driveRecipeByName.createdAt || driveRecipeByName.lastModified || 0);
-
-          if (localModified > driveModified) {
-            // Local is newer - update in merged
-            const index = mergedRecipes.findIndex(r => r.name === localRecipe.name);
-            if (index >= 0) {
-              mergedRecipes[index] = localRecipe;
-              hasChanges = true;
-              console.log(`Updated recipe from local: ${localRecipe.name}`);
-            }
-          }
-        } else {
-          // New local recipe - add to merged
-          mergedRecipes.push(localRecipe);
-          hasChanges = true;
-          console.log(`Added new local recipe: ${localRecipe.name}`);
-        }
+    // Strategy 1: If only one file changed, use that entire file
+    if (localChanged && !driveChanged) {
+      console.log('✅ Only local file changed - using entire local dataset');
+      mergedRecipes = [...(localRecipes || [])];
+      hasChanges = true;
+    } else if (driveChanged && !localChanged) {
+      console.log('✅ Only drive file changed - using entire drive dataset');
+      mergedRecipes = [...(driveRecipes || [])];
+      hasChanges = true;
+    } else if (!localChanged && !driveChanged) {
+      console.log('ℹ️  Neither local data nor drive file changed significantly since sync (within 2min tolerance) - no sync needed');
+      mergedRecipes = [...(driveRecipes || [])];
+    } else {
+      // Strategy 2: Both files changed - use the newer file entirely
+      console.log('⚔️  Both files changed - using newer file');
+      if (localModified > remoteModified) {
+        console.log(`✅ Local file is newer (${localModified.toISOString()}) - using local dataset`);
+        mergedRecipes = [...(localRecipes || [])];
+        hasChanges = true;
       } else {
-        // Recipe exists in both - check for updates
-        const localModified = new Date(localRecipe.createdAt || localRecipe.lastModified || 0);
-        const driveModified = new Date(driveRecipe.createdAt || driveRecipe.lastModified || 0);
-
-        if (localModified > driveModified) {
-          // Local is newer - update in merged
-          const index = mergedRecipes.findIndex(r => this.getRecipeKey(r) === key);
-          if (index >= 0) {
-            mergedRecipes[index] = localRecipe;
-            hasChanges = true;
-            console.log(`Updated recipe from local: ${localRecipe.name}`);
-          }
-        }
+        console.log(`✅ Drive file is newer (${remoteModified.toISOString()}) - using drive dataset`);
+        mergedRecipes = [...(driveRecipes || [])];
+        hasChanges = true;
       }
     }
+
+    // Initialize other merged data with the same source as recipes
+    let mergedLastCookedDates, mergedPinnedRecipes;
+    
+    if (localChanged && !driveChanged) {
+      mergedLastCookedDates = { ...(localLastCookedDates || {}) };
+      mergedPinnedRecipes = [...(localPinnedRecipes || [])];
+    } else if (driveChanged && !localChanged) {
+      mergedLastCookedDates = { ...(driveLastCookedDates || {}) };
+      mergedPinnedRecipes = [...(drivePinnedRecipes || [])];
+    } else if (!localChanged && !driveChanged) {
+      mergedLastCookedDates = { ...(driveLastCookedDates || {}) };
+      mergedPinnedRecipes = [...(drivePinnedRecipes || [])];
+    } else {
+      // Both changed - use data from newer file
+      if (localModified > remoteModified) {
+        mergedLastCookedDates = { ...(localLastCookedDates || {}) };
+        mergedPinnedRecipes = [...(localPinnedRecipes || [])];
+      } else {
+        mergedLastCookedDates = { ...(driveLastCookedDates || {}) };
+        mergedPinnedRecipes = [...(drivePinnedRecipes || [])];
+      }
+    }
+
+    console.log(`🎯 File-based merge completed: ${mergedRecipes.length} recipes from ${hasChanges ? 'newer' : 'drive'} source`);
+
+    return {
+      recipes: mergedRecipes,
+      lastCookedDates: mergedLastCookedDates,
+      pinnedRecipes: mergedPinnedRecipes,
+      hasChanges
+    };
+  }
+
+  // Pure merge algorithm - perfect for unit testing (DEPRECATED - use mergeExcelDataByFile)
+  async mergeExcelData(localRecipes, localLastCookedDates, localPinnedRecipes,
+                       driveRecipes, driveLastCookedDates, drivePinnedRecipes) {
+    console.log('Merging Excel data with intelligent conflict resolution...');
+
+    // Get last sync time to determine what changed since then
+    const lastSyncTime = await this.getLastSyncTime();
+    const lastSync = lastSyncTime ? new Date(lastSyncTime) : new Date(0);
+    
+    console.log(`📅 Last sync was: ${lastSync.toISOString()}`);
+
+    // Get detailed timing information for both sources
+    const localTimingInfo = this.getDataTimingInfo(localRecipes, 'Local');
+    const driveTimingInfo = this.getDataTimingInfo(driveRecipes, 'Drive');
+    
+    console.log(`📱 ${localTimingInfo.summary}`);
+    console.log(`☁️  ${driveTimingInfo.summary}`);
+
+    // Determine which data sources have changed since last sync
+    const localChanged = localTimingInfo.latestModified > lastSync;
+    const driveChanged = driveTimingInfo.latestModified > lastSync;
+    
+    console.log(`🔄 Sync decision: Local changed=${localChanged}, Drive changed=${driveChanged}`);
+
+    let mergedRecipes = [];
+    let hasChanges = false;
+
+    // Strategy 1: If only one source changed, use that source
+    if (localChanged && !driveChanged) {
+      console.log('Only local changed - using local data');
+      mergedRecipes = [...(localRecipes || [])];
+      hasChanges = true;
+    } else if (driveChanged && !localChanged) {
+      console.log('Only drive changed - using drive data');
+      mergedRecipes = [...(driveRecipes || [])];
+      hasChanges = true;
+    } else if (!localChanged && !driveChanged) {
+      console.log('Neither changed since sync - using drive data as base');
+      mergedRecipes = [...(driveRecipes || [])];
+    } else {
+      // Strategy 2: Both changed - intelligent merge required
+      console.log('Both sources changed - performing intelligent merge');
+      const mergeResult = this.performIntelligentMerge(localRecipes, driveRecipes, lastSync);
+      mergedRecipes = mergeResult.recipes;
+      hasChanges = mergeResult.hasChanges;
+    }
+
+    // Initialize other merged data with drive as base
+    const mergedLastCookedDates = { ...(driveLastCookedDates || {}) };
+    const mergedPinnedRecipes = [...(drivePinnedRecipes || [])];
 
     // Merge last cooked dates (keep the most recent date)
     for (const [recipeName, dateIso] of Object.entries(localLastCookedDates || {})) {
@@ -572,6 +681,180 @@ class SyncService {
     // Create a unique key based on name, url, and comment
     // Similar to the desktop app's composite key approach
     return `${recipe.name || ''}|${recipe.url || ''}|${recipe.comment || ''}`;
+  }
+
+  // Get detailed timing information about a data source
+  getDataTimingInfo(recipes, sourceName) {
+    if (!recipes || recipes.length === 0) {
+      return {
+        latestModified: new Date(0),
+        summary: `${sourceName}: No recipes (empty dataset)`,
+        recipeCount: 0,
+        modifiedRecipes: []
+      };
+    }
+
+    let latestModified = new Date(0);
+    let oldestModified = new Date();
+    const modifiedRecipes = [];
+
+    recipes.forEach(recipe => {
+      const modified = new Date(recipe.createdAt || recipe.lastModified || 0);
+      if (modified > latestModified) {
+        latestModified = modified;
+      }
+      if (modified < oldestModified) {
+        oldestModified = modified;
+      }
+      modifiedRecipes.push({
+        name: recipe.name,
+        modified: modified.toISOString()
+      });
+    });
+
+    // Sort by modification time (newest first)
+    modifiedRecipes.sort((a, b) => new Date(b.modified) - new Date(a.modified));
+
+    const summary = `${sourceName}: ${recipes.length} recipes, latest modified: ${latestModified.toISOString()}, oldest: ${oldestModified.toISOString()}`;
+    
+    return {
+      latestModified,
+      oldestModified,
+      summary,
+      recipeCount: recipes.length,
+      modifiedRecipes
+    };
+  }
+
+  // Check if data has changed since last sync (legacy method - now uses timing info)
+  hasDataChangedSinceSync(recipes, lastSyncTime) {
+    const timingInfo = this.getDataTimingInfo(recipes, 'Unknown');
+    return timingInfo.latestModified > lastSyncTime;
+  }
+
+  // Intelligent merge when both sources have changed
+  performIntelligentMerge(localRecipes, driveRecipes, lastSyncTime) {
+    console.log('Performing intelligent merge...');
+    
+    const mergedRecipes = [];
+    const processedKeys = new Set();
+    let hasChanges = false;
+
+    // Create maps for efficient lookup
+    const localMap = new Map();
+    const driveMap = new Map();
+    
+    (localRecipes || []).forEach(recipe => {
+      const key = this.getRecipeKey(recipe);
+      localMap.set(key, recipe);
+    });
+    
+    (driveRecipes || []).forEach(recipe => {
+      const key = this.getRecipeKey(recipe);
+      driveMap.set(key, recipe);
+    });
+
+    // Process all unique recipe keys
+    const allKeys = new Set([...localMap.keys(), ...driveMap.keys()]);
+    
+    for (const key of allKeys) {
+      const localRecipe = localMap.get(key);
+      const driveRecipe = driveMap.get(key);
+      
+      if (localRecipe && driveRecipe) {
+        // Recipe exists in both - use the newer one
+        const localModified = new Date(localRecipe.createdAt || localRecipe.lastModified || 0);
+        const driveModified = new Date(driveRecipe.createdAt || driveRecipe.lastModified || 0);
+        
+        if (localModified >= driveModified) {
+          mergedRecipes.push(localRecipe);
+          console.log(`📱 Using local version of "${localRecipe.name}": local=${localModified.toISOString()}, drive=${driveModified.toISOString()}`);
+        } else {
+          mergedRecipes.push(driveRecipe);
+          console.log(`☁️  Using drive version of "${driveRecipe.name}": local=${localModified.toISOString()}, drive=${driveModified.toISOString()}`);
+        }
+        hasChanges = true;
+      } else if (localRecipe) {
+        // Only exists locally - check for similar recipes in drive
+        const similarDriveRecipe = this.findSimilarRecipe(localRecipe, driveRecipes);
+        
+        if (similarDriveRecipe && !processedKeys.has(this.getRecipeKey(similarDriveRecipe))) {
+          // Found similar recipe - apply conflict resolution
+          const resolution = this.resolveRecipeConflict(localRecipe, similarDriveRecipe);
+          mergedRecipes.push(...resolution.recipes);
+          processedKeys.add(this.getRecipeKey(similarDriveRecipe));
+          console.log(`Resolved conflict between "${localRecipe.name}" and "${similarDriveRecipe.name}": ${resolution.action}`);
+        } else {
+          // Unique local recipe
+          mergedRecipes.push(localRecipe);
+          console.log(`Added unique local recipe: ${localRecipe.name}`);
+        }
+        hasChanges = true;
+      } else if (driveRecipe) {
+        // Only exists in drive - check if we already processed it
+        if (!processedKeys.has(key)) {
+          mergedRecipes.push(driveRecipe);
+          console.log(`Added unique drive recipe: ${driveRecipe.name}`);
+          hasChanges = true;
+        }
+      }
+      
+      processedKeys.add(key);
+    }
+
+    console.log(`🎯 Intelligent merge completed: ${mergedRecipes.length} recipes in final result`);
+    return { recipes: mergedRecipes, hasChanges };
+  }
+
+  // Find similar recipe (same name but different url/comment)
+  findSimilarRecipe(targetRecipe, recipes) {
+    return (recipes || []).find(recipe => {
+      // Same name but different key (different url or comment)
+      return recipe.name === targetRecipe.name && 
+             this.getRecipeKey(recipe) !== this.getRecipeKey(targetRecipe);
+    });
+  }
+
+  // Resolve conflict between two similar recipes
+  resolveRecipeConflict(localRecipe, driveRecipe) {
+    // Count differences in the three key fields
+    const differences = [];
+    
+    if (localRecipe.name !== driveRecipe.name) differences.push('name');
+    if ((localRecipe.url || '') !== (driveRecipe.url || '')) differences.push('url');
+    if ((localRecipe.comment || '') !== (driveRecipe.comment || '')) differences.push('comment');
+    
+    const localModified = new Date(localRecipe.createdAt || localRecipe.lastModified || 0);
+    const driveModified = new Date(driveRecipe.createdAt || driveRecipe.lastModified || 0);
+    
+    console.log(`⚔️  Recipe conflict between "${localRecipe.name}" and "${driveRecipe.name}"`);
+    console.log(`   📱 Local modified: ${localModified.toISOString()}`);
+    console.log(`   ☁️  Drive modified: ${driveModified.toISOString()}`);
+    console.log(`   🔍 Differences in: [${differences.join(', ')}]`);
+    
+    if (differences.length <= 1) {
+      // Minor change (0-1 fields different) - keep the newer version
+      if (localModified >= driveModified) {
+        console.log(`   ✅ Resolution: Keep local (newer, ${differences.length} field${differences.length !== 1 ? 's' : ''} changed)`);
+        return {
+          recipes: [localRecipe],
+          action: `kept newer local version (${differences.length} field${differences.length !== 1 ? 's' : ''} changed)`
+        };
+      } else {
+        console.log(`   ✅ Resolution: Keep drive (newer, ${differences.length} field${differences.length !== 1 ? 's' : ''} changed)`);
+        return {
+          recipes: [driveRecipe],
+          action: `kept newer drive version (${differences.length} field${differences.length !== 1 ? 's' : ''} changed)`
+        };
+      }
+    } else {
+      // Major change (2+ fields different) - keep both recipes
+      console.log(`   ✅ Resolution: Keep both (major changes, ${differences.length} fields changed)`);
+      return {
+        recipes: [localRecipe, driveRecipe],
+        action: `kept both versions (${differences.length} fields changed)`
+      };
+    }
   }
 
   // Quick sync for immediate updates
@@ -818,6 +1101,20 @@ class DriveClientAdapter {
     }
   }
 
+  async getDriveFileId() {
+    if (!this.googleDriveService) {
+      throw new Error('Google Drive service not initialized');
+    }
+    return this.googleDriveService.getDriveFileId();
+  }
+
+  async getFileInfo(fileId) {
+    if (!this.googleDriveService) {
+      throw new Error('Google Drive service not initialized');
+    }
+    return this.googleDriveService.getFileInfo(fileId);
+  }
+
   async listFiles() {
     try {
       if (!this.googleDriveService) {
@@ -883,9 +1180,15 @@ class StorageProviderAdapter {
     }
   }
 
-  async saveRecipes(recipes) {
+  async saveRecipes(recipes, skipModificationTimeUpdate = false) {
     try {
       await this.setItem('@cookit_recipes', JSON.stringify(recipes));
+      
+      // Update data modification time (only if not called by sync process)
+      if (!skipModificationTimeUpdate) {
+        await this.setItem('@cookit_last_data_modification', new Date().toISOString());
+      }
+      
       return true;
     } catch (error) {
       console.error('Error saving recipes:', error);
@@ -929,6 +1232,28 @@ class StorageProviderAdapter {
       return true;
     } catch (error) {
       console.error('Error saving pinned recipes:', error);
+      return false;
+    }
+  }
+
+  async getLastDataModificationTime() {
+    try {
+      const lastModified = await this.getItem('@cookit_last_data_modification');
+      return lastModified ? new Date(lastModified) : new Date(0);
+    } catch (error) {
+      console.error('Error getting last data modification time:', error);
+      return new Date(0);
+    }
+  }
+
+  async updateDataModificationTime() {
+    try {
+      const timestamp = new Date().toISOString();
+      console.log(`🕒 Data modification time updated to ${timestamp} by: syncService (after successful sync)`);
+      await this.setItem('@cookit_last_data_modification', timestamp);
+      return true;
+    } catch (error) {
+      console.error('Error updating data modification time:', error);
       return false;
     }
   }
@@ -1013,6 +1338,20 @@ class ExcelProcessorAdapter {
       return null;
     }
     return this.excelService.getLocalFileInfo();
+  }
+
+  async downloadFromDrive() {
+    if (!this.excelService || typeof this.excelService.downloadFromDrive !== 'function') {
+      throw new Error('Excel service downloadFromDrive method not available');
+    }
+    return this.excelService.downloadFromDrive();
+  }
+
+  async uploadToDrive() {
+    if (!this.excelService || typeof this.excelService.uploadToDrive !== 'function') {
+      throw new Error('Excel service uploadToDrive method not available');
+    }
+    return this.excelService.uploadToDrive();
   }
 }
 

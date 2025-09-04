@@ -8,6 +8,7 @@ const EXCEL_SYNC_ENABLED_KEY = '@cookit_excel_sync_enabled';
 const LAST_EXCEL_SYNC_KEY = '@cookit_last_excel_sync';
 const LAST_COOKED_DATES_KEY = '@cookit_last_cooked_dates';
 const COOK_COUNTS_KEY = '@cookit_cook_counts';
+const LAST_DATA_MODIFICATION_KEY = '@cookit_last_data_modification';
 
 // Import services
 let syncService = null;
@@ -178,14 +179,43 @@ export const getLastExcelSyncTime = async () => {
   }
 };
 
+// Helper function to update data modification timestamp
+const updateDataModificationTime = async (source = 'unknown') => {
+  try {
+    const timestamp = new Date().toISOString();
+    console.log(`🕒 Data modification time updated to ${timestamp} by: ${source}`);
+    await AsyncStorage.setItem(LAST_DATA_MODIFICATION_KEY, timestamp);
+  } catch (error) {
+    console.error('Error updating data modification time:', error);
+  }
+};
+
+// Get last data modification time
+export const getLastDataModificationTime = async () => {
+  try {
+    const lastModified = await AsyncStorage.getItem(LAST_DATA_MODIFICATION_KEY);
+    return lastModified ? new Date(lastModified) : new Date(0);
+  } catch (error) {
+    console.error('Error getting last data modification time:', error);
+    return new Date(0);
+  }
+};
+
 // Enhanced recipe management with Excel sync
-export const saveRecipes = async (recipes) => {
+export const saveRecipes = async (recipes, skipModificationTimeUpdate = false) => {
   try {
     // Save to local JSON storage for app functionality
     await AsyncStorage.setItem(RECIPES_KEY, JSON.stringify(recipes));
 
-    // Trigger Excel sync if enabled
-    await triggerExcelSync();
+    // Update data modification time (only if not called by sync process)
+    if (!skipModificationTimeUpdate) {
+      await updateDataModificationTime('saveRecipes');
+    }
+
+    // Trigger Excel sync if enabled (only if not called by sync process)
+    if (!skipModificationTimeUpdate) {
+      await triggerExcelSync();
+    }
   } catch (error) {
     console.error('Error saving recipes:', error);
   }
@@ -207,9 +237,11 @@ export const addRecipe = async (recipe) => {
     const newRecipe = {
       ...recipe,
       createdAt: new Date().toISOString(),
+      lastModified: new Date().toISOString(),
       cooked: false,
     };
     recipes.push(newRecipe);
+    
     await saveRecipes(recipes);
 
     // Trigger both legacy and Excel sync for backward compatibility
@@ -227,6 +259,7 @@ export const deleteRecipe = async (recipeName) => {
   try {
     const recipes = await loadRecipes();
     const updatedRecipes = recipes.filter(recipe => recipe.name !== recipeName);
+    
     await saveRecipes(updatedRecipes);
 
     // Clean up pinned recipes
@@ -272,6 +305,7 @@ export const updateRecipe = async (recipeName, updates) => {
     const updatedRecipes = recipes.map(recipe =>
       recipe.name === recipeName ? { ...recipe, ...updates, lastModified: new Date().toISOString() } : recipe
     );
+    
     await saveRecipes(updatedRecipes);
 
     // Trigger both legacy and Excel sync for backward compatibility
@@ -315,6 +349,9 @@ export const setLastCookedDates = async (datesObject) => {
 
 export const setCookedStatus = async (recipeName, isCooked) => {
   try {
+    // Update data modification time for cooked status changes
+    await updateDataModificationTime('setCookedStatus');
+    
     const cookedRecipes = await getCookedRecipes();
     cookedRecipes[recipeName] = isCooked;
     await AsyncStorage.setItem(COOKED_RECIPES_KEY, JSON.stringify(cookedRecipes));
@@ -401,6 +438,9 @@ export const togglePinnedRecipe = async (recipeName) => {
 
     // Mark this operation as ongoing
     ongoingPinOperations.add(recipeName);
+
+    // Update data modification time for pinned status changes
+    await updateDataModificationTime('togglePinnedRecipe');
 
     const currentPinnedRecipes = await getPinnedRecipes();
     const updatedPinnedRecipes = currentPinnedRecipes.includes(recipeName)
@@ -737,6 +777,7 @@ export const addSampleRecipes = async () => {
       const newRecipe = {
         ...sampleRecipe,
         createdAt: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
         cooked: false,
       };
       recipes.push(newRecipe);
