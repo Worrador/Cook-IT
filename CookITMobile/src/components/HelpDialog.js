@@ -45,6 +45,13 @@ const HelpDialog = ({ onClose, isFirstTime = false }) => {
             theme={theme}
           />
 
+          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
+            <MaterialCommunityIcons name="lightbulb" size={32} color={theme.colors.primary} style={styles.infoIcon} />
+            <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
+              Tip: You can share your Cook-IT recipe file in Google Drive with a partner so you both have the same recipe book.
+            </Text>
+          </View>
+
           <Section
             icon="📜"
             title="Adding Recipes"
@@ -88,7 +95,7 @@ const HelpDialog = ({ onClose, isFirstTime = false }) => {
           <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
             <MaterialCommunityIcons name="lightbulb" size={32} color={theme.colors.primary} style={styles.infoIcon} />
             <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
-              Tip: By clicking "I will Cook IT!" you will have the chance to create your shopping list. And by saving the recipe to the homescreen, the next time you open the app, you can open the recipe again for the actual cooking instructions.
+              Tip: By first clicking "I will Cook IT!" you get the chance to create your shopping list. And then by saving the recipe to the homescreen, you can quickly find the recipe again for the actual cooking.
             </Text>
           </View>
 

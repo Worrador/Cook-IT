@@ -6,7 +6,12 @@ const SCOPES = [
   'openid',
   'profile',
   'email',
-  'https://www.googleapis.com/auth/drive.file'
+  // Read/write access to files created or opened with the app
+  'https://www.googleapis.com/auth/drive.file',
+  // Read access to all files user can access (needed to locate an existing file)
+  'https://www.googleapis.com/auth/drive.readonly',
+  // Read metadata across Drive (helps searching by name without downloading content)
+  'https://www.googleapis.com/auth/drive.metadata.readonly'
 ];
 
 // Configuration constants
@@ -80,20 +85,20 @@ class GoogleDriveService {
       console.log('🔍 Web Client ID:', WEB_CLIENT_ID);
       console.log('🔍 Package name: com.worrador.cookitmobile');
       console.log('🔍 SHA-1 fingerprint: 66:75:4B:A0:24:AF:D9:1E:19:45:DD:D6:59:D5:02:5A:A2:9D:8C:F5');
-      
+
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       console.log('✅ Google Play Services check passed');
-      
+
       // Interactive sign in
       console.log('🔍 Attempting Google Sign-In...');
       await GoogleSignin.signIn();
       console.log('✅ Google Sign-In successful');
-      
+
       // Get tokens
       console.log('🔍 Getting tokens...');
       const tokens = await GoogleSignin.getTokens();
       console.log('🔍 Tokens received:', tokens ? 'Yes' : 'No');
-      
+
       if (tokens?.accessToken) {
         console.log('✅ Access token received, storing...');
         await this.storeTokensFromAccessToken(tokens.accessToken);
@@ -105,7 +110,7 @@ class GoogleDriveService {
       console.error('❌ Authentication error:', error);
       console.error('❌ Error code:', error.code);
       console.error('❌ Error message:', error.message);
-      
+
       // Provide more specific error messages
       if (error.code === 'DEVELOPER_ERROR') {
         console.error('🔧 DEVELOPER_ERROR: Google Sign-In is not properly configured. Please check:');
@@ -119,7 +124,7 @@ class GoogleDriveService {
       } else if (error.code === 'SIGN_IN_REQUIRED') {
         console.error('Sign-in is required but user is not signed in');
       }
-      
+
       return false;
     }
   }
@@ -219,7 +224,22 @@ class GoogleDriveService {
   }
 
   async getDriveFileId() {
-    return this.driveFileId;
+    // Return cached ID if available
+    if (this.driveFileId) return this.driveFileId;
+
+    // Attempt to locate an existing file by the expected name in user's Drive
+    try {
+      const foundId = await this.findFileIdByName('CookIT_Recipes.xlsx');
+      if (foundId) {
+        await this.setDriveFileId(foundId);
+        return foundId;
+      }
+    } catch (e) {
+      // Fall through to return null if search fails
+      console.warn('Drive file ID lookup by name failed:', e?.message || e);
+    }
+
+    return null;
   }
 
   async setDriveFileId(fileId) {
@@ -339,7 +359,7 @@ class GoogleDriveService {
   async downloadFile(fileId) {
     try {
       const response = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`
+        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`
       );
 
       if (!response.ok) {
@@ -365,7 +385,7 @@ class GoogleDriveService {
   async getFileInfo(fileId) {
     try {
       const response = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,modifiedTime,size`
+        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,modifiedTime,size&supportsAllDrives=true`
       );
 
       if (!response.ok) {
@@ -382,7 +402,7 @@ class GoogleDriveService {
   async deleteFile(fileId) {
     try {
       const response = await this.makeAuthenticatedRequest(
-        `https://www.googleapis.com/drive/v3/files/${fileId}`,
+        `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true`,
         {
           method: 'DELETE',
         }
@@ -400,6 +420,48 @@ class GoogleDriveService {
       return true;
     } catch (error) {
       console.error('Error deleting file:', error);
+      throw error;
+    }
+  }
+
+  // Search for a file by exact name and expected mime type; returns first match id or null
+  async findFileIdByName(fileName) {
+    try {
+      if (!this.isAuthenticated()) {
+        throw new Error('Not authenticated');
+      }
+
+      const queryParts = [
+        `name = '${fileName.replace(/'/g, "\\'")}'`,
+        "trashed = false",
+        "mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'",
+      ];
+
+      const params = new URLSearchParams({
+        q: queryParts.join(' and '),
+        fields: 'files(id,name,mimeType,modifiedTime,driveId,parents)',
+        spaces: 'drive',
+        pageSize: '10',
+        orderBy: 'modifiedTime desc',
+        includeItemsFromAllDrives: 'true',
+        supportsAllDrives: 'true',
+        corpora: 'allDrives'
+      });
+
+      const url = `https://www.googleapis.com/drive/v3/files?${params.toString()}`;
+
+      const response = await this.makeAuthenticatedRequest(url, { method: 'GET' });
+      if (!response.ok) {
+        throw new Error(`Failed to search files: ${response.statusText}`);
+      }
+      const data = await response.json();
+      const files = Array.isArray(data.files) ? data.files : [];
+      if (files.length > 0) {
+        return files[0].id;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error searching file by name:', error);
       throw error;
     }
   }
