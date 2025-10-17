@@ -2,16 +2,18 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Buffer } from 'buffer'; // Import Buffer
 
-const SCOPES = [
+// Scope sets
+const BASE_SCOPES = [
   'openid',
   'profile',
   'email',
-  // Read/write access to files created or opened with the app
-  'https://www.googleapis.com/auth/drive.file',
-  // Read access to all files user can access (needed to locate an existing file)
+  'https://www.googleapis.com/auth/drive.file', // Only files created/opened by the app
+];
+
+const EXTENDED_READ_SCOPES = [
+  ...BASE_SCOPES,
   'https://www.googleapis.com/auth/drive.readonly',
-  // Read metadata across Drive (helps searching by name without downloading content)
-  'https://www.googleapis.com/auth/drive.metadata.readonly'
+  'https://www.googleapis.com/auth/drive.metadata.readonly',
 ];
 
 // Configuration constants
@@ -19,6 +21,7 @@ const ACCESS_TOKEN_KEY = '@cookit_access_token';
 const REFRESH_TOKEN_KEY = '@cookit_refresh_token';
 const TOKEN_EXPIRY_KEY = '@cookit_token_expiry';
 const DRIVE_FILE_ID_KEY = '@cookit_drive_file_id';
+const DRIVE_SEARCH_ALL_PREF_KEY = '@cookit_drive_search_all_pref';
 
 // Replace with your Web application client ID from Google Cloud Console
 const WEB_CLIENT_ID = '609680746236-fuo5qoefnbqilcuj9p2eimebrf2k5eqo.apps.googleusercontent.com';
@@ -32,13 +35,38 @@ class GoogleDriveService {
     this.isInitialized = false;
   }
 
+  // User preference: whether to search all drives for an existing file on first auth
+  async setSearchAllPreference(enabled) {
+    await AsyncStorage.setItem(DRIVE_SEARCH_ALL_PREF_KEY, enabled ? 'true' : 'false');
+  }
+
+  async getSearchAllPreference() {
+    const val = await AsyncStorage.getItem(DRIVE_SEARCH_ALL_PREF_KEY);
+    return val === 'true';
+  }
+
+  // Determine scopes to configure based on first-auth and preference
+  async getConfiguredScopes() {
+    // If we already have an access token, keep current behavior (do not escalate silently)
+    const existingAccessToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+    if (existingAccessToken) {
+      // Preserve previously configured scopes; default to extended since code may rely on it
+      // but we avoid re-configuring with broader scopes unexpectedly. Use BASE_SCOPES here.
+      return BASE_SCOPES;
+    }
+    // First-time auth: respect preference
+    const wantsSearchAll = await this.getSearchAllPreference();
+    return wantsSearchAll ? EXTENDED_READ_SCOPES : BASE_SCOPES;
+  }
+
   async initialize() {
     if (this.isInitialized) return true;
 
     try {
-      // Configure Google Sign-In
+      // Configure Google Sign-In with dynamic scopes
+      const scopes = await this.getConfiguredScopes();
       GoogleSignin.configure({
-        scopes: SCOPES,
+        scopes,
         webClientId: WEB_CLIENT_ID,
         offlineAccess: true, // Enable offline access for refresh tokens
       });

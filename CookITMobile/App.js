@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet, FlatList, Modal, TouchableOpacity, SafeAreaView, Alert, Linking, StatusBar, AppState, BackHandler, Dimensions, KeyboardAvoidingView, Platform, ImageBackground, ScrollView, LayoutAnimation, Animated, LogBox } from 'react-native';
-import { Text, Surface, useTheme, IconButton, FAB, Portal, Dialog, Button as PaperButton, Provider as PaperProvider, MD3LightTheme, TextInput } from 'react-native-paper';
+import { Text, Surface, useTheme, IconButton, FAB, Portal, Dialog, Button as PaperButton, Provider as PaperProvider, MD3LightTheme, TextInput, Checkbox } from 'react-native-paper';
 import { Card, CardHeader, CardContent, CardFooter } from './src/components/Card';
 import { Button } from './src/components/Button';
 import { Input } from './src/components/Input';
@@ -111,6 +111,7 @@ const AppContent = () => {
   const [isAddingSampleRecipes, setIsAddingSampleRecipes] = useState(false);
   const [tutorialCount, setTutorialCountState] = useState(0);
   const [hasShownSyncDialog, setHasShownSyncDialog] = useState(false);
+  const [searchAllDrivesPref, setSearchAllDrivesPref] = useState(true);
 
   // Dialog sequence states for first-time users
   const [dialogSequence, setDialogSequence] = useState({
@@ -121,7 +122,7 @@ const AppContent = () => {
 
   // Custom alert states
   const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', type: 'info' });
-  
+
   // Flag to track manual authentication in progress
   const [isManualAuthInProgress, setIsManualAuthInProgress] = useState(false);
 
@@ -132,6 +133,8 @@ const AppContent = () => {
   const syncIconRotation = useRef(new Animated.Value(0)).current; // For sync icon rotation
   const progressBarPulse = useRef(new Animated.Value(0)).current; // For progress bar pulse
   const progressBarFill = useRef(new Animated.Value(0)).current; // For actual progress bar fill
+  const syncButtonPop = useRef(new Animated.Value(0)).current; // For primary sync button pop animation (disabled for connect)
+  const searchPrefPop = useRef(new Animated.Value(0)).current; // For checkbox pop animation
 
   // Helper function to get or create recipe animations
   const getRecipeAnimation = (recipeName) => {
@@ -191,6 +194,23 @@ const AppContent = () => {
     }).start();
   }, [syncProgress]);
 
+  // Ensure any old connect button pop is disabled
+  useEffect(() => {
+    syncButtonPop.setValue(0);
+  }, [showSyncInfo, syncStatus.isAuthenticated]);
+
+  // Pop the checkbox row when the sync dialog opens (before authentication)
+  useEffect(() => {
+    if (showSyncInfo && !syncStatus.isAuthenticated) {
+      Animated.sequence([
+        Animated.timing(searchPrefPop, { toValue: 1, duration: 220, useNativeDriver: true }),
+        Animated.timing(searchPrefPop, { toValue: 0, duration: 180, useNativeDriver: true }),
+      ]).start();
+    } else {
+      searchPrefPop.setValue(0);
+    }
+  }, [showSyncInfo, syncStatus.isAuthenticated]);
+
   useEffect(() => {
     // Hide status bar when component mounts
     StatusBar.setHidden(true);
@@ -215,6 +235,19 @@ const AppContent = () => {
 
   useEffect(() => {
     loadInitialData();
+    // Load Drive search preference for first auth
+    (async () => {
+      try {
+        const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
+        const pref = await AsyncStorage.getItem('@cookit_drive_search_all_pref');
+        if (pref === null) {
+          await AsyncStorage.setItem('@cookit_drive_search_all_pref', 'true');
+          setSearchAllDrivesPref(true);
+        } else {
+          setSearchAllDrivesPref(pref === 'true');
+        }
+      } catch {}
+    })();
 
     // Check app open count for help button visibility
     const checkHelpButtonVisibility = async () => {
@@ -239,6 +272,26 @@ const AppContent = () => {
     setIsAnyDialogOpen(showAddModal || showRecipeDetails || showHelp || showBuyCoffee || showEmptyRecipeBookDialog || customAlert.visible || showSyncInfo);
   }, [showAddModal, showRecipeDetails, showHelp, showBuyCoffee, showEmptyRecipeBookDialog, customAlert.visible, showSyncInfo]);
 
+  // Refresh sync status when the Sync dialog opens, and poll while visible
+  useEffect(() => {
+    let intervalId = null;
+    const refresh = async () => {
+      try {
+        const status = await syncService.checkSyncStatus();
+        setSyncStatus(prev => ({ ...prev, lastSync: status.lastSync }));
+      } catch {}
+    };
+
+    if (showSyncInfo) {
+      refresh();
+      intervalId = setInterval(refresh, 3000);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [showSyncInfo]);
+
   // Show sync info dialog when not authenticated and no other dialogs are open
   // But respect the dialog sequence for first-time users
   useEffect(() => {
@@ -250,14 +303,14 @@ const AppContent = () => {
 
     // For first-time users (tutorialCount <= 5), only show sync dialog as part of sequence
     const isFirstTime = tutorialCount <= 5;
-    const shouldShowSyncDialog = !syncStatus.isAuthenticated && 
-                                !syncStatus.inProgress && 
-                                !isLoading && 
-                                !showAddModal && 
-                                !showRecipeDetails && 
-                                !showHelp && 
-                                !showBuyCoffee && 
-                                !showEmptyRecipeBookDialog && 
+    const shouldShowSyncDialog = !syncStatus.isAuthenticated &&
+                                !syncStatus.inProgress &&
+                                !isLoading &&
+                                !showAddModal &&
+                                !showRecipeDetails &&
+                                !showHelp &&
+                                !showBuyCoffee &&
+                                !showEmptyRecipeBookDialog &&
                                 !customAlert.visible &&
                                 !showSyncInfo &&
                                 !hasShownSyncDialog &&
@@ -268,14 +321,14 @@ const AppContent = () => {
       setHasShownSyncDialog(true);
     }
   }, [
-    syncStatus.isAuthenticated, 
-    syncStatus.inProgress, 
-    isLoading, 
-    showAddModal, 
-    showRecipeDetails, 
-    showHelp, 
-    showBuyCoffee, 
-    showEmptyRecipeBookDialog, 
+    syncStatus.isAuthenticated,
+    syncStatus.inProgress,
+    isLoading,
+    showAddModal,
+    showRecipeDetails,
+    showHelp,
+    showBuyCoffee,
+    showEmptyRecipeBookDialog,
     customAlert.visible,
     showSyncInfo,
     hasShownSyncDialog,
@@ -473,7 +526,7 @@ const AppContent = () => {
   const handleSyncCheck = async () => {
     try {
       const status = await syncService.checkSyncStatus();
-      
+
       // Don't override sync status if we're currently in a manual sync process
       setSyncStatus(prev => {
         // If we're manually managing sync progress or authentication, don't override it
@@ -513,7 +566,7 @@ const AppContent = () => {
 
       // Check if we're authenticated first
       const status = await syncService.checkSyncStatus();
-      
+
       // Update UI to show we're syncing (this fixes the progress bar not showing)
       setSyncStatus(prev => ({ ...prev, inProgress: true }));
 
@@ -522,24 +575,24 @@ const AppContent = () => {
         console.log('Starting Google Drive authentication...');
         setIsManualAuthInProgress(true); // Set flag to prevent status override
         onProgress(0.1, 'Connecting to Google Drive...');
-        
+
         // Keep the UI in sync mode during authentication
         // Don't rely on checkSyncStatus during auth as it will show "not connected" until auth completes
-        
+
         // Start monitoring authentication progress
         const authProgressInterval = setInterval(async () => {
           // During authentication, keep showing progress instead of checking actual status
           // The real progress happens inside initializeSync
         }, 1000);
-        
+
         // Update progress messages during authentication
         setTimeout(() => onProgress(0.2, 'Opening Google authentication...'), 1000);
         setTimeout(() => onProgress(0.3, 'Waiting for user authentication...'), 3000);
         setTimeout(() => onProgress(0.5, 'Processing authentication...'), 6000);
         setTimeout(() => onProgress(0.7, 'Setting up Google Drive access...'), 8000);
-        
+
         const initResult = await syncService.initializeSync();
-        
+
         // Clear the monitoring interval and reset flag
         clearInterval(authProgressInterval);
         setIsManualAuthInProgress(false);
@@ -547,14 +600,14 @@ const AppContent = () => {
         if (initResult.success) {
           // Authentication and sync completed - initializeSync does both
           onProgress(0.9, 'Authentication complete, finalizing...');
-          
+
           // Update sync status immediately to reflect authentication
           const updatedStatus = await syncService.checkSyncStatus();
           setSyncStatus(updatedStatus);
-          
+
           onProgress(1, 'Sync complete');
           showCustomAlert('Authentication & Sync Complete', 'Successfully connected to Google Drive and synced your recipes!', 'success');
-          
+
           if (initResult.hasChanges) {
             await loadInitialData();
           }
@@ -747,7 +800,7 @@ const AppContent = () => {
   const handleHelpDialogClose = () => {
     setShowHelp(false);
     setDialogSequence(prev => ({ ...prev, helpShown: true }));
-    
+
     // Check if we need to show empty recipe book dialog next
     if (recipes.length === 0) {
       setTimeout(() => {
@@ -764,7 +817,7 @@ const AppContent = () => {
   const handleEmptyRecipeBookDialogClose = () => {
     setShowEmptyRecipeBookDialog(false);
     setDialogSequence(prev => ({ ...prev, emptyRecipeBookShown: true }));
-    
+
     // Show sync dialog next if it's a first-time user and sync hasn't been shown
     setTimeout(() => {
       handleNextInSequence('syncShown');
@@ -786,7 +839,7 @@ const AppContent = () => {
       setShowEmptyRecipeBookDialog(false);
       setDialogSequence(prev => ({ ...prev, emptyRecipeBookShown: true }));
       showCustomAlert('Success', 'Sample recipes have been added to your recipe book!', 'success');
-      
+
       // Continue with sequence after adding sample recipes
       setTimeout(() => {
         handleNextInSequence('emptyRecipeBookShown');
@@ -1178,8 +1231,8 @@ const AppContent = () => {
           onDismiss={() => setShowHelp(false)}
           style={[styles.dialog, { backgroundColor: theme.colors.surface, maxHeight: dialogMaxHeight }]}
         >
-          <HelpDialog 
-            onClose={handleHelpDialogClose} 
+          <HelpDialog
+            onClose={handleHelpDialogClose}
             isFirstTime={tutorialCount <= 5}
           />
         </Dialog>
@@ -1314,7 +1367,7 @@ const AppContent = () => {
 
               {/* 4. HELP INFO - Only show when not connected (contextual help) */}
               {!syncStatus.isAuthenticated && (
-                <View style={[styles.infoBox, { backgroundColor: '#FFF8E1', marginTop: 8 }]}>
+                <View style={[styles.infoBox, { backgroundColor: '#FBE7A0', marginTop: 8 }]}>
                   <MaterialCommunityIcons
                     name="information-outline"
                     size={24}
@@ -1325,6 +1378,34 @@ const AppContent = () => {
                     Sync keeps your recipes safe and accessible from any device. Your data stays private in your Google Drive.
                   </Text>
                 </View>
+              )}
+
+              {/* Preference: search existing/shared files, only before first authentication */}
+              {!syncStatus.isAuthenticated && (
+                (() => {
+                  const scale = searchPrefPop.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
+                  return (
+                    <View style={[styles.infoBox, { backgroundColor: '#FFF3E0', borderColor: '#F2BC42', borderWidth: 1, marginTop: 8, overflow: 'visible' }]}>
+                      <Animated.View style={{ transform: [{ scale }], flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                        <Checkbox
+                          status={searchAllDrivesPref ? 'checked' : 'unchecked'}
+                          onPress={async () => {
+                            try {
+                              const next = !searchAllDrivesPref;
+                              setSearchAllDrivesPref(next);
+                              const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
+                              await AsyncStorage.setItem('@cookit_drive_search_all_pref', next ? 'true' : 'false');
+                            } catch {}
+                          }}
+                          color={theme.colors.primary}
+                        />
+                        <Text style={[styles.infoText, { color: theme.colors.primary, fontSize: 13 }]}>
+                          Search for existing "CookIT_Recipes.xlsx" file on my Drive or shared files
+                        </Text>
+                      </Animated.View>
+                    </View>
+                  );
+                })()
               )}
             </ScrollView>
           </Dialog.Content>
@@ -1346,7 +1427,7 @@ const AppContent = () => {
                 color={theme.colors.onSurfaceVariant}
                 style={{ marginRight: 6 }}
               />
-              <Text style={{ 
+              <Text style={{
                 color: theme.colors.onSurfaceVariant,
                 fontSize: 11,
                 textAlign: 'center'
@@ -1457,8 +1538,8 @@ const AppContent = () => {
                 }
                 style={{ marginRight: 8, marginTop: 2 }}
               />
-              <Text 
-                style={[styles.title, { 
+              <Text
+                style={[styles.title, {
                   color: theme.colors.primary,
                   textAlign: 'center',
                   flexShrink: 1,
