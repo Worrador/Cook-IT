@@ -9,7 +9,8 @@
     "restart-electron": "node -e \"try { require('child_process').execSync('taskkill /F /IM electron.exe'); } catch(e) {} process.exit(0);\" && cross-env NODE_ENV=development electron .",
     "dev": "webpack serve --config webpack.config.js",
     "build": "webpack --config webpack.config.js",
-    "package": "npm run build && electron-builder build --win",
+    "build-backend": "cmd.exe /c ..\\python_resources\\PackageApp.bat",
+    "package": "npm run build-backend && npm run build && electron-builder build --win",
     "package:mac": "npm run build && electron-builder build --mac",
     "dist": "electron-builder",
     "analyze": "cross-env ANALYZE=true npm run build"
@@ -75,7 +76,7 @@
     ],
     "extraResources": [
       {
-        "from": "./dist-python",
+        "from": "../python_resources/dist",
         "to": "./"
       }
     ],

@@ -56,7 +56,8 @@
     "react-native-toast-message": "^2.2.0",
     "react-native-vector-icons": "^10.2.0",
     "react-native-web": "^0.20.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "expo-dev-client": "~5.2.4"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

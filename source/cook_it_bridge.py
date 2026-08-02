@@ -161,7 +161,7 @@ class AsyncCookITBridge:
                         # In offline mode, open the local file
                         import os
                         import subprocess
-                        file_path = os.path.abspath("Recipes.xlsx")
+                        file_path = os.path.abspath("CookIT_Recipes.xlsx")
                         if os.path.exists(file_path):
                             if sys.platform == 'win32':
                                 os.startfile(file_path)

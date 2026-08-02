@@ -18,7 +18,9 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
   const commentInputRef = useRef(null);
   const commentTextRef = useRef(null);
   const nameInputRef = useRef(null);
+  const nameTextRef = useRef(null);
   const [isNameExpanded, setIsNameExpanded] = useState(false);
+  const [shouldShowNameExpandButton, setShouldShowNameExpandButton] = useState(false);
   const [isUrlExpanded, setIsUrlExpanded] = useState(false);
   const [isEditingUrl, setIsEditingUrl] = useState(false);
   const [urlText, setUrlText] = useState('');
@@ -128,6 +130,10 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     setIsCommentExpanded(!isCommentExpanded);
   };
 
+  const toggleNameExpansion = () => {
+    setIsNameExpanded(!isNameExpanded);
+  };
+
   useEffect(() => {
     if (recipe) {
       setCommentText(recipe.comment || '');
@@ -142,6 +148,13 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       setShouldShowExpandButton(false);
     }
   }, [commentText]);
+
+  // Check if name text needs expansion button
+  useEffect(() => {
+    if (!nameText) {
+      setShouldShowNameExpandButton(false);
+    }
+  }, [nameText]);
 
   useEffect(() => {
     if (!visible) {
@@ -160,6 +173,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       setIsEditingUrl(false);
       setNoMoreRecipes(false);
       setIsCommentExpanded(false);
+      setIsNameExpanded(false);
     }
   }, [visible, recipe]);
 
@@ -220,6 +234,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     setHasClickedCook(false);
     setIsCommentExpanded(false);
     setIsEditingName(false);
+    setIsNameExpanded(false);
     setIsEditingUrl(false);
     try {
       const nextRecipe = await onNext();
@@ -265,6 +280,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                         style={styles.commentInput}
                         placeholder="Enter recipe name"
                         placeholderTextColor={`${theme.colors.primary}66`}
+                        multiline
                         autoFocus
                         mode="outlined"
                       />
@@ -285,15 +301,36 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                   ) : (
                     <View style={styles.nameViewContainer}>
                       <TouchableOpacity
-                        style={[styles.commentTextContainer, { maxHeight: 48 }]}
-                        onLongPress={() => setIsEditingName(true)}
+                        style={[styles.commentTextContainer, { maxHeight: isNameExpanded ? 200 : 48 }]}
+                        onPress={() => setIsEditingName(true)}
                       >
                         <Text
+                          ref={nameTextRef}
                           style={[styles.commentText, { color: nameText ? theme.colors.onSurface : theme.colors.onSurface + '66' }]}
-                          numberOfLines={1}
+                          numberOfLines={isNameExpanded ? undefined : 1}
+                          onTextLayout={(event) => {
+                            const { lines } = event.nativeEvent;
+                            if (lines.length > 1) {
+                              setShouldShowNameExpandButton(true);
+                            } else {
+                              setShouldShowNameExpandButton(false);
+                            }
+                          }}
                         >
                           {nameText || "Enter recipe name"}
                         </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={toggleNameExpansion}
+                        style={styles.expandButton}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      >
+                        <MaterialCommunityIcons
+                          name={isNameExpanded ? "chevron-up" : "chevron-down"}
+                          size={28}
+                          width={20}
+                          color={theme.colors.primary}
+                        />
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => onDelete(recipe.name)}

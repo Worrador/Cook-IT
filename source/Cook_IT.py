@@ -16,7 +16,7 @@ import locale
 SYSTEM_ENCODING = locale.getpreferredencoding()
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
-FILE_NAME = 'Recipes.xlsx'
+FILE_NAME = 'CookIT_Recipes.xlsx'
 
 if getattr(sys, 'frozen', False):
     # If running as a frozen executable
@@ -43,8 +43,8 @@ class CookITLogic:
         self.df_recipes = None
         self.file_id = None
         self.sync_complete = False
-        # Add default columns if they don't exist
-        self.default_columns = ['Recipe Name', 'URL', 'Comment', 'Last Shown']
+        # Add default columns if they don't exist (support both mobile and desktop formats)
+        self.default_columns = ['Recipe Name', 'URL', 'Comment', 'Last Shown', 'Last Cooked Date', 'Pinned']
 
     @property
     def recipe_count(self):
@@ -54,16 +54,20 @@ class CookITLogic:
     def load_local_file(self):
         if os.path.exists(FILE_NAME):
             try:
-                self.df_recipes = pd.read_excel(FILE_NAME)
+                self.df_recipes = pd.read_excel(FILE_NAME, sheet_name='Recipes')
                 self.df_recipes = self.df_recipes.fillna("")
 
-                # Ensure all required columns exist
-                for col in self.default_columns:
-                    if col not in self.df_recipes.columns:
-                        if col == 'Last Shown':
-                            self.df_recipes[col] = pd.NaT  # Use NaT (Not a Time) for new recipes
-                        else:
-                            self.df_recipes[col] = ""
+                # Convert Last Cooked Date to Last Shown (for backwards compatibility with mobile app)
+                if 'Last Cooked Date' in self.df_recipes.columns and 'Last Shown' not in self.df_recipes.columns:
+                    self.df_recipes['Last Shown'] = pd.to_datetime(self.df_recipes['Last Cooked Date'], errors='coerce')
+                elif 'Last Shown' in self.df_recipes.columns:
+                    # Keep Last Shown but also create Last Cooked Date for mobile compatibility
+                    if 'Last Cooked Date' not in self.df_recipes.columns:
+                        self.df_recipes['Last Cooked Date'] = self.df_recipes['Last Shown']
+
+                # Initialize Pinned column if missing
+                if 'Pinned' not in self.df_recipes.columns:
+                    self.df_recipes['Pinned'] = ""
 
                 # Convert Last Shown to datetime
                 if 'Last Shown' in self.df_recipes.columns:
@@ -103,8 +107,8 @@ class CookITLogic:
             else:
                 # Create new file if not found
                 if self.df_recipes is None:
-                    self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Last Shown'])
-                self.save_and_upload()
+                    self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Last Shown', 'Last Cooked Date', 'Pinned'])
+                    self.save_and_upload()
 
             self.sync_complete = True
 
@@ -116,15 +120,37 @@ class CookITLogic:
         """Save changes to local file only without attempting to upload to Drive"""
         try:
             with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
+                # Ensure Last Cooked Date exists (for mobile compatibility)
+                if 'Last Cooked Date' not in self.df_recipes.columns and 'Last Shown' in self.df_recipes.columns:
+                    self.df_recipes['Last Cooked Date'] = self.df_recipes['Last Shown']
+                elif 'Last Cooked Date' in self.df_recipes.columns and 'Last Shown' not in self.df_recipes.columns:
+                    self.df_recipes['Last Shown'] = pd.to_datetime(self.df_recipes['Last Cooked Date'], errors='coerce')
+
                 # Convert Last Shown to datetime format for Excel
                 if 'Last Shown' in self.df_recipes.columns:
                     self.df_recipes['Last Shown'] = pd.to_datetime(self.df_recipes['Last Shown'])
 
+                # Format Last Cooked Date as string for mobile compatibility
+                if 'Last Cooked Date' in self.df_recipes.columns:
+                    self.df_recipes['Last Cooked Date'] = pd.to_datetime(self.df_recipes['Last Cooked Date']).dt.strftime('%Y-%m-%d')
+                    self.df_recipes['Last Cooked Date'] = self.df_recipes['Last Cooked Date'].fillna('')
+
+                # Ensure Pinned column exists
+                if 'Pinned' not in self.df_recipes.columns:
+                    self.df_recipes['Pinned'] = "No"
+                    self.df_recipes['Pinned'] = self.df_recipes['Pinned'].fillna("No")
+
+                # Write Recipes sheet
                 self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
 
-                # Hide Last Shown column
+                # Hide Last Shown column (if it exists)
                 if 'Last Shown' in self.df_recipes.columns:
                     writer.sheets['Recipes'].column_dimensions['D'].hidden = True
+
+                # Create Pinned Recipes sheet for mobile compatibility
+                if 'Pinned' in self.df_recipes.columns:
+                    pinned_recipes = self.df_recipes[self.df_recipes['Pinned'] == 'Yes'][['Recipe Name']].copy()
+                    pinned_recipes.to_excel(writer, sheet_name='Pinned Recipes', index=False)
 
             return True
         except Exception as e:
@@ -206,6 +232,12 @@ class CookITLogic:
             if 'Last Shown' in remote_df.columns:
                 remote_df['Last Shown'] = pd.to_datetime(remote_df['Last Shown'], errors='coerce')
 
+            # Also handle Last Cooked Date for mobile compatibility
+            if 'Last Cooked Date' in local_df.columns:
+                local_df['Last Cooked Date'] = pd.to_datetime(local_df['Last Cooked Date'], errors='coerce')
+            if 'Last Cooked Date' in remote_df.columns:
+                remote_df['Last Cooked Date'] = pd.to_datetime(remote_df['Last Cooked Date'], errors='coerce')
+
             # Merge logic
             # Use recipe name, URL, and comment as composite key for comparison
             local_keys = set(zip(local_df['Recipe Name'], local_df['URL'], local_df['Comment']))
@@ -254,6 +286,17 @@ class CookITLogic:
                     elif not pd.isna(local_last_shown) and not pd.isna(remote_last_shown):
                         merged_df.at[idx, 'Last Shown'] = max(local_last_shown, remote_last_shown)
 
+                    # Also update Last Cooked Date if it exists (mobile compatibility)
+                    if 'Last Cooked Date' in local_match.columns and 'Last Cooked Date' in merged_df.columns:
+                        local_last_cooked = local_match.iloc[0]['Last Cooked Date']
+                        remote_last_cooked = row.get('Last Cooked Date')
+                        if pd.notna(local_last_cooked) and pd.notna(remote_last_cooked):
+                            merged_df.at[idx, 'Last Cooked Date'] = max(local_last_cooked, remote_last_cooked)
+                        elif pd.notna(local_last_cooked):
+                            merged_df.at[idx, 'Last Cooked Date'] = local_last_cooked
+                        elif pd.notna(remote_last_cooked):
+                            merged_df.at[idx, 'Last Cooked Date'] = remote_last_cooked
+
             # Cleanup
             os.remove(remote_temp)
             print(f"Changes merged. Number of recipes locally before: {str(len(local_keys))}, Number of recipes after merge: {str(len(merged_df))}")
@@ -266,15 +309,37 @@ class CookITLogic:
     def save_and_upload(self):
         try:
             with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
+                # Ensure Last Cooked Date exists (for mobile compatibility)
+                if 'Last Cooked Date' not in self.df_recipes.columns and 'Last Shown' in self.df_recipes.columns:
+                    self.df_recipes['Last Cooked Date'] = self.df_recipes['Last Shown']
+                elif 'Last Cooked Date' in self.df_recipes.columns and 'Last Shown' not in self.df_recipes.columns:
+                    self.df_recipes['Last Shown'] = pd.to_datetime(self.df_recipes['Last Cooked Date'], errors='coerce')
+
                 # Convert Last Shown to datetime format for Excel
                 if 'Last Shown' in self.df_recipes.columns:
                     self.df_recipes['Last Shown'] = pd.to_datetime(self.df_recipes['Last Shown'])
 
+                # Format Last Cooked Date as string for mobile compatibility
+                if 'Last Cooked Date' in self.df_recipes.columns:
+                    self.df_recipes['Last Cooked Date'] = pd.to_datetime(self.df_recipes['Last Cooked Date']).dt.strftime('%Y-%m-%d')
+                    self.df_recipes['Last Cooked Date'] = self.df_recipes['Last Cooked Date'].fillna('')
+
+                # Ensure Pinned column exists
+                if 'Pinned' not in self.df_recipes.columns:
+                    self.df_recipes['Pinned'] = "No"
+                    self.df_recipes['Pinned'] = self.df_recipes['Pinned'].fillna("No")
+
+                # Write Recipes sheet
                 self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
 
-                # Hide Last Shown column
+                # Hide Last Shown column (if it exists)
                 if 'Last Shown' in self.df_recipes.columns:
                     writer.sheets['Recipes'].column_dimensions['D'].hidden = True
+
+                # Create Pinned Recipes sheet for mobile compatibility
+                if 'Pinned' in self.df_recipes.columns:
+                    pinned_recipes = self.df_recipes[self.df_recipes['Pinned'] == 'Yes'][['Recipe Name']].copy()
+                    pinned_recipes.to_excel(writer, sheet_name='Pinned Recipes', index=False)
 
             # Upload to Drive
             with open(FILE_NAME, 'rb') as file:
@@ -333,7 +398,7 @@ class CookITLogic:
     def choose_recipe(self, suggested_recipes=None):
         # Initialize DataFrame if it doesn't exist
         if self.df_recipes is None:
-            self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Last Shown'])
+            self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Last Shown', 'Last Cooked Date', 'Pinned'])
             return None, None, None, None
 
         # Filter recipes and select based on recency
@@ -387,10 +452,52 @@ class CookITLogic:
 
             # Update last shown time for matched recipe
             self.df_recipes.loc[mask, 'Last Shown'] = current_time
+            # Also update Last Cooked Date for mobile compatibility
+            if 'Last Cooked Date' in self.df_recipes.columns:
+                self.df_recipes.loc[mask, 'Last Cooked Date'] = current_time
 
         # Save changes to file
-        self.df_recipes.to_excel(FILE_NAME, index=False)
+        self.save_excel_file()
         return True
+
+    def save_excel_file(self):
+        """Helper method to save Excel file with mobile-compatible formatting"""
+        try:
+            with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
+                # Ensure Last Cooked Date exists (for mobile compatibility)
+                if 'Last Cooked Date' not in self.df_recipes.columns and 'Last Shown' in self.df_recipes.columns:
+                    self.df_recipes['Last Cooked Date'] = self.df_recipes['Last Shown']
+                elif 'Last Cooked Date' in self.df_recipes.columns and 'Last Shown' not in self.df_recipes.columns:
+                    self.df_recipes['Last Shown'] = pd.to_datetime(self.df_recipes['Last Cooked Date'], errors='coerce')
+
+                # Convert Last Shown to datetime format for Excel
+                if 'Last Shown' in self.df_recipes.columns:
+                    self.df_recipes['Last Shown'] = pd.to_datetime(self.df_recipes['Last Shown'])
+
+                # Format Last Cooked Date as string for mobile compatibility
+                if 'Last Cooked Date' in self.df_recipes.columns:
+                    self.df_recipes['Last Cooked Date'] = pd.to_datetime(self.df_recipes['Last Cooked Date']).dt.strftime('%Y-%m-%d')
+                    self.df_recipes['Last Cooked Date'] = self.df_recipes['Last Cooked Date'].fillna('')
+
+                # Ensure Pinned column exists
+                if 'Pinned' not in self.df_recipes.columns:
+                    self.df_recipes['Pinned'] = "No"
+                    self.df_recipes['Pinned'] = self.df_recipes['Pinned'].fillna("No")
+
+                # Write Recipes sheet
+                self.df_recipes.to_excel(writer, sheet_name='Recipes', index=False)
+
+                # Hide Last Shown column (if it exists)
+                if 'Last Shown' in self.df_recipes.columns:
+                    writer.sheets['Recipes'].column_dimensions['D'].hidden = True
+
+                # Create Pinned Recipes sheet for mobile compatibility
+                if 'Pinned' in self.df_recipes.columns:
+                    pinned_recipes = self.df_recipes[self.df_recipes['Pinned'] == 'Yes'][['Recipe Name']].copy()
+                    pinned_recipes.to_excel(writer, sheet_name='Pinned Recipes', index=False)
+        except Exception as e:
+            print(f"Error saving Excel file: {str(e)}", file=sys.stderr)
+            raise
 
     def initialize(self):
         with redirect_stdout_to_stderr():
@@ -406,11 +513,13 @@ class CookITLogic:
             'Recipe Name': [name.encode(SYSTEM_ENCODING).decode('utf-8')],
             'URL': [url],
             'Comment': [comment.encode(SYSTEM_ENCODING).decode('utf-8')],
-            'Last Shown': [pd.NaT]  # Initialize as NaT (Not a Time)
+            'Last Shown': [pd.NaT],  # Initialize as NaT (Not a Time)
+            'Last Cooked Date': [''],
+            'Pinned': ['No']
         })
 
         self.df_recipes = pd.concat([self.df_recipes, new_recipe], ignore_index=True)
-        self.df_recipes.to_excel(FILE_NAME, index=False)
+        self.save_excel_file()
 
     def delete_recipe(self, name, comment):
         # Find the recipe to delete
@@ -421,7 +530,7 @@ class CookITLogic:
 
         if mask.any():
             self.df_recipes = self.df_recipes[~mask]
-            self.df_recipes.to_excel(FILE_NAME, index=False)
+            self.save_excel_file()
             return {"success": True, "message": "Recipe deleted"}
 
         return {"success": False, "message": "Recipe not found"}
@@ -436,7 +545,7 @@ class CookITLogic:
 
         if mask.any():
             self.df_recipes.loc[mask, 'Comment'] = new_comment.encode(SYSTEM_ENCODING).decode('utf-8')
-            self.df_recipes.to_excel(FILE_NAME, index=False)
+            self.save_excel_file()
             return True
 
         return False
@@ -445,7 +554,7 @@ class CookITLogic:
         try:
             # Initialize DataFrame if it doesn't exist
             if self.df_recipes is None:
-                self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Last Shown'])
+                self.df_recipes = pd.DataFrame(columns=['Recipe Name', 'URL', 'Comment', 'Last Shown', 'Last Cooked Date', 'Pinned'])
 
             sample_recipes = [
                 {
@@ -554,7 +663,7 @@ class CookITLogic:
                 self.add_recipe(recipe['name'], recipe['url'], recipe['comment'])
 
             # Save the file after adding all recipes
-            self.df_recipes.to_excel(FILE_NAME, index=False)
+            self.save_excel_file()
             return True
         except Exception as e:
             print(f"Error adding sample recipes: {e}", file=sys.stderr)
