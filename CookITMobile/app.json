@@ -33,7 +33,8 @@
     },
     "scheme": "cook-it-mobile",
     "plugins": [
-      "expo-asset"
+      "expo-asset",
+      "expo-font"
     ],
     "extra": {
       "eas": {
