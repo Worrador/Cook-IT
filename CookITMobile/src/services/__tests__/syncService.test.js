@@ -273,7 +273,7 @@ describe('SyncService', () => {
       const result = await syncService.performExcelSync();
 
       expect(result.success).toBe(true);
-      expect(result.hasChanges).toBe(false); // No changes in this simple case
+      expect(result.hasChanges).toBe(true); // First comparison imports the Drive data.
     });
 
     test('should handle force push mode', async () => {
@@ -300,13 +300,13 @@ describe('SyncService', () => {
       // Mock Drive client to be authenticated
       mockDrive.setAuthenticationState(true);
 
-      // Mock Excel processor to fail during checkConflicts
-      mockExcel.checkConflicts = jest.fn().mockResolvedValue(null);
+      // Download errors must return a safe sync result.
+      mockExcel.downloadFromDrive = jest.fn().mockRejectedValue(new Error('Drive download failed'));
 
       const result = await syncService.performExcelSync();
 
       expect(result.success).toBe(false);
-      expect(result.message).toBe('Cannot read properties of null (reading \'hasConflicts\')');
+      expect(result.message).toBe('Drive download failed');
     });
   });
 
@@ -497,7 +497,8 @@ describe('SyncService', () => {
       const result = await syncService.performExcelSync();
 
       expect(result.success).toBe(true);
-      expect(result.conflictResolved).toBe(true);
+      expect(result.conflictResolved).toBe(false);
+      expect(result.resolutionStrategy).toBe('file_based_merge');
     });
 
     test('should handle force download from drive', async () => {
@@ -542,9 +543,9 @@ describe('SyncService', () => {
 
       const result = await syncService.performSync();
 
-      // The sync should handle Excel import errors gracefully and continue with local data
-      expect(result.success).toBe(true);
-      expect(result.message).toBe('Excel sync completed with changes');
+      // Corrupt remote data is reported rather than overwriting local data.
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Excel operation failed');
     });
 
     test('should redirect mergeData to Excel merge', async () => {
@@ -653,7 +654,8 @@ describe('SyncService Integration Tests', () => {
       const result = await syncService.performExcelSync();
 
       expect(result.success).toBe(true);
-      expect(result.conflictResolved).toBe(true);
+      expect(result.conflictResolved).toBe(false);
+      expect(result.resolutionStrategy).toBe('file_based_merge');
     });
 
     test('should resolve cooked date conflicts', async () => {

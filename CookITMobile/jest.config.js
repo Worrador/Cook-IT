@@ -9,7 +9,9 @@ module.exports = {
   ],
 
   // Coverage collection
-  collectCoverage: true,
+  // Keep routine test runs focused on correctness. Coverage is collected by
+  // `npm run test:coverage`, which is the dedicated quality-report command.
+  collectCoverage: false,
   collectCoverageFrom: [
     'src/services/**/*.js',
     '!src/services/**/*.test.js',

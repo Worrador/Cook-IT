@@ -137,6 +137,7 @@ export class MockStorageProvider {
       '@cookit_pinned_recipes': JSON.stringify(initialData.pinnedRecipes || []),
       '@cookit_last_cooked_dates': JSON.stringify(initialData.lastCookedDates || {}),
       '@cookit_last_sync': initialData.lastSync || null,
+      '@cookit_last_data_modification': initialData.lastDataModification || null,
       '@cookit_sync_in_progress': 'false',
       '@cookit_excel_sync_mode': 'excel',
       ...initialData.storage
@@ -162,8 +163,12 @@ export class MockStorageProvider {
     return data ? JSON.parse(data) : [];
   }
 
-  async saveRecipes(recipes) {
-    return await this.setItem('@cookit_recipes', JSON.stringify(recipes));
+  async saveRecipes(recipes, skipModificationTimeUpdate = false) {
+    const result = await this.setItem('@cookit_recipes', JSON.stringify(recipes));
+    if (!skipModificationTimeUpdate) {
+      await this.updateDataModificationTime();
+    }
+    return result;
   }
 
   async getLastCookedDates() {
@@ -184,6 +189,15 @@ export class MockStorageProvider {
     return await this.setItem('@cookit_pinned_recipes', JSON.stringify(recipes));
   }
 
+  async getLastDataModificationTime() {
+    const value = await this.getItem('@cookit_last_data_modification');
+    return value ? new Date(value) : new Date(0);
+  }
+
+  async updateDataModificationTime() {
+    return await this.setItem('@cookit_last_data_modification', new Date().toISOString());
+  }
+
   // Helper method to get current storage state for assertions
   getStorageState() {
     return { ...this.storage };
@@ -199,6 +213,7 @@ export class MockDriveClient {
     this.files = options.files || new Map();
     this.shouldFail = options.shouldFail || false;
     this.failMessage = options.failMessage || 'Mock drive operation failed';
+    this.driveFileId = options.driveFileId || 'mock_drive_file';
   }
 
   isAuthenticated() {
@@ -255,6 +270,19 @@ export class MockDriveClient {
     return Array.from(this.files.values());
   }
 
+  async getDriveFileId() {
+    return this.driveFileId;
+  }
+
+  async getFileInfo(fileId) {
+    if (this.shouldFail) throw new Error(this.failMessage);
+    return {
+      id: fileId,
+      name: 'CookIT_Recipes.xlsx',
+      modifiedTime: new Date().toISOString()
+    };
+  }
+
   // Helper methods for testing
   setAuthenticationState(authenticated) {
     this.authenticated = authenticated;
@@ -307,6 +335,16 @@ export class MockExcelProcessor {
     if (this.shouldFail) {
       return false;
     }
+    return true;
+  }
+
+  async downloadFromDrive() {
+    if (this.shouldFail) throw new Error(this.failMessage);
+    return true;
+  }
+
+  async uploadToDrive() {
+    if (this.shouldFail) throw new Error(this.failMessage);
     return true;
   }
 

@@ -174,7 +174,9 @@ class SyncService {
     let userMessage = 'Failed to connect to Drive. ';
 
     if (authError.code === 'DEVELOPER_ERROR') {
-      userMessage = 'Google Sign-In is not properly configured. This is a development setup issue. Please check the console for details.';
+      userMessage = 'Google Sign-In is not properly configured for this build. The Play Store signing certificate SHA-1 may be missing from Google Cloud Console. See GOOGLE_OAUTH_SETUP.md.';
+    } else if (authError.code === 'SIGN_IN_CANCELLED') {
+      userMessage = 'Sign-in was cancelled.';
     } else if (authError.message?.includes('browser')) {
       userMessage += 'Unable to open web browser for authentication. This may happen in certain environments. Please try again later.';
     } else if (authError.message?.includes('network')) {
@@ -210,6 +212,34 @@ class SyncService {
 
       console.log(`Found ${localRecipes.length} local recipes`);
 
+      // A force push (and a user's first sync, before a Drive file exists) must
+      // create the remote workbook instead of trying to download one first.
+      // This makes first-run sync reliable and gives the force-push action its
+      // documented behaviour.
+      let fileId = await this.driveClient.getDriveFileId();
+      if (forcePush || !fileId) {
+        onProgress(0.5, 'Preparing local data...');
+        await this.excelProcessor.createLocalExcelFile();
+        onProgress(0.8, 'Uploading local data...');
+        await this.excelProcessor.uploadToDrive();
+        await this.storageProvider.updateDataModificationTime();
+        await this.setLastSyncTime();
+        onProgress(1, forcePush ? 'Force push completed successfully' : 'Initial sync completed successfully');
+
+        return {
+          success: true,
+          hasChanges: true,
+          message: forcePush ? 'Force push completed successfully' : 'Initial sync completed successfully',
+          data: {
+            recipes: localRecipes,
+            lastCookedDates: localLastCookedDates,
+            pinnedRecipes: localPinnedRecipes
+          },
+          conflictResolved: forcePush,
+          resolutionStrategy: forcePush ? 'force_push' : 'initial_upload'
+        };
+      }
+
       // Always use our intelligent file-based merge instead of old recipe-based logic
       onProgress(0.2, 'Performing file-based merge analysis...');
 
@@ -227,13 +257,12 @@ class SyncService {
       // For local: use data modification time (not file modification time)
       // For remote: use file modification time from Drive
       const localModified = await this.storageProvider.getLastDataModificationTime();
-      const fileId = await this.driveClient.getDriveFileId();
       const remoteFileInfo = await this.driveClient.getFileInfo(fileId);
 
       // Safely create remote date
       let remoteModified;
       try {
-        remoteModified = new Date(remoteFileInfo.modifiedTime);
+        remoteModified = new Date(remoteFileInfo?.modifiedTime);
         if (isNaN(remoteModified.getTime())) {
           throw new Error(`Invalid remote date from: ${remoteFileInfo.modifiedTime}`);
         }
@@ -299,6 +328,11 @@ class SyncService {
         success: true,
         hasChanges: mergeResult.hasChanges,
         message: mergeResult.hasChanges ? 'Files merged using intelligent strategy.' : 'No changes detected.',
+        data: {
+          recipes: mergeResult.recipes,
+          lastCookedDates: mergeResult.lastCookedDates,
+          pinnedRecipes: mergeResult.pinnedRecipes
+        },
         conflictResolved: false,
         resolutionStrategy: 'file_based_merge'
       };
@@ -954,7 +988,7 @@ class SyncService {
 
       const result = await this.excelProcessor.createLocalExcelFile();
 
-      if (result) {
+      if (result && result.success !== false) {
         return {
           success: true,
           message: 'Data exported to Excel successfully',
@@ -976,17 +1010,18 @@ class SyncService {
 
       const result = await this.excelProcessor.importFromExcel();
 
-      if (result) {
+      if (result && result.success !== false) {
         return {
           success: true,
           message: `Imported ${result.recipes?.length || 0} recipes from Excel`,
           data: result
         };
-      } else {
-        // Handle failed import result
-        const errorMessage = result?.message || 'Failed to import Excel data';
-        return { success: false, message: errorMessage };
       }
+
+      // Some processors report an expected import failure as a result object
+      // instead of throwing. Never treat that object as a successful import.
+      const errorMessage = result?.message || 'Failed to import Excel data';
+      return { success: false, message: errorMessage };
     } catch (error) {
       console.error('Import from Excel error:', error);
       return { success: false, message: error.message };

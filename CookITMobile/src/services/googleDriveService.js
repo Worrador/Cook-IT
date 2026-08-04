@@ -112,7 +112,8 @@ class GoogleDriveService {
       console.log('🔍 Starting authentication process...');
       console.log('🔍 Web Client ID:', WEB_CLIENT_ID);
       console.log('🔍 Package name: com.worrador.cookitmobile');
-      console.log('🔍 SHA-1 fingerprint: 66:75:4B:A0:24:AF:D9:1E:19:45:DD:D6:59:D5:02:5A:A2:9D:8C:F5');
+      console.log('🔍 SHA-1 fingerprint (local debug): 5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25');
+      console.log('🔍 SHA-1 fingerprint (EAS release): 66:75:4B:A0:24:AF:D9:1E:19:45:DD:D6:59:D5:02:5A:A2:9D:8C:F5');
 
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       console.log('✅ Google Play Services check passed');
@@ -133,7 +134,7 @@ class GoogleDriveService {
         return true;
       }
       console.log('❌ No access token received');
-      return false;
+      throw new Error('No access token received from Google Sign-In');
     } catch (error) {
       console.error('❌ Authentication error:', error);
       console.error('❌ Error code:', error.code);
@@ -144,16 +145,19 @@ class GoogleDriveService {
         console.error('🔧 DEVELOPER_ERROR: Google Sign-In is not properly configured. Please check:');
         console.error('1. Web client ID is configured correctly:', WEB_CLIENT_ID);
         console.error('2. Package name matches Google Cloud Console configuration: com.worrador.cookitmobile');
-        console.error('3. SHA-1 fingerprint is added to Google Cloud Console: 66:75:4B:A0:24:AF:D9:1E:19:45:DD:D6:59:D5:02:5A:A2:9D:8C:F5');
+        console.error('3. SHA-1 fingerprint(s) are added to Google Cloud Console Android OAuth client:');
+        console.error('   local debug: 5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25');
+        console.error('   EAS release: 66:75:4B:A0:24:AF:D9:1E:19:45:DD:D6:59:D5:02:5A:A2:9D:8C:F5');
         console.error('4. OAuth consent screen is configured with required scopes');
         console.error('5. Your email is added as a test user (if app is in testing mode)');
       } else if (error.code === 'SIGN_IN_CANCELLED') {
         console.error('User cancelled the sign-in process');
+        throw Object.assign(new Error('Sign-in was cancelled'), { code: 'SIGN_IN_CANCELLED' });
       } else if (error.code === 'SIGN_IN_REQUIRED') {
         console.error('Sign-in is required but user is not signed in');
       }
 
-      return false;
+      throw error;
     }
   }
 

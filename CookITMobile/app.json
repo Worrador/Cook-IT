@@ -4,6 +4,7 @@
     "slug": "cookit-mobile",
     "originalFullName": "@worrador/cookit-mobile",
     "version": "1.0.0",
+    "description": "Cook-IT keeps your recipes organized, tracks cooking history, and optionally syncs your recipe book securely with your Google Drive.",
     "orientation": "portrait",
     "icon": "./assets/ChefHatColored.png",
     "userInterfaceStyle": "light",
@@ -24,20 +25,15 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "scheme": "cook-it-mobile"
+      "scheme": "cook-it-mobile",
+      "versionCode": 10
     },
     "web": {
       "favicon": "./assets/ChefHatColored.png"
     },
     "scheme": "cook-it-mobile",
     "plugins": [
-      [
-        "@react-native-google-signin/google-signin",
-        {
-          "iosUrlScheme": "com.worrador.cookitmobile",
-          "androidPackageName": "com.worrador.cookitmobile"
-        }
-      ]
+      "expo-asset"
     ],
     "extra": {
       "eas": {
