@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, useWindowDimensions } from 'react-native';
 import { Surface, useTheme, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Button } from './Button';
@@ -15,6 +15,10 @@ const RecipeBookDialog = ({
   cookCounts = {} // Add this prop for cook counts
 }) => {
   const theme = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
+  // Sort bar lives inside a ~90% width dialog, so estimate usable column width.
+  const sortBarContentWidth = screenWidth * 0.9 - 32;
+  const isCompactSort = sortBarContentWidth < 400;
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('name'); // 'name', 'timesCooked', 'lastCooked'
   const [sortOrder, setSortOrder] = useState('asc'); // 'asc', 'desc'
@@ -67,23 +71,31 @@ const RecipeBookDialog = ({
     return sortOrder === 'asc' ? 'chevron-up' : 'chevron-down';
   };
 
-  const renderSortButton = (column, label) => (
+  const sortLabels = {
+    name: isCompactSort ? 'Name' : 'Recipe name',
+    lastCooked: 'Last cooked',
+    timesCooked: 'Times cooked',
+  };
+
+  const renderSortButton = (column) => (
     <TouchableOpacity
       style={styles.sortButton}
       onPress={() => handleSort(column)}
     >
       <Text
-        style={[styles.sortButtonText, {
+        style={[styles.sortButtonText, isCompactSort && styles.sortButtonTextCompact, {
           color: sortBy === column ? theme.colors.primary : theme.colors.onSurfaceVariant,
           fontWeight: sortBy === column ? 'bold' : 'normal'
         }]}
         numberOfLines={1}
+        maxFontSizeMultiplier={1.1}
+        ellipsizeMode="tail"
       >
-        {label}
+        {sortLabels[column]}
       </Text>
       <MaterialCommunityIcons
         name={getSortIcon(column)}
-        size={14}
+        size={isCompactSort ? 14 : 16}
         color={sortBy === column ? theme.colors.primary : theme.colors.onSurfaceVariant}
         style={styles.sortIcon}
       />
@@ -143,11 +155,10 @@ const RecipeBookDialog = ({
 
         {/* Sort Bar */}
         <View style={styles.sortBar}>
-          <Text style={[styles.sortLabel, { color: theme.colors.onSurfaceVariant }]}></Text>
           <View style={styles.sortButtons}>
-            {renderSortButton('name', 'Recipe name')}
-            {renderSortButton('lastCooked', 'Last cooked')}
-            {renderSortButton('timesCooked', 'Times cooked')}
+            {renderSortButton('name')}
+            {renderSortButton('lastCooked')}
+            {renderSortButton('timesCooked')}
           </View>
         </View>
 
@@ -285,36 +296,37 @@ const styles = StyleSheet.create({
   sortBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
+    paddingHorizontal: 4,
     paddingVertical: 8,
     backgroundColor: '#FBE7A0',
     borderRadius: 8,
     marginBottom: 16,
   },
-  sortLabel: {
-    fontSize: 12,
-  },
   sortButtons: {
     flex: 1,
     flexDirection: 'row',
-    justifyContent: 'space-around', // Changed from 'flex-end' to distribute buttons evenly
     alignItems: 'center',
   },
   sortButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center', // Center content within each button
+    justifyContent: 'center',
     gap: 4,
-    flex: 1, // Give each button equal space
     minWidth: 0,
+    paddingHorizontal: 4,
   },
   sortButtonText: {
     fontSize: 12,
-    maxWidth: '100%',
+    flexShrink: 1,
+    textAlign: 'center',
+  },
+  sortButtonTextCompact: {
+    fontSize: 11,
   },
   sortIcon: {
-    // No specific styling needed, icons will inherit color from sortButtonText
+    flexShrink: 0,
+    marginLeft: 2,
   },
   emptyState: {
     alignItems: 'center',

@@ -15,6 +15,8 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [isCommentFocused, setIsCommentFocused] = useState(false);
   const [shouldShowExpandButton, setShouldShowExpandButton] = useState(false);
+  const [isNameMeasuring, setIsNameMeasuring] = useState(true);
+  const [isCommentMeasuring, setIsCommentMeasuring] = useState(true);
   const commentInputRef = useRef(null);
   const commentTextRef = useRef(null);
   const nameInputRef = useRef(null);
@@ -81,6 +83,9 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     try {
       await onUpdate(recipe.name, { ...recipe, comment: commentText });
       setIsEditingComment(false);
+      setIsCommentMeasuring(true);
+      setIsCommentExpanded(false);
+      setShouldShowExpandButton(false);
     } catch (error) {
       console.error('Error saving comment:', error);
     }
@@ -107,6 +112,9 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       }
 
       setIsEditingName(false);
+      setIsNameMeasuring(true);
+      setIsNameExpanded(false);
+      setShouldShowNameExpandButton(false);
     } catch (error) {
       console.error('Error saving name:', error);
     }
@@ -134,6 +142,74 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     setIsNameExpanded(!isNameExpanded);
   };
 
+  const handleExpandableTextLayout = (event, { setExpanded, setShowChevron, setMeasuring, isMeasuring }) => {
+    if (!isMeasuring) return;
+
+    const lineCount = event.nativeEvent.lines.length;
+    if (lineCount <= 2) {
+      setExpanded(true);
+      setShowChevron(false);
+    } else {
+      setExpanded(false);
+      setShowChevron(true);
+    }
+    setMeasuring(false);
+  };
+
+  const handleNameTextLayout = (event) => {
+    handleExpandableTextLayout(event, {
+      setExpanded: setIsNameExpanded,
+      setShowChevron: setShouldShowNameExpandButton,
+      setMeasuring: setIsNameMeasuring,
+      isMeasuring: isNameMeasuring,
+    });
+  };
+
+  const handleCommentTextLayout = (event) => {
+    handleExpandableTextLayout(event, {
+      setExpanded: setIsCommentExpanded,
+      setShowChevron: setShouldShowExpandButton,
+      setMeasuring: setIsCommentMeasuring,
+      isMeasuring: isCommentMeasuring,
+    });
+  };
+
+  const getExpandableTextHeight = (isExpanded) => (isExpanded ? 200 : 48);
+
+  const getExpandableNumberOfLines = (isExpanded) => (isExpanded ? undefined : 2);
+
+  const renderExpandableText = ({
+    text,
+    placeholder,
+    textRef,
+    isExpanded,
+    isMeasuring,
+    onTextLayout,
+    color,
+  }) => (
+    <>
+      {isMeasuring && (
+        <Text
+          style={[styles.commentText, styles.measureText, { color }]}
+          numberOfLines={undefined}
+          onTextLayout={onTextLayout}
+          pointerEvents="none"
+          accessible={false}
+          importantForAccessibility="no"
+        >
+          {text || placeholder}
+        </Text>
+      )}
+      <Text
+        ref={textRef}
+        style={[styles.commentText, { color }]}
+        numberOfLines={getExpandableNumberOfLines(isExpanded)}
+      >
+        {text || placeholder}
+      </Text>
+    </>
+  );
+
   useEffect(() => {
     if (recipe) {
       setCommentText(recipe.comment || '');
@@ -142,19 +218,17 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     }
   }, [recipe]);
 
-  // Check if text needs expansion button
+  // Re-measure expandable text whenever the dialog opens or recipe content changes.
   useEffect(() => {
-    if (!commentText) {
+    if (visible && recipe) {
+      setIsNameMeasuring(true);
+      setIsNameExpanded(false);
+      setShouldShowNameExpandButton(false);
+      setIsCommentMeasuring(true);
+      setIsCommentExpanded(false);
       setShouldShowExpandButton(false);
     }
-  }, [commentText]);
-
-  // Check if name text needs expansion button
-  useEffect(() => {
-    if (!nameText) {
-      setShouldShowNameExpandButton(false);
-    }
-  }, [nameText]);
+  }, [visible, recipe?.name, recipe?.comment]);
 
   useEffect(() => {
     if (!visible) {
@@ -174,6 +248,10 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       setNoMoreRecipes(false);
       setIsCommentExpanded(false);
       setIsNameExpanded(false);
+      setIsCommentMeasuring(true);
+      setIsNameMeasuring(true);
+      setShouldShowExpandButton(false);
+      setShouldShowNameExpandButton(false);
     }
   }, [visible, recipe]);
 
@@ -235,6 +313,10 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
     setIsCommentExpanded(false);
     setIsEditingName(false);
     setIsNameExpanded(false);
+    setIsCommentMeasuring(true);
+    setIsNameMeasuring(true);
+    setShouldShowExpandButton(false);
+    setShouldShowNameExpandButton(false);
     setIsEditingUrl(false);
     try {
       const nextRecipe = await onNext();
@@ -301,37 +383,33 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                   ) : (
                     <View style={styles.nameViewContainer}>
                       <TouchableOpacity
-                        style={[styles.commentTextContainer, { maxHeight: isNameExpanded ? 200 : 48 }]}
+                        style={[styles.commentTextContainer, { maxHeight: getExpandableTextHeight(isNameExpanded) }]}
                         onPress={() => setIsEditingName(true)}
                       >
-                        <Text
-                          ref={nameTextRef}
-                          style={[styles.commentText, { color: nameText ? theme.colors.onSurface : theme.colors.onSurface + '66' }]}
-                          numberOfLines={isNameExpanded ? undefined : 1}
-                          onTextLayout={(event) => {
-                            const { lines } = event.nativeEvent;
-                            if (lines.length > 1) {
-                              setShouldShowNameExpandButton(true);
-                            } else {
-                              setShouldShowNameExpandButton(false);
-                            }
-                          }}
+                        {renderExpandableText({
+                          text: nameText,
+                          placeholder: 'Enter recipe name',
+                          textRef: nameTextRef,
+                          isExpanded: isNameExpanded,
+                          isMeasuring: isNameMeasuring,
+                          onTextLayout: handleNameTextLayout,
+                          color: nameText ? theme.colors.onSurface : theme.colors.onSurface + '66',
+                        })}
+                      </TouchableOpacity>
+                      {shouldShowNameExpandButton && (
+                        <TouchableOpacity
+                          onPress={toggleNameExpansion}
+                          style={styles.expandButton}
+                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                         >
-                          {nameText || "Enter recipe name"}
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={toggleNameExpansion}
-                        style={styles.expandButton}
-                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                      >
-                        <MaterialCommunityIcons
-                          name={isNameExpanded ? "chevron-up" : "chevron-down"}
-                          size={28}
-                          width={20}
-                          color={theme.colors.primary}
-                        />
-                      </TouchableOpacity>
+                          <MaterialCommunityIcons
+                            name={isNameExpanded ? "chevron-up" : "chevron-down"}
+                            size={28}
+                            width={20}
+                            color={theme.colors.primary}
+                          />
+                        </TouchableOpacity>
+                      )}
                       <TouchableOpacity
                         onPress={() => onDelete(recipe.name)}
                         style={styles.deleteButton}
@@ -384,37 +462,33 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                   ) : (
                     <View style={styles.commentViewContainer}>
                       <TouchableOpacity
-                        style={[styles.commentTextContainer, { maxHeight: isCommentExpanded ? 200 : 48 }]}
+                        style={[styles.commentTextContainer, { maxHeight: getExpandableTextHeight(isCommentExpanded) }]}
                         onPress={() => setIsEditingComment(true)}
                       >
-                        <Text
-                          ref={commentTextRef}
-                          style={[styles.commentText, { color: commentText ? theme.colors.onSurface : theme.colors.onSurface + '66' }]}
-                          numberOfLines={isCommentExpanded ? undefined : 1}
-                          onTextLayout={(event) => {
-                            const { lines } = event.nativeEvent;
-                            if (lines.length > 1) {
-                              setShouldShowExpandButton(true);
-                            } else {
-                              setShouldShowExpandButton(false);
-                            }
-                          }}
+                        {renderExpandableText({
+                          text: commentText,
+                          placeholder: 'Add any comments',
+                          textRef: commentTextRef,
+                          isExpanded: isCommentExpanded,
+                          isMeasuring: isCommentMeasuring,
+                          onTextLayout: handleCommentTextLayout,
+                          color: commentText ? theme.colors.onSurface : theme.colors.onSurface + '66',
+                        })}
+                      </TouchableOpacity>
+                      {shouldShowExpandButton && (
+                        <TouchableOpacity
+                          onPress={toggleCommentExpansion}
+                          style={styles.expandButton}
+                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                         >
-                          {commentText || "Add any comments"}
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={toggleCommentExpansion}
-                        style={styles.expandButton}
-                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                      >
-                        <MaterialCommunityIcons
-                          name={isCommentExpanded ? "chevron-up" : "chevron-down"}
-                          size={28}
-                          width={20}
-                          color={theme.colors.primary}
-                        />
-                      </TouchableOpacity>
+                          <MaterialCommunityIcons
+                            name={isCommentExpanded ? "chevron-up" : "chevron-down"}
+                            size={28}
+                            width={20}
+                            color={theme.colors.primary}
+                          />
+                        </TouchableOpacity>
+                      )}
                     </View>
                   )}
                 </View>
@@ -667,10 +741,19 @@ const styles = StyleSheet.create({
     minHeight: 48,
     marginRight: 2,
     backgroundColor: 'transparent',
+    position: 'relative',
   },
   commentText: {
     fontSize: 16,
     lineHeight: 20,
+  },
+  measureText: {
+    position: 'absolute',
+    opacity: 0,
+    left: 12,
+    right: 0,
+    top: 0,
+    zIndex: -1,
   },
   commentInput: {
     fontSize: 16,

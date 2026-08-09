@@ -26,7 +26,7 @@
       },
       "edgeToEdgeEnabled": true,
       "scheme": "cook-it-mobile",
-      "versionCode": 10
+      "versionCode": 13
     },
     "web": {
       "favicon": "./assets/ChefHatColored.png"
