@@ -90,7 +90,7 @@ class SyncService {
       let parsed;
       try {
         parsed = JSON.parse(raw);
-      } catch (parseError) {
+      } catch (_parseError) {
         return false;
       }
 
@@ -198,7 +198,11 @@ class SyncService {
   handleAuthError(authError) {
     let userMessage = 'Failed to connect to Drive. ';
 
-    if (authError.code === 'DEVELOPER_ERROR') {
+    if (authError.code === 'DRIVE_PERMISSION_DENIED') {
+      // Signed in, but Drive access was withheld on the consent screen. Surface the
+      // service's own explanation verbatim - it tells the user how to recover.
+      userMessage = authError.message;
+    } else if (authError.code === 'DEVELOPER_ERROR') {
       userMessage = 'Google Sign-In is not properly configured for this build. The Play Store signing certificate SHA-1 may be missing from Google Cloud Console. See GOOGLE_OAUTH_SETUP.md.';
     } else if (authError.code === 'SIGN_IN_CANCELLED') {
       userMessage = 'Sign-in was cancelled.';
@@ -1021,6 +1025,27 @@ class SyncService {
   // before ever uploading - unlike the old quickSync, which blind-pushed local data
   // with no download/merge step and could overwrite whatever another device had
   // written to Drive in the meantime.
+  /**
+   * Re-open Google's Drive permission prompt for a user who signed in but declined
+   * Drive access. On success, runs a sync so the connection is immediately usable.
+   */
+  async requestDrivePermissions() {
+    try {
+      if (!this.driveClient?.requestDrivePermissions) {
+        return { success: false, message: 'Drive client not initialized' };
+      }
+      const result = await this.driveClient.requestDrivePermissions();
+      if (result?.success) {
+        const syncResult = await this.performExcelSync(false);
+        return { ...result, sync: syncResult };
+      }
+      return result;
+    } catch (error) {
+      console.error('Error requesting Drive permissions:', error);
+      return { success: false, message: error.message };
+    }
+  }
+
   async safeBackgroundSync() {
     try {
       if (!this.driveClient?.isAuthenticated()) {
@@ -1139,12 +1164,17 @@ class SyncService {
       const lastSync = await this.getLastSyncTime();
       const inProgress = await this.isSyncInProgress();
       const syncMode = await this.getSyncMode();
+      // Distinguishes "never connected" from "signed in but Drive permission was
+      // declined", so the UI can offer the permission prompt instead of a plain
+      // "not connected" state the user has no way to act on.
+      const needsDrivePermission = this.driveClient?.isSignedInWithoutDriveAccess?.() || false;
 
       return {
         isAuthenticated,
         lastSync,
         inProgress,
-        syncMode
+        syncMode,
+        needsDrivePermission
       };
     } catch (error) {
       console.error('Error checking sync status:', error);
@@ -1238,6 +1268,19 @@ class DriveClientAdapter {
     return this.googleDriveService.authenticate();
   }
 
+  isSignedInWithoutDriveAccess() {
+    return !!this.googleDriveService
+      && typeof this.googleDriveService.isSignedInWithoutDriveAccess === 'function'
+      && this.googleDriveService.isSignedInWithoutDriveAccess();
+  }
+
+  async requestDrivePermissions() {
+    if (!this.googleDriveService?.requestDrivePermissions) {
+      return { success: false, message: 'Google Drive service not initialized' };
+    }
+    return this.googleDriveService.requestDrivePermissions();
+  }
+
   async download() {
     try {
       if (!this.googleDriveService) {
@@ -1261,13 +1304,6 @@ class DriveClientAdapter {
       throw new Error('Google Drive service not initialized');
     }
     return this.googleDriveService.getDriveFileId();
-  }
-
-  async getFileInfo(fileId) {
-    if (!this.googleDriveService) {
-      throw new Error('Google Drive service not initialized');
-    }
-    return this.googleDriveService.getFileInfo(fileId);
   }
 
   async listFiles() {
@@ -1573,7 +1609,8 @@ export default new Proxy({}, {
             isAuthenticated: false,
             lastSync: null,
             inProgress: false,
-            syncMode: 'excel'
+            syncMode: 'excel',
+            needsDrivePermission: false
           };
         }
         if (prop === 'initializeSync' || prop === 'performSync') {

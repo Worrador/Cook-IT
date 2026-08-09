@@ -636,6 +636,11 @@ const AppContent = () => {
               'Google Drive sync needs to be configured. Please check the GOOGLE_OAUTH_SETUP.md file for setup instructions. You can still use the app without sync for now.',
               'warning'
             );
+          } else if (errorMessage.includes('Drive access was declined')) {
+            // Signing in again won't re-open the consent screen (the Google session
+            // already exists), so route the user through the explicit permission
+            // request instead of leaving them stuck.
+            showCustomAlert('Google Drive Permission Needed', errorMessage, 'warning');
           } else {
             showCustomAlert('Authentication Failed', errorMessage, 'error');
           }
@@ -1828,7 +1833,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 0,
     paddingBottom: 20,
     paddingTop: 4,
     gap: 8,
@@ -1955,18 +1959,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     flex: 1,
   },
-  syncStatusText: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  syncStatusTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  syncStatusSubtitle: {
-    fontSize: 14,
-  },
   syncProgressContent: {
     flex: 1,
     marginLeft: 12,
@@ -2021,11 +2013,5 @@ const styles = StyleSheet.create({
   alertButtonLabel: {
     fontSize: 16,
     fontWeight: '600',
-  },
-  recipeDates: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    gap: 8,
   },
 });

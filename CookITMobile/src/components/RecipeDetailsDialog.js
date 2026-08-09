@@ -735,7 +735,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingTop: 0,
     paddingLeft: 12,
-    backgroundColor: 'rgba(0,0,0,0.02)',
     borderRadius: 8,
     overflow: 'hidden',
     minHeight: 48,
