@@ -31,6 +31,7 @@ import {
 import syncService from './src/services/syncService';
 import { BlurView } from 'expo-blur';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Custom theme configuration
 const theme = {
@@ -681,6 +682,66 @@ const AppContent = () => {
     }
   };
 
+  // Disconnect the app from Google Drive. Local recipes are untouched - the only
+  // thing that goes away is syncing - so the confirmation says exactly that rather
+  // than leaving the user to guess whether logging out deletes their recipe book.
+  const handleSignOut = () => {
+    Alert.alert(
+      'Log out of Google Drive?',
+      'Your recipes stay on this device. They will stop syncing with Google Drive (and with the desktop app) until you connect again.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Log out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await syncService.signOut();
+
+              // Re-read the status rather than assuming, then drop any leftover
+              // progress state so the dialog falls back to the "Not Connected"
+              // view with a working Connect button.
+              const updatedStatus = await syncService.checkSyncStatus();
+              setSyncStatus({ ...updatedStatus, inProgress: false });
+              setSyncProgress(0);
+              setSyncMessage('');
+              setIsManualAuthInProgress(false);
+
+              // The user just chose to disconnect; the auto-prompt that nags
+              // unauthenticated users to connect would otherwise reappear the moment
+              // this dialog is closed.
+              setHasShownSyncDialog(true);
+
+              if (result?.success) {
+                showCustomAlert(
+                  'Logged Out',
+                  'Cook-IT is no longer connected to Google Drive. Your recipes are still saved on this device.',
+                  'success'
+                );
+              } else {
+                showCustomAlert(
+                  'Log Out Failed',
+                  result?.message || 'Could not log out of Google Drive. Please try again.',
+                  'error'
+                );
+              }
+            } catch (error) {
+              console.error('Sign out error:', error);
+              showCustomAlert(
+                'Log Out Failed',
+                error.message || 'Could not log out of Google Drive. Please try again.',
+                'error'
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleAddRecipe = async (recipe) => {
     const updatedRecipes = await addRecipe(recipe);
     setRecipes(updatedRecipes);
@@ -901,7 +962,16 @@ const AppContent = () => {
       <Surface style={[styles.header, { backgroundColor: theme.colors.primary }]} elevation={4} onLayout={e => setHeaderHeight(e.nativeEvent.layout.height)}>
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
-            <MaterialCommunityIcons name="chef-hat" size={32} color={theme.colors.tertiary} />
+            {/* The header shows either the help button or the coffee button, never both
+                (see headerButtons below). The chef hat is the way to reach whichever one
+                is currently hidden, so it always opens the other dialog. */}
+            <TouchableOpacity
+              onPress={() => (showHelpButton ? setShowBuyCoffee(true) : setShowHelp(true))}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons name="chef-hat" size={32} color={theme.colors.tertiary} />
+            </TouchableOpacity>
             <View style={styles.titleContainer}>
               <View style={styles.titleRow}>
                 <Text style={[styles.title, { color: theme.colors.tertiary }]}>CookIT</Text>
@@ -1510,6 +1580,25 @@ const AppContent = () => {
               >
                 Close
               </Button>
+              {/* Log out - only for a user who actually has a Google session. That
+                  includes the "signed in but Drive was declined" state, where logging
+                  out and back in is the way to redo the consent screen. Deliberately a
+                  small text link under Close rather than a full button: it is a rare
+                  action that should not compete with Sync and Close for attention. */}
+              {(syncStatus.isAuthenticated || syncStatus.needsDrivePermission) && (
+                <TouchableOpacity
+                  onPress={handleSignOut}
+                  disabled={syncStatus.inProgress}
+                  style={styles.logoutLink}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[styles.logoutLinkText, {
+                    color: syncStatus.inProgress ? theme.colors.onSurfaceDisabled : '#C62828'
+                  }]}>
+                    Log out of Google Drive
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </Dialog.Actions>
         </Dialog>
@@ -1596,15 +1685,20 @@ const AppContent = () => {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <PaperProvider theme={theme}>
-        <AppContent />
-      </PaperProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.gestureRoot}>
+      <SafeAreaProvider>
+        <PaperProvider theme={theme}>
+          <AppContent />
+        </PaperProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     overflow: 'hidden', // Clip content at app boundaries
@@ -1987,6 +2081,16 @@ const styles = StyleSheet.create({
   syncActionButtonLabel: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  logoutLink: {
+    alignSelf: 'center',
+    paddingVertical: 6,
+    marginTop: 2,
+  },
+  logoutLinkText: {
+    fontSize: 13,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
   },
   syncIconContainer: {
     width: 32,

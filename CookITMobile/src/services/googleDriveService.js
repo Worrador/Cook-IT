@@ -96,9 +96,11 @@ class GoogleDriveService {
       this.driveFileId = driveFileId;
       this.grantedScopes = this.parseStoredScopes(grantedScopes);
 
-      // If signed in, try to refresh access token silently
-      const isSignedIn = await GoogleSignin.isSignedIn();
-      if (isSignedIn) {
+      // If signed in, try to refresh access token silently.
+      // hasPreviousSignIn() replaces isSignedIn(), which was removed in v13 of
+      // @react-native-google-signin/google-signin. It is synchronous, unlike the
+      // promise-returning call it replaces.
+      if (GoogleSignin.hasPreviousSignIn()) {
         await this.refreshAccessToken();
       }
 
@@ -666,16 +668,36 @@ class GoogleDriveService {
     }
   }
 
+  /**
+   * Disconnect the app from Google Drive.
+   *
+   * The Google session is revoked first, but the locally stored session is cleared
+   * whichever way that goes. Bailing out when GoogleSignin.signOut() throws (no Play
+   * Services, an unconfigured build, no network) would leave the access token behind,
+   * so the app would keep reporting itself as connected right after the user tapped
+   * "Log out" - the one outcome a log-out button must never produce.
+   *
+   * Recipes in AsyncStorage are deliberately untouched: only the Drive link goes away.
+   *
+   * @returns {Promise<{success: boolean, signedOutFromGoogle?: boolean, message?: string}>}
+   */
   async signOut() {
+    let signedOutFromGoogle = true;
     try {
       await GoogleSignin.signOut();
+    } catch (error) {
+      signedOutFromGoogle = false;
+      console.warn('Google sign-out failed, clearing the local session anyway:', error?.message || error);
+    }
+
+    try {
       await this.clearTokens();
       await this.setDriveFileId(null);
       this.isInitialized = false;
-      return true;
+      return { success: true, signedOutFromGoogle };
     } catch (error) {
-      console.error('Error signing out:', error);
-      return false;
+      console.error('Error clearing the local session on sign-out:', error);
+      return { success: false, message: error?.message || 'Could not clear the stored Google session.' };
     }
   }
 }

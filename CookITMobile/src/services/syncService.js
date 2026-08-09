@@ -686,13 +686,63 @@ class SyncService {
     return `${year}-${month}-${day}`;
   }
 
+  // Union two recipes' `images` arrays by Drive file id (the durable identity
+  // once an image has finished uploading), keeping the copy that already has
+  // a local file present so a device doesn't lose track of a photo it has
+  // already downloaded. Images that haven't been uploaded yet (no driveFileId)
+  // have no cross-device identity to union on, so every local-only image from
+  // either side is kept - dropping one would delete a photo that's still
+  // sitting only on one device's disk.
+  mergeRecipeImages(localImages, driveImages) {
+    const byDriveId = new Map();
+    const localOnly = [];
+
+    const consider = (img) => {
+      if (!img) return;
+      if (img.driveFileId) {
+        const existing = byDriveId.get(img.driveFileId);
+        if (!existing || (!existing.localFile && img.localFile)) {
+          byDriveId.set(img.driveFileId, img);
+        }
+      } else {
+        localOnly.push(img);
+      }
+    };
+
+    (localImages || []).forEach(consider);
+    (driveImages || []).forEach(consider);
+
+    const seenIds = new Set();
+    const keptLocalOnly = [];
+    for (const img of localOnly) {
+      if (!seenIds.has(img.id)) {
+        seenIds.add(img.id);
+        keptLocalOnly.push(img);
+      }
+    }
+
+    return [...byDriveId.values(), ...keptLocalOnly];
+  }
+
   // Deterministic string representation of a dataset, projected to only the fields
   // that actually round-trip through the Excel file. Used to detect whether a merge
   // result genuinely differs from a side, rather than inferring it from which merge
   // branch fired (see computeSyncFlags).
   canonicalizeSyncData(recipes, lastCookedDates, pinnedRecipes) {
     const sortedRecipes = [...(recipes || [])]
-      .map(recipe => ({ name: recipe.name || '', url: recipe.url || '', comment: recipe.comment || '' }))
+      .map(recipe => ({
+        name: recipe.name || '',
+        url: recipe.url || '',
+        comment: recipe.comment || '',
+        // Only Drive file ids round-trip through the 'Images' column (see
+        // excelService.prepareExcelData) - local-only image paths are
+        // device-specific and would make every device's canonical form
+        // differ forever, so they're excluded from this projection.
+        images: [...(recipe.images || [])]
+          .map(img => img?.driveFileId)
+          .filter(Boolean)
+          .sort()
+      }))
       .sort((a, b) => this.getRecipeKey(a).localeCompare(this.getRecipeKey(b)));
 
     const sortedPinned = [...(pinnedRecipes || [])].sort();
@@ -925,15 +975,18 @@ class SyncService {
       const driveRecipe = driveMap.get(key);
 
       if (localRecipe && driveRecipe) {
-        // Recipe exists in both - use the newer one
+        // Recipe exists in both - use the newer one, but merge `images` from
+        // both regardless of which side wins so a photo added on one device
+        // isn't wiped out by the other device winning on name/url/comment.
         const localModified = new Date(localRecipe.createdAt || localRecipe.lastModified || 0);
         const driveModified = new Date(driveRecipe.createdAt || driveRecipe.lastModified || 0);
+        const mergedImages = this.mergeRecipeImages(localRecipe.images, driveRecipe.images);
 
         if (localModified >= driveModified) {
-          mergedRecipes.push(localRecipe);
+          mergedRecipes.push({ ...localRecipe, images: mergedImages });
           console.log(`📱 Using local version of "${localRecipe.name}": local=${localModified.toISOString()}, drive=${driveModified.toISOString()}`);
         } else {
-          mergedRecipes.push(driveRecipe);
+          mergedRecipes.push({ ...driveRecipe, images: mergedImages });
           console.log(`☁️  Using drive version of "${driveRecipe.name}": local=${localModified.toISOString()}, drive=${driveModified.toISOString()}`);
         }
         hasChanges = true;
@@ -996,17 +1049,19 @@ class SyncService {
     console.log(`   🔍 Differences in: [${differences.join(', ')}]`);
 
     if (differences.length <= 1) {
-      // Minor change (0-1 fields different) - keep the newer version
+      // Minor change (0-1 fields different) - keep the newer version, but
+      // still merge images from both so the losing side's photos survive.
+      const mergedImages = this.mergeRecipeImages(localRecipe.images, driveRecipe.images);
       if (localModified >= driveModified) {
         console.log(`   ✅ Resolution: Keep local (newer, ${differences.length} field${differences.length !== 1 ? 's' : ''} changed)`);
         return {
-          recipes: [localRecipe],
+          recipes: [{ ...localRecipe, images: mergedImages }],
           action: `kept newer local version (${differences.length} field${differences.length !== 1 ? 's' : ''} changed)`
         };
       } else {
         console.log(`   ✅ Resolution: Keep drive (newer, ${differences.length} field${differences.length !== 1 ? 's' : ''} changed)`);
         return {
-          recipes: [driveRecipe],
+          recipes: [{ ...driveRecipe, images: mergedImages }],
           action: `kept newer drive version (${differences.length} field${differences.length !== 1 ? 's' : ''} changed)`
         };
       }
@@ -1042,6 +1097,43 @@ class SyncService {
       return result;
     } catch (error) {
       console.error('Error requesting Drive permissions:', error);
+      return { success: false, message: error.message };
+    }
+  }
+
+  /**
+   * Disconnect from Google Drive.
+   *
+   * Local recipes are left alone - only the Drive session and this service's sync
+   * bookkeeping are dropped. The stored sync timestamps go with it so the UI can't
+   * keep advertising a "last synced" time that no longer has an account behind it,
+   * and the in-progress flag is cleared so a later re-connect isn't blocked by a
+   * stale lock.
+   */
+  async signOut() {
+    try {
+      if (!this.driveClient?.signOut) {
+        return { success: false, message: 'Drive client not initialized' };
+      }
+
+      const result = await this.driveClient.signOut();
+      if (result && result.success === false) {
+        return result;
+      }
+
+      this.isSyncing = false;
+
+      if (this.storageProvider) {
+        await Promise.all([
+          this.storageProvider.removeItem(this.config.lastSyncKey),
+          this.storageProvider.removeItem('@cookit_last_excel_sync'),
+          this.storageProvider.removeItem(this.config.syncInProgressKey)
+        ]);
+      }
+
+      return { success: true, message: 'Signed out of Google Drive' };
+    } catch (error) {
+      console.error('Error signing out of Google Drive:', error);
       return { success: false, message: error.message };
     }
   }
@@ -1279,6 +1371,13 @@ class DriveClientAdapter {
       return { success: false, message: 'Google Drive service not initialized' };
     }
     return this.googleDriveService.requestDrivePermissions();
+  }
+
+  async signOut() {
+    if (!this.googleDriveService?.signOut) {
+      return { success: false, message: 'Google Drive service not initialized' };
+    }
+    return this.googleDriveService.signOut();
   }
 
   async download() {

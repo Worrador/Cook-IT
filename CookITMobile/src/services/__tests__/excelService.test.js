@@ -119,8 +119,8 @@ beforeEach(async () => {
   await excelService.initialize();
 });
 
-describe('prepareExcelData (Fix 1 + Fix 5: six-column export schema)', () => {
-  test('emits all six desktop columns in desktop order, including Last Shown', () => {
+describe('prepareExcelData (Fix 1 + Fix 5: seven-column export schema)', () => {
+  test('emits all seven columns in desktop order, including Last Shown, with Images appended last', () => {
     const cookedMs = new Date(2024, 0, 15, 9, 5, 3).getTime(); // Jan 15 2024, 09:05:03 local
     const recipes = [
       { name: 'Soup', url: 'http://example.com/soup', comment: 'Tasty' },
@@ -132,19 +132,113 @@ describe('prepareExcelData (Fix 1 + Fix 5: six-column export schema)', () => {
     const rows = excelService.prepareExcelData(recipes, lastCookedDates, pinnedRecipes);
 
     expect(rows).toHaveLength(2);
+    // 'Images' is a mobile-only column appended LAST so it never shifts the
+    // desktop-shared column indexes (see the hidden-'Pinned'-column comment
+    // in createLocalExcelFile).
     expect(Object.keys(rows[0])).toEqual([
-      'Recipe Name', 'URL', 'Comment', 'Last Shown', 'Last Cooked Date', 'Pinned'
+      'Recipe Name', 'URL', 'Comment', 'Last Shown', 'Last Cooked Date', 'Pinned', 'Images'
     ]);
 
     const soupRow = rows.find(r => r['Recipe Name'] === 'Soup');
     expect(soupRow['Last Shown']).toBe('2024-01-15T09:05:03');
     expect(soupRow['Last Cooked Date']).toBe('2024-01-15');
     expect(soupRow['Pinned']).toBe('Yes');
+    expect(soupRow['Images']).toBe('');
 
     const saladRow = rows.find(r => r['Recipe Name'] === 'Salad');
     expect(saladRow['Last Shown']).toBe('');
     expect(saladRow['Last Cooked Date']).toBe('');
     expect(saladRow['Pinned']).toBe('No');
+    expect(saladRow['Images']).toBe('');
+  });
+});
+
+describe('Images column round trip', () => {
+  test('prepareExcelData writes only uploaded (Drive file id) images as a comma-separated list', () => {
+    const recipes = [
+      {
+        name: 'Stew',
+        images: [
+          { id: 'a', localFile: '/local/a.jpg', driveFileId: 'drive-a' },
+          { id: 'b', localFile: '/local/b.jpg', driveFileId: 'drive-b' },
+          // Not yet uploaded - has no stable cross-device identity, so it
+          // must NOT appear in the column.
+          { id: 'c', localFile: '/local/c.jpg', driveFileId: null }
+        ]
+      },
+      { name: 'No Photos' } // no `images` field at all
+    ];
+
+    const rows = excelService.prepareExcelData(recipes, {}, []);
+
+    expect(rows.find(r => r['Recipe Name'] === 'Stew')['Images']).toBe('drive-a,drive-b');
+    expect(rows.find(r => r['Recipe Name'] === 'No Photos')['Images']).toBe('');
+  });
+
+  test('parseExcelFile reconstructs images from Drive file ids, preserving already-known local paths', async () => {
+    loadRecipes.mockResolvedValue([
+      {
+        name: 'Stew',
+        images: [
+          { id: 'a', localFile: '/local/a.jpg', driveFileId: 'drive-a' }, // already downloaded on this device
+          { id: 'c', localFile: '/local/c.jpg', driveFileId: null } // local-only, never uploaded
+        ]
+      }
+    ]);
+
+    await writeWorkbook({
+      Recipes: [
+        {
+          'Recipe Name': 'Stew', URL: '', Comment: '', 'Last Shown': '', 'Last Cooked Date': '', Pinned: 'No',
+          // 'drive-a' is already known locally; 'drive-b' is new to this device.
+          Images: 'drive-a,drive-b'
+        }
+      ]
+    });
+
+    const result = await excelService.parseExcelFile();
+    const stew = result.recipes.find(r => r.name === 'Stew');
+
+    // Known image keeps its local path (no unnecessary re-download).
+    expect(stew.images).toContainEqual({ id: 'a', localFile: '/local/a.jpg', driveFileId: 'drive-a' });
+    // Newly-seen Drive image has no local copy yet - ensureLocal() downloads
+    // it lazily on first view.
+    expect(stew.images).toContainEqual({ id: 'drive-b', localFile: null, driveFileId: 'drive-b' });
+    // Local-only image (never uploaded) isn't in the Excel column at all, but
+    // must survive the parse since it's the only place it's recorded.
+    expect(stew.images).toContainEqual({ id: 'c', localFile: '/local/c.jpg', driveFileId: null });
+    expect(stew.images).toHaveLength(3);
+  });
+
+  test('parseExcelFile gives a brand-new recipe fresh, local-file-less image refs', async () => {
+    loadRecipes.mockResolvedValue([]); // nothing local yet
+
+    await writeWorkbook({
+      Recipes: [
+        {
+          'Recipe Name': 'Brand New', URL: '', Comment: '', 'Last Shown': '', 'Last Cooked Date': '', Pinned: 'No',
+          Images: 'drive-x'
+        }
+      ]
+    });
+
+    const result = await excelService.parseExcelFile();
+    const recipe = result.recipes.find(r => r.name === 'Brand New');
+
+    expect(recipe.images).toEqual([{ id: 'drive-x', localFile: null, driveFileId: 'drive-x' }]);
+  });
+
+  test('an empty Images cell round-trips to an empty array, not a stray entry', async () => {
+    loadRecipes.mockResolvedValue([]);
+
+    await writeWorkbook({
+      Recipes: [
+        { 'Recipe Name': 'No Photos', URL: '', Comment: '', 'Last Shown': '', 'Last Cooked Date': '', Pinned: 'No', Images: '' }
+      ]
+    });
+
+    const result = await excelService.parseExcelFile();
+    expect(result.recipes.find(r => r.name === 'No Photos').images).toEqual([]);
   });
 });
 

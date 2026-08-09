@@ -270,6 +270,109 @@ describe('SyncService', () => {
     });
   });
 
+  describe('Recipe images merge', () => {
+    test('mergeRecipeImages unions by Drive file id, preferring the copy with a local file present', () => {
+      const local = [
+        { id: 'a', localFile: '/local/a.jpg', driveFileId: 'drive-a' },
+        { id: 'b', localFile: '/local/b.jpg', driveFileId: null } // not yet uploaded
+      ];
+      const drive = [
+        { id: 'a-on-drive-device', localFile: null, driveFileId: 'drive-a' }, // same photo, no local copy on this side
+        { id: 'c', localFile: null, driveFileId: 'drive-c' } // photo only known from Drive
+      ];
+
+      const merged = syncService.mergeRecipeImages(local, drive);
+
+      // Union by Drive file id: 'drive-a' appears once, keeping the copy
+      // that already has a local file (the local side's), not the drive
+      // side's local-file-less duplicate.
+      expect(merged.filter(img => img.driveFileId === 'drive-a')).toEqual([
+        { id: 'a', localFile: '/local/a.jpg', driveFileId: 'drive-a' }
+      ]);
+      // 'drive-c' (only on the drive side) and 'b' (local-only, not yet
+      // uploaded) both survive - dropping either would delete a photo still
+      // only on one side.
+      expect(merged).toContainEqual({ id: 'c', localFile: null, driveFileId: 'drive-c' });
+      expect(merged).toContainEqual({ id: 'b', localFile: '/local/b.jpg', driveFileId: null });
+      expect(merged).toHaveLength(3);
+    });
+
+    test('performIntelligentMerge merges images for a recipe that exists identically on both sides', () => {
+      const localImages = [{ id: 'a', localFile: '/local/a.jpg', driveFileId: 'drive-a' }];
+      const driveImages = [{ id: 'b', localFile: null, driveFileId: 'drive-b' }];
+
+      const localRecipe = TestDataFactory.createRecipe('Same Recipe', {
+        lastModified: '2024-01-02T00:00:00.000Z'
+      });
+      localRecipe.images = localImages;
+
+      const driveRecipe = TestDataFactory.createRecipe('Same Recipe', {
+        lastModified: '2024-01-01T00:00:00.000Z'
+      });
+      driveRecipe.images = driveImages;
+
+      const result = syncService.performIntelligentMerge([localRecipe], [driveRecipe]);
+
+      expect(result.recipes).toHaveLength(1);
+      // Local wins on name/url/comment (newer), but images from both sides
+      // survive the merge regardless of which side's other fields won.
+      expect(result.recipes[0].images).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ driveFileId: 'drive-a' }),
+          expect.objectContaining({ driveFileId: 'drive-b' })
+        ])
+      );
+      expect(result.recipes[0].images).toHaveLength(2);
+    });
+
+    test('resolveRecipeConflict merges images even when only one version is kept', () => {
+      const localRecipe = TestDataFactory.createRecipe('Similar Recipe', {
+        comment: 'Local comment',
+        lastModified: '2024-01-02T00:00:00.000Z'
+      });
+      localRecipe.images = [{ id: 'a', localFile: '/local/a.jpg', driveFileId: 'drive-a' }];
+
+      const driveRecipe = TestDataFactory.createRecipe('Similar Recipe', {
+        comment: 'Local comment', // same comment -> only 1 field (url) differs -> "minor change" branch
+        url: 'http://example.com/different-url',
+        lastModified: '2024-01-01T00:00:00.000Z'
+      });
+      driveRecipe.images = [{ id: 'b', localFile: null, driveFileId: 'drive-b' }];
+
+      const resolution = syncService.resolveRecipeConflict(localRecipe, driveRecipe);
+
+      expect(resolution.recipes).toHaveLength(1);
+      expect(resolution.recipes[0].name).toBe('Similar Recipe'); // kept the newer (local) version
+      expect(resolution.recipes[0].images).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ driveFileId: 'drive-a' }),
+          expect.objectContaining({ driveFileId: 'drive-b' })
+        ])
+      );
+    });
+
+    test('computeSyncFlags ignores local-only file paths but reacts to a genuine Drive image difference', () => {
+      const recipe = TestDataFactory.createRecipe('Photo Recipe');
+
+      const withLocalPath = { ...recipe, images: [{ id: 'a', localFile: '/device/a.jpg', driveFileId: 'drive-a' }] };
+      const sameImageDifferentLocalPath = { ...recipe, images: [{ id: 'a2', localFile: null, driveFileId: 'drive-a' }] };
+      const differentImage = { ...recipe, images: [{ id: 'b', localFile: null, driveFileId: 'drive-b' }] };
+
+      const local = { recipes: [withLocalPath], lastCookedDates: {}, pinnedRecipes: [] };
+      const merged = { recipes: [sameImageDifferentLocalPath], lastCookedDates: {}, pinnedRecipes: [] };
+      const drive = { recipes: [differentImage], lastCookedDates: {}, pinnedRecipes: [] };
+
+      // Same Drive file id as local, just a different (device-specific) local
+      // path/id - must NOT register as a change.
+      expect(syncService.computeSyncFlags(merged, local, drive).hasChanges).toBe(false);
+
+      // A genuinely different Drive file id must register as needing upload.
+      const mergedWithNewImage = { recipes: [differentImage], lastCookedDates: {}, pinnedRecipes: [] };
+      expect(syncService.computeSyncFlags(mergedWithNewImage, local, drive).needsUpload).toBe(false);
+      expect(syncService.computeSyncFlags(mergedWithNewImage, local, drive).hasChanges).toBe(true);
+    });
+  });
+
   describe('computeSyncFlags (Fix 3: hasChanges reflects actual data difference)', () => {
     test('hasChanges is false when merged data equals local data', () => {
       const recipe = TestDataFactory.createRecipe('Same Recipe');
@@ -558,6 +661,46 @@ describe('SyncService', () => {
       const result = await syncService.initializeSync();
 
       expect(result.message).toContain('Unable to open web browser for authentication');
+    });
+  });
+
+  describe('Sign Out', () => {
+    test('should disconnect Drive and clear the sync bookkeeping', async () => {
+      mockDrive.setAuthenticationState(true);
+      await mockStorage.setItem('@cookit_last_sync', new Date().toISOString());
+      await mockStorage.setItem('@cookit_last_excel_sync', new Date().toISOString());
+      await syncService.setSyncInProgress(true);
+
+      const result = await syncService.signOut();
+
+      expect(result.success).toBe(true);
+      expect(mockDrive.isAuthenticated()).toBe(false);
+      // A "last synced" time with no account behind it would be misleading, and a
+      // leftover in-progress flag would block the next connect attempt.
+      expect(await syncService.getLastSyncTime()).toBeNull();
+      expect(await syncService.isSyncInProgress()).toBe(false);
+    });
+
+    test('should keep the session when the Drive client reports a failure', async () => {
+      mockDrive.setAuthenticationState(true);
+      const lastSync = new Date().toISOString();
+      await mockStorage.setItem('@cookit_last_sync', lastSync);
+      mockDrive.setFailureMode(true, 'Sign out failed');
+
+      const result = await syncService.signOut();
+
+      expect(result.success).toBe(false);
+      // Nothing was disconnected, so the sync history must survive intact.
+      expect(await mockStorage.getItem('@cookit_last_sync')).toBe(lastSync);
+    });
+
+    test('should report a missing Drive client instead of throwing', async () => {
+      const serviceWithoutDrive = new SyncService({ storageProvider: mockStorage });
+
+      const result = await serviceWithoutDrive.signOut();
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Drive client not initialized');
     });
   });
 

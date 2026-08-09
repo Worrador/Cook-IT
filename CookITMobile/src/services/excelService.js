@@ -302,10 +302,15 @@ class ExcelService {
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.json_to_sheet(excelData);
 
-      // Column layout (matches desktop's default_columns order in Cook_IT.py):
+      // Column layout (matches desktop's default_columns order in Cook_IT.py),
+      // plus a mobile-only 'Images' column appended LAST so it doesn't shift
+      // any of the indexes below:
       // 0 Recipe Name, 1 URL, 2 Comment, 3 Last Shown, 4 Last Cooked Date,
-      // 5 Pinned. Hide 'Pinned' (index 5) since it's an internal flag that's
-      // mirrored in the separate 'Pinned Recipes' sheet for desktop.
+      // 5 Pinned, 6 Images. Hide 'Pinned' (index 5) since it's an internal
+      // flag that's mirrored in the separate 'Pinned Recipes' sheet for
+      // desktop. Desktop's ExcelWriter round-trips extra COLUMNS on the
+      // 'Recipes' sheet untouched (it only rebuilds extra SHEETS), so
+      // 'Images' survives a desktop save even though desktop never reads it.
       if (!worksheet['!cols']) worksheet['!cols'] = [];
       worksheet['!cols'][5] = { hidden: true };
 
@@ -412,7 +417,8 @@ class ExcelService {
             url: row['URL'] || '',
             comment: row['Comment'] || '',
             createdAt: existing?.createdAt || nowIso,
-            lastModified: existing?.lastModified || nowIso
+            lastModified: existing?.lastModified || nowIso,
+            images: this.parseImagesColumn(row['Images'], existing?.images)
           };
           recipes.push(recipe);
 
@@ -766,6 +772,43 @@ class ExcelService {
   }
 
   /**
+   * Reconstruct a recipe's `images` array from the Excel 'Images' column
+   * (a comma-separated list of Drive file ids - see prepareExcelData).
+   *
+   * Only Drive file ids round-trip through Excel, so a fresh device seeing
+   * a recipe for the first time gets `localFile: null` entries (recipeImageService's
+   * ensureLocal() lazily downloads them on first view). When this device
+   * already has local copies (`existingImages`, matched by name in the
+   * caller), those local paths are preserved instead of losing them.
+   *
+   * Local-only images that haven't finished uploading yet (no driveFileId)
+   * never appear in the column at all, so they're carried forward from
+   * `existingImages` unconditionally - otherwise every Excel
+   * parse/import would silently drop a photo that's still only on this
+   * device.
+   */
+  parseImagesColumn(rawValue, existingImages) {
+    const driveFileIds = (rawValue || '')
+      .split(',')
+      .map(id => id.trim())
+      .filter(Boolean);
+
+    const existingByDriveId = new Map(
+      (existingImages || [])
+        .filter(img => img && img.driveFileId)
+        .map(img => [img.driveFileId, img])
+    );
+
+    const images = driveFileIds.map(driveFileId =>
+      existingByDriveId.get(driveFileId) || { id: driveFileId, localFile: null, driveFileId }
+    );
+
+    const localOnlyImages = (existingImages || []).filter(img => img && !img.driveFileId);
+
+    return [...images, ...localOnlyImages];
+  }
+
+  /**
    * Prepare data for Excel export
    */
   prepareExcelData(recipes, lastCookedDates, pinnedRecipes) {
@@ -788,7 +831,14 @@ class ExcelService {
         // local date components (not UTC) so a recipe cooked late at night
         // in a UTC-negative timezone doesn't get serialised as the next day.
         'Last Cooked Date': cookedTimestamp ? formatLocalDate(cookedTimestamp) : '',
-        'Pinned': pinnedRecipes.includes(recipe.name) ? 'Yes' : 'No'
+        'Pinned': pinnedRecipes.includes(recipe.name) ? 'Yes' : 'No',
+        // Only Drive file ids round-trip through Excel - a local-only image
+        // that hasn't finished uploading yet has no stable identity another
+        // device could resolve, so it's simply omitted here until it does.
+        'Images': (recipe.images || [])
+          .map(img => img.driveFileId)
+          .filter(Boolean)
+          .join(',')
       };
     });
   }

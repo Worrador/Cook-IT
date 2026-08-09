@@ -32,6 +32,7 @@ export const DriveClientInterface = {
   // Authentication
   isAuthenticated: 'function() -> boolean',
   authenticate: 'async function() -> boolean',
+  signOut: 'async function() -> { success: boolean, signedOutFromGoogle?: boolean, message?: string }',
 
   // File operations
   upload: 'async function(filePath: string) -> { success: boolean, message?: string }',
@@ -226,6 +227,14 @@ export class MockDriveClient {
     }
     this.authenticated = true;
     return true;
+  }
+
+  async signOut() {
+    if (this.shouldFail) {
+      return { success: false, message: this.failMessage };
+    }
+    this.authenticated = false;
+    return { success: true, signedOutFromGoogle: true };
   }
 
   async upload(filePath) {

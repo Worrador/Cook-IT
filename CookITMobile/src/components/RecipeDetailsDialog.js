@@ -1,7 +1,183 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Keyboard, Linking, Alert } from 'react-native';
-import { Dialog, Portal, Text, Button, TextInput, useTheme } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Keyboard, Linking, Alert, Modal, Image } from 'react-native';
+import { Dialog, Portal, Text, Button, TextInput, ActivityIndicator, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  useAnimatedReaction,
+  withTiming,
+  runOnJS,
+} from 'react-native-reanimated';
+import recipeImageService from '../services/recipeImageService';
+
+const MAX_ZOOM_SCALE = 4;
+const DOUBLE_TAP_ZOOM_SCALE = 2.5;
+
+// A single pinch-to-zoom / pan-to-inspect page inside the full-screen photo
+// viewer. Kept self-contained so each page in the swipe pager has its own
+// independent zoom/pan state - zooming one photo must not affect the others.
+const ZoomableImage = ({ uri, onZoomChange }) => {
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
+  const [isZoomed, setIsZoomed] = useState(false);
+
+  const notifyZoomChange = (zoomed) => {
+    setIsZoomed(zoomed);
+    if (onZoomChange) onZoomChange(zoomed);
+  };
+
+  useAnimatedReaction(
+    () => scale.value > 1.05,
+    (zoomed, previouslyZoomed) => {
+      if (zoomed !== previouslyZoomed) {
+        runOnJS(notifyZoomChange)(zoomed);
+      }
+    }
+  );
+
+  const resetZoom = () => {
+    'worklet';
+    scale.value = withTiming(1);
+    savedScale.value = 1;
+    translateX.value = withTiming(0);
+    translateY.value = withTiming(0);
+    savedTranslateX.value = 0;
+    savedTranslateY.value = 0;
+  };
+
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((event) => {
+      scale.value = Math.max(1, Math.min(savedScale.value * event.scale, MAX_ZOOM_SCALE));
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+      if (scale.value <= 1) {
+        resetZoom();
+      }
+    });
+
+  // Only pans the zoomed image; while unzoomed this gesture is disabled so
+  // the surrounding pager's horizontal swipe (next/previous photo) keeps
+  // working normally.
+  const panGesture = Gesture.Pan()
+    .enabled(isZoomed)
+    .onUpdate((event) => {
+      translateX.value = savedTranslateX.value + event.translationX;
+      translateY.value = savedTranslateY.value + event.translationY;
+    })
+    .onEnd(() => {
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+    });
+
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      if (scale.value > 1) {
+        resetZoom();
+      } else {
+        scale.value = withTiming(DOUBLE_TAP_ZOOM_SCALE);
+        savedScale.value = DOUBLE_TAP_ZOOM_SCALE;
+      }
+    });
+
+  const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture, doubleTapGesture);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
+
+  return (
+    <GestureDetector gesture={composedGesture}>
+      <Animated.View style={[styles.zoomableImageWrapper, animatedStyle]}>
+        <Image source={{ uri }} style={styles.fullScreenImage} resizeMode="contain" />
+      </Animated.View>
+    </GestureDetector>
+  );
+};
+
+// Full-screen photo viewer: swipe between photos, pinch-to-zoom/pan on each,
+// with controls to add another photo or delete the one currently showing.
+const FullScreenImageViewer = ({
+  visible,
+  images,
+  resolvedPaths,
+  initialIndex,
+  onClose,
+  onDeleteCurrent,
+}) => {
+  const { width, height } = Dimensions.get('window');
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (visible) {
+      setCurrentIndex(initialIndex);
+      // Jump to the tapped thumbnail without an animated scroll (the fade-in
+      // of the modal itself provides the transition).
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ x: initialIndex * width, animated: false });
+      });
+    }
+  }, [visible, initialIndex, width]);
+
+  if (!images.length) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.viewerContainer}>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled
+          scrollEnabled={scrollEnabled}
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(event) => {
+            const index = Math.round(event.nativeEvent.contentOffset.x / width);
+            setCurrentIndex(Math.max(0, Math.min(index, images.length - 1)));
+          }}
+        >
+          {images.map((image) => (
+            <View key={image.id} style={{ width, height }}>
+              {resolvedPaths[image.id] ? (
+                <ZoomableImage uri={resolvedPaths[image.id]} onZoomChange={setScrollEnabled ? (zoomed) => setScrollEnabled(!zoomed) : undefined} />
+              ) : (
+                <View style={styles.viewerLoading}>
+                  <ActivityIndicator size="large" color="#fff" />
+                </View>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+
+        <TouchableOpacity style={styles.viewerCloseButton} onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <MaterialCommunityIcons name="close" size={28} color="#fff" />
+        </TouchableOpacity>
+
+        <View style={styles.viewerBottomBar}>
+          <Text style={styles.viewerCounter}>{currentIndex + 1} / {images.length}</Text>
+          <TouchableOpacity
+            onPress={() => onDeleteCurrent(images[currentIndex])}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <MaterialCommunityIcons name="delete" size={26} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose, onDelete, onCook, onUncook, onUpdate, onNext, onTogglePin, isPinned, pinnedRecipes, setPinnedRecipes }) => {
   const theme = useTheme();
@@ -29,6 +205,13 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
   const urlInputRef = useRef(null);
   const [isNameFocused, setIsNameFocused] = useState(false);
   const [isUrlFocused, setIsUrlFocused] = useState(false);
+
+  // --- Photos state ------------------------------------------------------
+  const [images, setImages] = useState([]);
+  const [resolvedPaths, setResolvedPaths] = useState({});
+  const [isAddingImage, setIsAddingImage] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
 
   const openUrlSafely = async (rawUrl) => {
     try {
@@ -215,8 +398,36 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       setCommentText(recipe.comment || '');
       setNameText(recipe.name || '');
       setUrlText(recipe.url || '');
+      setImages(Array.isArray(recipe.images) ? recipe.images : []);
     }
   }, [recipe]);
+
+  // Resolve a local path for every photo, downloading from Drive on demand
+  // (recipeImageService.ensureLocal) when this device doesn't have the file
+  // locally yet - e.g. a fresh install that only synced the Excel reference.
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveImages = async () => {
+      for (const image of images) {
+        if (cancelled) return;
+        if (image.localFile) {
+          setResolvedPaths(prev => (prev[image.id] === image.localFile ? prev : { ...prev, [image.id]: image.localFile }));
+          continue;
+        }
+        const path = await recipeImageService.ensureLocal(image);
+        if (!cancelled && path) {
+          setResolvedPaths(prev => ({ ...prev, [image.id]: path }));
+        }
+      }
+    };
+
+    resolveImages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [images]);
 
   // Re-measure expandable text whenever the dialog opens or recipe content changes.
   useEffect(() => {
@@ -252,6 +463,7 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       setIsNameMeasuring(true);
       setShouldShowExpandButton(false);
       setShouldShowNameExpandButton(false);
+      setViewerVisible(false);
     }
   }, [visible, recipe]);
 
@@ -325,6 +537,63 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
       }
     } catch (error) {
       console.error('Error getting next recipe:', error);
+    }
+  };
+
+  // --- Photo handlers ------------------------------------------------
+
+  const persistImages = async (updatedImages) => {
+    setImages(updatedImages);
+    if (!recipe) return;
+    try {
+      await onUpdate(recipe.name, { ...recipe, images: updatedImages });
+    } catch (error) {
+      console.error('Error saving recipe photos:', error);
+    }
+  };
+
+  const handleAddPhotoFromCamera = async () => {
+    try {
+      setIsAddingImage(true);
+      const imageRef = await recipeImageService.captureFromCamera();
+      if (imageRef) {
+        await persistImages([...images, imageRef]);
+      }
+    } catch (error) {
+      console.warn('Failed to capture photo:', error?.message || error);
+    } finally {
+      setIsAddingImage(false);
+    }
+  };
+
+  const handleAddPhotoFromGallery = async () => {
+    try {
+      setIsAddingImage(true);
+      const picked = await recipeImageService.pickFromLibrary();
+      if (picked?.length) {
+        await persistImages([...images, ...picked]);
+      }
+    } catch (error) {
+      console.warn('Failed to pick photos:', error?.message || error);
+    } finally {
+      setIsAddingImage(false);
+    }
+  };
+
+  const openViewer = (index) => {
+    setViewerIndex(index);
+    setViewerVisible(true);
+  };
+
+  const handleDeleteCurrentViewerImage = async (imageToDelete) => {
+    const remaining = images.filter(image => image.id !== imageToDelete.id);
+    await persistImages(remaining);
+    recipeImageService.deleteImage(imageToDelete).catch(() => {});
+
+    if (remaining.length === 0) {
+      setViewerVisible(false);
+    } else {
+      setViewerIndex(prev => Math.min(prev, remaining.length - 1));
     }
   };
 
@@ -557,6 +826,59 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
                   </View>
                 </View>
               )}
+              {/* With no thumbnails the container is just the add-photo icons, so both
+                  sides are centred and the icons line up with the "Photos" label. Once a
+                  thumbnail strip is present the label has to sit at the top instead. */}
+              <View style={[styles.row, {
+                marginTop: 1,
+                alignItems: images.length > 0 ? 'flex-start' : 'center',
+              }]}>
+                <Text style={[styles.label, {
+                  color: theme.colors.onSurface,
+                  paddingTop: images.length > 0 ? 12 : 0,
+                  alignSelf: images.length > 0 ? 'flex-start' : 'center',
+                }]}>Photos</Text>
+                <View style={styles.photosContainer}>
+                  {images.length > 0 && (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbnailStrip}>
+                      {images.map((image, index) => (
+                        <TouchableOpacity
+                          key={image.id}
+                          style={styles.thumbnailWrapper}
+                          onPress={() => openViewer(index)}
+                        >
+                          {resolvedPaths[image.id] ? (
+                            <Image source={{ uri: resolvedPaths[image.id] }} style={styles.thumbnail} />
+                          ) : (
+                            <View style={[styles.thumbnail, styles.thumbnailLoading]}>
+                              <ActivityIndicator size="small" color={theme.colors.primary} />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+                  <View style={styles.addPhotoRow}>
+                    <TouchableOpacity
+                      onPress={handleAddPhotoFromCamera}
+                      style={styles.addPhotoButton}
+                      disabled={isAddingImage}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <MaterialCommunityIcons name="camera-plus" size={22} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={handleAddPhotoFromGallery}
+                      style={styles.addPhotoButton}
+                      disabled={isAddingImage}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <MaterialCommunityIcons name="image-plus" size={22} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                    {isAddingImage && <ActivityIndicator size="small" color={theme.colors.primary} />}
+                  </View>
+                </View>
+              </View>
             </View>
           </Dialog.Content>
           <Dialog.Actions style={styles.actions}>
@@ -620,6 +942,15 @@ export const RecipeDetailsDialog = ({ visible, recipe, isSuggestionFlow, onClose
           </Dialog.Actions>
         </ScrollView>
       </Dialog>
+
+      <FullScreenImageViewer
+        visible={viewerVisible}
+        images={images}
+        resolvedPaths={resolvedPaths}
+        initialIndex={viewerIndex}
+        onClose={() => setViewerVisible(false)}
+        onDeleteCurrent={handleDeleteCurrentViewerImage}
+      />
     </Portal>
   );
 };
@@ -650,6 +981,25 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: 16,
+    /*
+     * Keeps the action buttons at a fixed height on the screen while stepping through
+     * suggestions with "Next". The dialog is vertically centred and sizes to its
+     * content, so any difference in content height moves the buttons by half of it.
+     *
+     * Collapsed, the four rows are bounded, so the tallest possible initial layout is
+     * known up front:
+     *   Name     48  (row minHeight; the text itself is capped at 48 when collapsed)
+     *   Comment  48  (same)
+     *   URL      48  (only rendered when the recipe has one)
+     *   Photos   90  (56 thumbnail + 8 gap + 26 add-photo icons; 48 with no photos)
+     *   gaps     48  (3 x 16)
+     *            ---
+     *            282
+     * Padding every recipe to that height makes the collapsed state identical for all
+     * of them. Expanding a name or comment (48 -> 200) still grows past it, which is
+     * the one case where the buttons are meant to move.
+     */
+    minHeight: 282,
   },
   row: {
     flexDirection: 'row',
@@ -793,5 +1143,72 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     minWidth: 0,
+  },
+  photosContainer: {
+    flex: 1,
+    gap: 8,
+    paddingLeft: 12,
+  },
+  thumbnailStrip: {
+    flexGrow: 0,
+  },
+  thumbnailWrapper: {
+    marginRight: 8,
+  },
+  thumbnail: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: '#f7f0e2',
+  },
+  thumbnailLoading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addPhotoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  addPhotoButton: {
+    padding: 2,
+  },
+  viewerContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+  },
+  viewerLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomableImageWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullScreenImage: {
+    width: '100%',
+    height: '100%',
+  },
+  viewerCloseButton: {
+    position: 'absolute',
+    top: 48,
+    right: 20,
+    padding: 6,
+  },
+  viewerBottomBar: {
+    position: 'absolute',
+    bottom: 40,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+  },
+  viewerCounter: {
+    color: '#fff',
+    fontSize: 15,
   },
 });

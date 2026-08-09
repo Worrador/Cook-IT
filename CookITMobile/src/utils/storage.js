@@ -13,6 +13,7 @@ const LAST_DATA_MODIFICATION_KEY = '@cookit_last_data_modification';
 // Import services
 let syncService = null;
 let excelService = null;
+let recipeImageService = null;
 
 const importServices = async () => {
   if (!syncService) {
@@ -33,7 +34,16 @@ const importServices = async () => {
     }
   }
 
-  return { syncService, excelService };
+  if (!recipeImageService) {
+    try {
+      const module = await import('../services/recipeImageService');
+      recipeImageService = module.default;
+    } catch (error) {
+      console.warn('RecipeImageService not available:', error);
+    }
+  }
+
+  return { syncService, excelService, recipeImageService };
 };
 
 // Helper function to trigger a background sync after data changes.
@@ -85,7 +95,7 @@ const triggerBackgroundSync = async () => {
       backgroundSyncRunning = true;
 
       try {
-        const { syncService } = await importServices();
+        const { syncService, recipeImageService } = await importServices();
         if (syncService) {
           const result = await syncService.safeBackgroundSync();
           if (!result || !result.success) {
@@ -99,6 +109,16 @@ const triggerBackgroundSync = async () => {
             // still seen as newer than the last sync. Overwriting it with the
             // completion time would silently swallow exactly those edits.
             lastBackgroundSyncError = null;
+
+            // A successful sync means Drive is reachable and authenticated, so this
+            // is a good moment to retry any image uploads that failed earlier (e.g.
+            // because the device was offline when the photo was taken). Best-effort:
+            // never let a retry failure affect the sync result above.
+            if (recipeImageService?.processUploadQueue) {
+              recipeImageService.processUploadQueue().catch(imgError => {
+                console.warn('Retrying queued image uploads failed:', imgError);
+              });
+            }
           }
         }
       } catch (error) {
@@ -231,11 +251,27 @@ export const addRecipe = async (recipe) => {
 export const deleteRecipe = async (recipeName) => {
   try {
     const recipes = await loadRecipes();
+    const deletedRecipe = recipes.find(recipe => recipe.name === recipeName);
     const updatedRecipes = recipes.filter(recipe => recipe.name !== recipeName);
 
     // saveRecipes() schedules a debounced background sync; since it only fires a few
     // seconds later, it still picks up the cleanup writes below - no separate trigger needed.
     await saveRecipes(updatedRecipes);
+
+    // Clean up this recipe's photos: local files always, Drive copies best-effort.
+    // Never let an image cleanup failure block the recipe delete itself.
+    if (deletedRecipe?.images?.length) {
+      try {
+        const { recipeImageService } = await importServices();
+        if (recipeImageService) {
+          for (const image of deletedRecipe.images) {
+            await recipeImageService.deleteImage(image);
+          }
+        }
+      } catch (error) {
+        console.warn('Error cleaning up images for deleted recipe:', error);
+      }
+    }
 
     // Clean up pinned recipes
     const pinnedRecipes = await getPinnedRecipes();
@@ -607,6 +643,17 @@ export const cleanupStaleReferences = async () => {
     const cleanedPinnedRecipes = pinnedRecipes.filter(name => validRecipeNames.has(name));
     if (cleanedPinnedRecipes.length !== pinnedRecipes.length) {
       await AsyncStorage.setItem(PINNED_RECIPES_KEY, JSON.stringify(cleanedPinnedRecipes));
+    }
+
+    // Drop any local image files that no current recipe references (e.g. left behind
+    // by a recipe delete that happened before this cleanup ran). Best-effort/non-fatal.
+    try {
+      const { recipeImageService } = await importServices();
+      if (recipeImageService?.cleanupOrphanedFiles) {
+        await recipeImageService.cleanupOrphanedFiles(recipes);
+      }
+    } catch (error) {
+      console.warn('Error cleaning up orphaned recipe images:', error);
     }
 
     // Return cleaned data if any changes were made

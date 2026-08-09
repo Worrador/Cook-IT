@@ -34,7 +34,15 @@
     "scheme": "cook-it-mobile",
     "plugins": [
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cook-IT uses your photo library to attach photos of recipes to your recipe book.",
+          "cameraPermission": "Cook-IT uses your camera to photograph recipe pages (e.g. from a cookbook) and attach them to a recipe."
+        }
+      ],
+      "./plugins/withTransparentNavigationBar"
     ],
     "extra": {
       "eas": {

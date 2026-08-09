@@ -21,7 +21,10 @@ jest.mock('@react-native-google-signin/google-signin', () => ({
     hasPlayServices: jest.fn(),
     signIn: jest.fn(),
     signInSilently: jest.fn(),
-    isSignedIn: jest.fn(),
+    // Mirrors the real v16 surface. The mock previously declared isSignedIn(), which
+    // was removed from the library in v13 - so the mock was more permissive than the
+    // module and hid a crash on every initialize() call.
+    hasPreviousSignIn: jest.fn(() => false),
     getTokens: jest.fn(),
     addScopes: jest.fn(),
     signOut: jest.fn()
@@ -179,6 +182,50 @@ describe('requestDrivePermissions', () => {
 
     expect(result.success).toBe(false);
     expect(googleDriveService.isAuthenticated()).toBe(false);
+  });
+});
+
+describe('signOut', () => {
+  test('clears the stored session so the app stops reporting a connection', async () => {
+    googleDriveService.accessToken = 'token-1';
+    googleDriveService.grantedScopes = SCOPES_WITH_DRIVE;
+    googleDriveService.driveFileId = 'file-1';
+    googleDriveService.isInitialized = true;
+
+    const result = await googleDriveService.signOut();
+
+    expect(GoogleSignin.signOut).toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(googleDriveService.isAuthenticated()).toBe(false);
+    expect(googleDriveService.driveFileId).toBeNull();
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith('@cookit_access_token');
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith('@cookit_granted_scopes');
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith('@cookit_drive_file_id');
+  });
+
+  test('still clears the local session when Google sign-out itself fails', async () => {
+    // Play Services missing, no network, unconfigured build... If a failure here
+    // skipped the local cleanup, the token would survive and the app would report
+    // itself connected immediately after the user tapped "Log out".
+    GoogleSignin.signOut.mockRejectedValueOnce(new Error('Play Services unavailable'));
+    googleDriveService.accessToken = 'token-1';
+    googleDriveService.grantedScopes = SCOPES_WITH_DRIVE;
+
+    const result = await googleDriveService.signOut();
+
+    expect(result.success).toBe(true);
+    expect(result.signedOutFromGoogle).toBe(false);
+    expect(googleDriveService.accessToken).toBeNull();
+    expect(googleDriveService.isAuthenticated()).toBe(false);
+  });
+
+  test('reports failure when the stored session cannot be cleared', async () => {
+    AsyncStorage.removeItem.mockRejectedValue(new Error('storage unavailable'));
+
+    const result = await googleDriveService.signOut();
+
+    expect(result.success).toBe(false);
+    expect(result.message).toBe('storage unavailable');
   });
 });
 
