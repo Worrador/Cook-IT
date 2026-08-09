@@ -21,6 +21,14 @@ startupMetrics.appStart = performance.now();
 let mainWindow;
 let pythonProcess = null;
 
+// Single, persistent stdout reader state.
+// Python answers requests strictly in order, so a FIFO queue of pending
+// {resolve, reject, timer} entries lets us route each response line to the
+// correct request. Partial lines are kept in stdoutBuffer between chunks.
+const pendingRequests = [];
+let stdoutBuffer = '';
+const REQUEST_TIMEOUT_MS = 30000;
+
 // Custom logger that only logs in development
 const logger = {
   log: (...args) => {
@@ -92,9 +100,8 @@ async function createWindow() {
     logger.error('Backend error:', err);
   });
 
-  pythonProcess.stdout.on('data', (data) => {
-    logger.log('Backend response:', data.toString());
-  });
+  // Install the single persistent stdout reader exactly once, right after spawn.
+  setupPythonReader();
 
   pythonProcess.stderr.on('data', (data) => {
     logger.error('Backend debug:', data.toString());
@@ -117,15 +124,13 @@ async function createWindow() {
 
 ipcMain.handle('initialize', async () => {
 
-  setupStatusUpdateListener();
-
   try {
     const result = await sendToPython({ action: 'initialize' });
 
-    // Remove listener if status is not pending, we do not need it
-    if (!result.statusPending) {
-      removeStatusUpdateListener();
-    }
+    // The single persistent stdout reader always handles STATUS_UPDATE lines,
+    // so there is no per-initialize listener to set up or tear down. When
+    // result.statusPending is true, an asynchronous connection_status update
+    // will arrive later and be broadcast automatically by the reader.
 
     startupMetrics.pythonInitialized = performance.now();
     startupMetrics.totalStartupTime = startupMetrics.pythonInitialized - startupMetrics.appStart;
@@ -146,41 +151,64 @@ ipcMain.handle('initialize', async () => {
   }
 });
 
-function setupStatusUpdateListener() {
-  // Remove any existing listener first
-  removeStatusUpdateListener();
+// Single, persistent stdout reader installed once per python process.
+// Accumulates stdout into a buffer, splits on newlines, and processes only
+// COMPLETE lines (any trailing partial line is kept for the next chunk).
+function setupPythonReader() {
+  pythonProcess.stdout.on('data', (data) => {
+    stdoutBuffer += data.toString();
 
-  pythonProcess._statusUpdateHandler = (data) => {
-    const text = data.toString().trim();
+    let newlineIndex;
+    while ((newlineIndex = stdoutBuffer.indexOf('\n')) !== -1) {
+      const rawLine = stdoutBuffer.slice(0, newlineIndex);
+      stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
 
-    if (text.startsWith('STATUS_UPDATE:')) {
+      // Trim to drop any trailing \r (Windows text-mode) and stray whitespace.
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      // Asynchronous connection-status push, independent of request/response.
+      if (line.startsWith('STATUS_UPDATE:')) {
+        try {
+          const status = JSON.parse(line.substring('STATUS_UPDATE:'.length));
+
+          logger.log('Received status update:', status);
+
+          // Broadcast to all windows
+          BrowserWindow.getAllWindows().forEach(window => {
+            window.webContents.send('connection-status-update', status);
+          });
+        } catch (error) {
+          logger.error('Error parsing status update:', error);
+        }
+        continue;
+      }
+
+      // Otherwise this is a response line. Parse it and resolve the OLDEST
+      // pending request (Python answers requests in FIFO order).
+      let response;
       try {
-        const jsonPart = text.substring('STATUS_UPDATE:'.length);
-        const status = JSON.parse(jsonPart);
-
-        logger.log('Received status update:', status);
-
-        // Broadcast to all windows
-        BrowserWindow.getAllWindows().forEach(window => {
-          window.webContents.send('connection-status-update', status);
-        });
-
-        // Any status update means we're done with the listener
-        removeStatusUpdateListener();
+        response = JSON.parse(line);
       } catch (error) {
-        logger.error('Error parsing status update:', error);
+        // Not JSON and not a status update: stray output, don't consume a request.
+        logger.log('Non-JSON output:', line);
+        continue;
+      }
+
+      const pending = pendingRequests.shift();
+      if (!pending) {
+        logger.error('Received response with no pending request:', line);
+        continue;
+      }
+
+      clearTimeout(pending.timer);
+      if (response.error) {
+        pending.reject(new Error(response.error));
+      } else {
+        pending.resolve(response);
       }
     }
-  };
-
-  pythonProcess.stdout.on('data', pythonProcess._statusUpdateHandler);
-}
-
-function removeStatusUpdateListener() {
-  if (pythonProcess && pythonProcess._statusUpdateHandler) {
-    pythonProcess.stdout.removeListener('data', pythonProcess._statusUpdateHandler);
-    pythonProcess._statusUpdateHandler = null;
-  }
+  });
 }
 
 // Add new handler to register for status updates
@@ -233,40 +261,30 @@ ipcMain.handle('add-sample-recipes', async () => {
 
 function sendToPython(message) {
   return new Promise((resolve, reject) => {
-    let buffer = '';
+    const pending = { resolve, reject, timer: null };
 
-    const responseHandler = (data) => {
-      const text = data.toString();
-
-      // Skip status update messages
-      if (text.includes('STATUS_UPDATE:')) {
-        return;
+    // Reject (and drop from the queue) if no response arrives in time, so a
+    // dropped/missing response can't hang the promise forever.
+    pending.timer = setTimeout(() => {
+      const index = pendingRequests.indexOf(pending);
+      if (index !== -1) {
+        pendingRequests.splice(index, 1);
       }
+      reject(new Error('Timed out waiting for Python response'));
+    }, REQUEST_TIMEOUT_MS);
 
-      // Handle case where the OAuth URL and JSON are in the same message
-      const jsonMatches = text.match(/(\{.*\})/g);
+    pendingRequests.push(pending);
 
-      if (jsonMatches && jsonMatches.length > 0) {
-        try {
-          const response = JSON.parse(jsonMatches[jsonMatches.length - 1]);
-
-          if (response.error) {
-            reject(new Error(response.error));
-          } else {
-            resolve(response);
-          }
-
-        } catch (error) {
-          logger.error('JSON parse error:', error);
-          buffer += text;
-          logger.error('Buffering partial response:', buffer);
-        }
-      } else {
-        logger.log('Non-JSON output:', text);
+    try {
+      pythonProcess.stdin.write(JSON.stringify(message) + '\n');
+    } catch (error) {
+      // Write failed synchronously: clean up this pending entry.
+      clearTimeout(pending.timer);
+      const index = pendingRequests.indexOf(pending);
+      if (index !== -1) {
+        pendingRequests.splice(index, 1);
       }
-    };
-
-    pythonProcess.stdout.on('data', responseHandler);
-    pythonProcess.stdin.write(JSON.stringify(message) + '\n');
+      reject(error);
+    }
   });
 }

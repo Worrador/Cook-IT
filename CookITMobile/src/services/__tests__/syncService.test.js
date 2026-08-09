@@ -71,7 +71,9 @@ describe('SyncService', () => {
     });
 
     test('should check sync progress state', async () => {
-      await mockStorage.setItem('@cookit_sync_in_progress', 'true');
+      // The flag is now self-expiring (stored with a timestamp) rather than a bare
+      // 'true' string - go through setSyncInProgress so the stored value is fresh.
+      await syncService.setSyncInProgress(true);
 
       const result = await syncService.isSyncInProgress();
       expect(result).toBe(true);
@@ -80,8 +82,30 @@ describe('SyncService', () => {
     test('should set sync progress state', async () => {
       await syncService.setSyncInProgress(true);
 
-      const result = await mockStorage.getItem('@cookit_sync_in_progress');
-      expect(result).toBe('true');
+      // Fix 4: the flag carries a timestamp instead of a bare 'true' string, so a
+      // mid-sync app kill can't wedge future syncs forever.
+      const stored = await mockStorage.getItem('@cookit_sync_in_progress');
+      expect(stored).not.toBe('true');
+      expect(JSON.parse(stored)).toHaveProperty('timestamp');
+
+      const result = await syncService.isSyncInProgress();
+      expect(result).toBe(true);
+    });
+
+    test('should treat a legacy or stale sync-in-progress flag as not in progress', async () => {
+      // Updated: previously a literal 'true' string (written by the old
+      // setSyncInProgress, or surviving from before this fix) was treated as
+      // permanently in-progress, which could wedge sync forever if the app was
+      // killed mid-sync. It must now resolve as stale/not-in-progress.
+      await mockStorage.setItem('@cookit_sync_in_progress', 'true');
+      expect(await syncService.isSyncInProgress()).toBe(false);
+
+      // A flag with a timestamp older than the stale window must also be ignored.
+      await mockStorage.setItem(
+        '@cookit_sync_in_progress',
+        JSON.stringify({ timestamp: Date.now() - 10 * 60 * 1000 })
+      );
+      expect(await syncService.isSyncInProgress()).toBe(false);
     });
 
     test('should get and set sync mode', async () => {
@@ -194,6 +218,165 @@ describe('SyncService', () => {
     });
   });
 
+  describe('mergeExcelDataByFile (Fix 2: both-changed per-recipe merge)', () => {
+    test('both changed: local has recipe B, drive has recipe A - both survive', async () => {
+      const recipeA = TestDataFactory.createRecipe('Recipe A', {
+        createdAt: '2024-01-01T00:00:00.000Z',
+        lastModified: '2024-01-01T00:00:00.000Z'
+      });
+      const recipeB = TestDataFactory.createRecipe('Recipe B', {
+        createdAt: '2024-01-02T00:00:00.000Z',
+        lastModified: '2024-01-02T00:00:00.000Z'
+      });
+
+      const result = await syncService.mergeExcelDataByFile(
+        [recipeB], {}, [], // local
+        [recipeA], {}, [], // drive
+        true, true, // both changed
+        new Date('2024-01-05T00:00:00.000Z'), // localModified
+        new Date('2024-01-06T00:00:00.000Z')  // remoteModified
+      );
+
+      const names = result.recipes.map(r => r.name);
+      expect(result.recipes).toHaveLength(2);
+      expect(names).toContain('Recipe A');
+      expect(names).toContain('Recipe B');
+    });
+
+    test('single-source branches still take that source wholesale (deletion propagation)', async () => {
+      const driveRecipe = TestDataFactory.createRecipe('Drive Only Recipe');
+
+      // Local deleted everything and only local changed: the (empty) local dataset is
+      // authoritative, so the deletion propagates instead of the drive recipe surviving.
+      const localOnlyChanged = await syncService.mergeExcelDataByFile(
+        [], {}, [],
+        [driveRecipe], {}, [],
+        true, false,
+        new Date(), new Date(0)
+      );
+      expect(localOnlyChanged.recipes).toHaveLength(0);
+
+      const localRecipe = TestDataFactory.createRecipe('Local Only Recipe');
+
+      // Drive deleted everything and only drive changed: the (empty) drive dataset is
+      // authoritative, so the deletion propagates instead of the local recipe surviving.
+      const driveOnlyChanged = await syncService.mergeExcelDataByFile(
+        [localRecipe], {}, [],
+        [], {}, [],
+        false, true,
+        new Date(0), new Date()
+      );
+      expect(driveOnlyChanged.recipes).toHaveLength(0);
+    });
+  });
+
+  describe('computeSyncFlags (Fix 3: hasChanges reflects actual data difference)', () => {
+    test('hasChanges is false when merged data equals local data', () => {
+      const recipe = TestDataFactory.createRecipe('Same Recipe');
+      const local = {
+        recipes: [recipe],
+        lastCookedDates: { 'Same Recipe': '2024-01-01T00:00:00.000Z' },
+        pinnedRecipes: ['Same Recipe']
+      };
+      // Same content as local, but a different object reference - the comparison must
+      // be by value, not identity.
+      const merged = {
+        recipes: [{ ...recipe }],
+        lastCookedDates: { 'Same Recipe': '2024-01-01T00:00:00.000Z' },
+        pinnedRecipes: ['Same Recipe']
+      };
+      // Deliberately different from merged/local, so needsUpload can be asserted true
+      // in the same test to prove hasChanges and needsUpload are independent.
+      const drive = { recipes: [], lastCookedDates: {}, pinnedRecipes: [] };
+
+      const { hasChanges, needsUpload } = syncService.computeSyncFlags(merged, local, drive);
+
+      expect(hasChanges).toBe(false);
+      expect(needsUpload).toBe(true);
+    });
+
+    // Local state stores last-cooked values as full ISO strings, while values parsed
+    // back out of the workbook are epoch ms derived from a date-only column. Comparing
+    // them raw made every entry look different forever, keeping needsUpload
+    // permanently true and re-uploading to Drive on every sync.
+    test('last-cooked values compare at calendar-date granularity across representations', () => {
+      const recipe = TestDataFactory.createRecipe('Cooked Recipe');
+      // 14:30 local time on 2024-03-05, however this machine is configured.
+      const localTimestamp = new Date(2024, 2, 5, 14, 30, 0);
+      // What the same day looks like after an Excel round trip: date-only, reparsed
+      // as local midnight.
+      const driveTimestamp = new Date(2024, 2, 5).getTime();
+
+      const merged = {
+        recipes: [recipe],
+        lastCookedDates: { 'Cooked Recipe': localTimestamp.toISOString() },
+        pinnedRecipes: []
+      };
+      const drive = {
+        recipes: [{ ...recipe }],
+        lastCookedDates: { 'Cooked Recipe': driveTimestamp },
+        pinnedRecipes: []
+      };
+
+      const { needsUpload } = syncService.computeSyncFlags(merged, merged, drive);
+
+      expect(needsUpload).toBe(false);
+    });
+
+    test('a genuinely different cooked day still registers as needing upload', () => {
+      const recipe = TestDataFactory.createRecipe('Cooked Recipe');
+      const merged = {
+        recipes: [recipe],
+        lastCookedDates: { 'Cooked Recipe': new Date(2024, 2, 6, 14, 30, 0).toISOString() },
+        pinnedRecipes: []
+      };
+      const drive = {
+        recipes: [{ ...recipe }],
+        lastCookedDates: { 'Cooked Recipe': new Date(2024, 2, 5).getTime() },
+        pinnedRecipes: []
+      };
+
+      expect(syncService.computeSyncFlags(merged, merged, drive).needsUpload).toBe(true);
+    });
+  });
+
+  describe('Change Detection (Fix 1: no tolerance window on the "changed" test)', () => {
+    test('data modified before lastSync reads as unchanged no matter how far in the past', async () => {
+      const lastSyncTime = new Date('2024-06-01T00:00:00.000Z');
+      // Years before lastSync - far outside any plausible tolerance window. Under the
+      // old inverted logic this was incorrectly flagged as "changed" once the gap
+      // exceeded the tolerance, which is exactly the bug being fixed.
+      const longAgo = new Date('2020-01-01T00:00:00.000Z');
+
+      await mockStorage.setItem('@cookit_last_sync', lastSyncTime.toISOString());
+      await mockStorage.setItem('@cookit_last_data_modification', longAgo.toISOString());
+
+      const sharedRecipes = [TestDataFactory.createRecipe('Stable Recipe')];
+      // skipModificationTimeUpdate = true so the modification time set above is preserved.
+      await mockStorage.saveRecipes(sharedRecipes, true);
+
+      mockDrive.setAuthenticationState(true);
+      mockDrive.getFileInfo = jest.fn().mockResolvedValue({
+        id: 'mock_drive_file',
+        name: 'CookIT_Recipes.xlsx',
+        modifiedTime: longAgo.toISOString()
+      });
+
+      mockExcel.importFromExcel = jest.fn().mockResolvedValue({
+        success: true,
+        recipes: sharedRecipes,
+        lastCookedDates: {},
+        pinnedRecipes: []
+      });
+
+      const result = await syncService.performExcelSync();
+
+      expect(result.success).toBe(true);
+      expect(result.hasChanges).toBe(false);
+      expect(result.message).toBe('No changes detected.');
+    });
+  });
+
   describe('Conflict Resolution', () => {
     test('should handle conflicts with force push', async () => {
       mockExcel.setConflicts([
@@ -273,7 +456,12 @@ describe('SyncService', () => {
       const result = await syncService.performExcelSync();
 
       expect(result.success).toBe(true);
-      expect(result.hasChanges).toBe(true); // First comparison imports the Drive data.
+      // Updated for Fix 3: local and "drive" data are identical here (the mock
+      // returns the exact same recipes back), so the merge result matches local
+      // data exactly and hasChanges must correctly be false. The old expectation of
+      // `true` encoded the bug being fixed - hasChanges used to just record which
+      // merge branch fired, so it was true on every sync even when nothing changed.
+      expect(result.hasChanges).toBe(false);
     });
 
     test('should handle force push mode', async () => {
@@ -379,8 +567,11 @@ describe('SyncService', () => {
 
       const result = await syncService.quickSync();
 
+      // Updated for Fix 6: quickSync now delegates to safeBackgroundSync ->
+      // performExcelSync, which downloads and merges before ever uploading, so the
+      // message reflects the merge outcome rather than the old unconditional
+      // "Quick Excel sync completed" blind-push message.
       expect(result.success).toBe(true);
-      expect(result.message).toContain('Quick Excel sync completed');
     });
 
     test('should fail quick sync when not authenticated', async () => {
@@ -590,8 +781,9 @@ describe('SyncService Integration Tests', () => {
       // Simulate sync trigger
       const result = await syncService.quickSync();
 
+      // Updated for Fix 6: quickSync -> safeBackgroundSync -> performExcelSync, so
+      // the message now reflects the merge outcome, not a fixed blind-push string.
       expect(result.success).toBe(true);
-      expect(result.message).toContain('Quick Excel sync completed');
     });
 
     test('should handle user cooking a recipe and syncing', async () => {

@@ -1,6 +1,12 @@
 // Pure JS module - no React Native dependencies
 // Can be imported and tested in Node.js environment
 
+// If the app is killed mid-sync, performExcelSync's `finally` block never runs and the
+// sync-in-progress flag survives the restart. Storing a timestamp lets the flag expire
+// on its own instead of permanently blocking every future sync (including
+// re-authentication) - see isSyncInProgress()/setSyncInProgress().
+const SYNC_IN_PROGRESS_STALE_MS = 5 * 60 * 1000; // 5 minutes
+
 class SyncService {
   constructor(dependencies = {}) {
     // Dependency injection for testability
@@ -70,8 +76,27 @@ class SyncService {
     }
 
     try {
-      const inProgress = await this.storageProvider.getItem(this.config.syncInProgressKey);
-      return inProgress === 'true';
+      const raw = await this.storageProvider.getItem(this.config.syncInProgressKey);
+      if (!raw) {
+        return false;
+      }
+
+      // The flag is stored as JSON ({ timestamp }) so it can self-expire. Legacy
+      // values written before this fix ('true'/'false', with no timestamp) are still
+      // valid JSON - they parse to a boolean, which has no `timestamp` property, so
+      // the missing timestamp is treated as infinitely old below. That means a
+      // pre-existing wedged flag from a killed app resolves itself as stale on
+      // upgrade instead of blocking sync (and re-authentication) forever.
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (parseError) {
+        return false;
+      }
+
+      const timestamp = parsed && typeof parsed === 'object' ? parsed.timestamp : undefined;
+      const age = Date.now() - (timestamp || 0);
+      return age < SYNC_IN_PROGRESS_STALE_MS;
     } catch (error) {
       console.error('Error checking sync progress:', error);
       return false;
@@ -85,7 +110,7 @@ class SyncService {
 
     try {
       if (inProgress) {
-        await this.storageProvider.setItem(this.config.syncInProgressKey, 'true');
+        await this.storageProvider.setItem(this.config.syncInProgressKey, JSON.stringify({ timestamp: Date.now() }));
       } else {
         await this.storageProvider.removeItem(this.config.syncInProgressKey);
       }
@@ -201,6 +226,10 @@ class SyncService {
     await this.setSyncInProgress(true);
     onProgress(0.05, 'Starting sync...'); // Immediate feedback
 
+    // Captured before any I/O so edits made *during* this sync aren't skipped by the
+    // next run (setLastSyncTime is stamped with this, not the completion time).
+    const syncStartTime = new Date();
+
     try {
       console.log('Starting Excel-based sync process...');
 
@@ -223,7 +252,7 @@ class SyncService {
         onProgress(0.8, 'Uploading local data...');
         await this.excelProcessor.uploadToDrive();
         await this.storageProvider.updateDataModificationTime();
-        await this.setLastSyncTime();
+        await this.setLastSyncTime(syncStartTime);
         onProgress(1, forcePush ? 'Force push completed successfully' : 'Initial sync completed successfully');
 
         return {
@@ -246,7 +275,14 @@ class SyncService {
       // Download remote data for comparison
       onProgress(0.3, 'Downloading remote data...');
       await this.excelProcessor.downloadFromDrive();
-      const remoteData = await this.excelProcessor.importFromExcel();
+      // Use the read-only parse when available so inspecting the remote file for the
+      // merge decision doesn't itself clobber local storage - importFromExcel() has a
+      // side effect of writing whatever it reads straight into AsyncStorage, which
+      // would blow away local state before the merge even runs if the merge later
+      // decides "no changes" and never writes anything back.
+      const remoteData = typeof this.excelProcessor.parseExcelFile === 'function'
+        ? await this.excelProcessor.parseExcelFile()
+        : await this.excelProcessor.importFromExcel();
 
       onProgress(0.5, 'Analyzing file changes...');
 
@@ -275,19 +311,16 @@ class SyncService {
       console.log(`📱 Local data modified: ${localModified.toISOString()}`);
       console.log(`☁️  Drive file modified: ${remoteModified.toISOString()}`);
 
-      // Apply 2-minute tolerance to avoid unnecessary syncs due to minor timestamp differences
-      const SYNC_TOLERANCE_MS = 60 * 1000; // 1 minute
+      // Plain "modified after last sync" semantics - no tolerance window here. A
+      // tolerance on this comparison would silently and permanently drop edits made
+      // shortly after a sync, because setLastSyncTime() advances lastSync past them
+      // and they'd never be detected as changed again.
+      const localChanged = localModified.getTime() > lastSync.getTime();
+      const driveChanged = remoteModified.getTime() > lastSync.getTime();
 
       const localTimeDiff = Math.abs(localModified.getTime() - lastSync.getTime());
       const driveTimeDiff = Math.abs(remoteModified.getTime() - lastSync.getTime());
-
-      // Logic:
-      // - If file is newer than sync → always consider changed (even if within tolerance)
-      // - If file is older than sync → only consider changed if outside tolerance
-      const localChanged = (localModified > lastSync) || (localModified < lastSync && localTimeDiff > SYNC_TOLERANCE_MS);
-      const driveChanged = (remoteModified > lastSync) || (remoteModified < lastSync && driveTimeDiff > SYNC_TOLERANCE_MS);
-
-      console.log(`⏱️  Time differences: Local=${Math.round(localTimeDiff/1000)}s, Drive=${Math.round(driveTimeDiff/1000)}s (tolerance: 120s)`);
+      console.log(`⏱️  Time differences: Local=${Math.round(localTimeDiff/1000)}s, Drive=${Math.round(driveTimeDiff/1000)}s`);
       console.log(`🔄 Since last sync: Local changed=${localChanged}, Drive changed=${driveChanged}`);
 
       // Use file-based merge algorithm
@@ -304,13 +337,24 @@ class SyncService {
         remoteModified
       );
 
-      if (mergeResult.hasChanges) {
+      // hasChanges/needsUpload reflect whether the merged data actually differs from
+      // each side - not which merge branch fired. Without this, every sync (including
+      // true no-ops) would re-save locally and re-upload to Drive.
+      const { hasChanges, needsUpload } = this.computeSyncFlags(
+        { recipes: mergeResult.recipes, lastCookedDates: mergeResult.lastCookedDates, pinnedRecipes: mergeResult.pinnedRecipes },
+        { recipes: localRecipes, lastCookedDates: localLastCookedDates, pinnedRecipes: localPinnedRecipes },
+        { recipes: remoteData.recipes, lastCookedDates: remoteData.lastCookedDates, pinnedRecipes: remoteData.pinnedRecipes }
+      );
+
+      if (hasChanges) {
         onProgress(0.8, 'Saving merged data...');
         // Save the merged data (skip modification time update during merge decision)
         await this.storageProvider.saveRecipes(mergeResult.recipes, true);
         await this.storageProvider.setLastCookedDates(mergeResult.lastCookedDates);
         await this.storageProvider.setPinnedRecipes(mergeResult.pinnedRecipes);
+      }
 
+      if (needsUpload) {
         // Create and upload new Excel file
         onProgress(0.9, 'Uploading merged data...');
         await this.excelProcessor.createLocalExcelFile();
@@ -318,16 +362,16 @@ class SyncService {
       }
 
       // Update data modification time after successful sync completion
-      if (mergeResult.hasChanges) {
+      if (hasChanges) {
         await this.storageProvider.updateDataModificationTime();
       }
 
-      await this.setLastSyncTime();
+      await this.setLastSyncTime(syncStartTime);
       onProgress(1, 'File-based merge complete!');
       return {
         success: true,
-        hasChanges: mergeResult.hasChanges,
-        message: mergeResult.hasChanges ? 'Files merged using intelligent strategy.' : 'No changes detected.',
+        hasChanges,
+        message: hasChanges ? 'Files merged using intelligent strategy.' : 'No changes detected.',
         data: {
           recipes: mergeResult.recipes,
           lastCookedDates: mergeResult.lastCookedDates,
@@ -546,64 +590,129 @@ class SyncService {
     console.log('🔄 File-based merge with intelligent conflict resolution...');
 
     let mergedRecipes = [];
+    let mergedLastCookedDates;
+    let mergedPinnedRecipes;
     let hasChanges = false;
 
-    // Strategy 1: If only one file changed, use that entire file
+    // Strategy 1: If only one file changed, use that entire file. This is what makes
+    // deletions propagate correctly - the side that changed is authoritative.
     if (localChanged && !driveChanged) {
       console.log('✅ Only local file changed - using entire local dataset');
       mergedRecipes = [...(localRecipes || [])];
+      mergedLastCookedDates = { ...(localLastCookedDates || {}) };
+      mergedPinnedRecipes = [...(localPinnedRecipes || [])];
       hasChanges = true;
     } else if (driveChanged && !localChanged) {
       console.log('✅ Only drive file changed - using entire drive dataset');
       mergedRecipes = [...(driveRecipes || [])];
+      mergedLastCookedDates = { ...(driveLastCookedDates || {}) };
+      mergedPinnedRecipes = [...(drivePinnedRecipes || [])];
       hasChanges = true;
     } else if (!localChanged && !driveChanged) {
-      console.log('ℹ️  Neither local data nor drive file changed significantly since sync (within 2min tolerance) - no sync needed');
+      console.log('ℹ️  Neither local nor drive data changed since last sync - no sync needed');
       mergedRecipes = [...(driveRecipes || [])];
-    } else {
-      // Strategy 2: Both files changed - use the newer file entirely
-      console.log('⚔️  Both files changed - using newer file');
-      if (localModified > remoteModified) {
-        console.log(`✅ Local file is newer (${localModified.toISOString()}) - using local dataset`);
-        mergedRecipes = [...(localRecipes || [])];
-        hasChanges = true;
-      } else {
-        console.log(`✅ Drive file is newer (${remoteModified.toISOString()}) - using drive dataset`);
-        mergedRecipes = [...(driveRecipes || [])];
-        hasChanges = true;
-      }
-    }
-
-    // Initialize other merged data with the same source as recipes
-    let mergedLastCookedDates, mergedPinnedRecipes;
-
-    if (localChanged && !driveChanged) {
-      mergedLastCookedDates = { ...(localLastCookedDates || {}) };
-      mergedPinnedRecipes = [...(localPinnedRecipes || [])];
-    } else if (driveChanged && !localChanged) {
-      mergedLastCookedDates = { ...(driveLastCookedDates || {}) };
-      mergedPinnedRecipes = [...(drivePinnedRecipes || [])];
-    } else if (!localChanged && !driveChanged) {
       mergedLastCookedDates = { ...(driveLastCookedDates || {}) };
       mergedPinnedRecipes = [...(drivePinnedRecipes || [])];
     } else {
-      // Both changed - use data from newer file
-      if (localModified > remoteModified) {
-        mergedLastCookedDates = { ...(localLastCookedDates || {}) };
-        mergedPinnedRecipes = [...(localPinnedRecipes || [])];
-      } else {
-        mergedLastCookedDates = { ...(driveLastCookedDates || {}) };
-        mergedPinnedRecipes = [...(drivePinnedRecipes || [])];
+      // Strategy 2: Both sides changed. Picking one file wholesale (as before) would
+      // silently discard whatever the other side added - e.g. a recipe added on
+      // desktop and a recipe added on mobile could never both survive. Merge
+      // per-recipe instead, reusing the existing intelligent merge (same-key/
+      // newer-wins, similar-name conflict resolution, unique-to-one-side keep-both).
+      //
+      // Trade-off: this can resurrect a recipe that was deleted on one device if the
+      // other device made any edit in the same window (deletion doesn't have its own
+      // tombstone, so a per-recipe merge can't distinguish "deleted" from "never
+      // existed on this side"). That's intentional - prefer resurrection over the
+      // previous behaviour of silently losing a whole side's changes.
+      console.log('⚔️  Both files changed - merging per-recipe instead of picking one file wholesale');
+      const intelligentResult = this.performIntelligentMerge(localRecipes, driveRecipes);
+      mergedRecipes = intelligentResult.recipes;
+
+      // Union pinned recipes.
+      mergedPinnedRecipes = [...new Set([...(localPinnedRecipes || []), ...(drivePinnedRecipes || [])])];
+
+      // Keep the most recent last-cooked date per recipe name. Values may be
+      // epoch-ms numbers or ISO strings, so normalise both sides before comparing,
+      // and guard against invalid/missing values on either side.
+      mergedLastCookedDates = { ...(driveLastCookedDates || {}) };
+      for (const [recipeName, localValue] of Object.entries(localLastCookedDates || {})) {
+        const driveValue = mergedLastCookedDates[recipeName];
+        const localTime = new Date(localValue).getTime();
+        const driveTime = driveValue !== undefined ? new Date(driveValue).getTime() : NaN;
+
+        if (isNaN(driveTime) || (!isNaN(localTime) && localTime > driveTime)) {
+          mergedLastCookedDates[recipeName] = localValue;
+        }
       }
+
+      hasChanges = true;
     }
 
-    console.log(`🎯 File-based merge completed: ${mergedRecipes.length} recipes from ${hasChanges ? 'newer' : 'drive'} source`);
+    console.log(`🎯 File-based merge completed: ${mergedRecipes.length} recipes`);
 
     return {
       recipes: mergedRecipes,
       lastCookedDates: mergedLastCookedDates,
       pinnedRecipes: mergedPinnedRecipes,
       hasChanges
+    };
+  }
+
+  // Reduce a last-cooked value to the granularity that actually survives a round trip
+  // through the Excel file: a local calendar date.
+  //
+  // The two sides use different representations - local state stores full ISO strings
+  // (storage.setCookedStatus), while values parsed back out of the workbook are epoch
+  // ms derived from a date-only 'Last Cooked Date' column. Comparing them raw makes
+  // every entry look different forever, which would keep hasChanges/needsUpload
+  // permanently true and re-upload to Drive on every single sync.
+  canonicalizeCookedDate(value) {
+    if (value === null || value === undefined || value === '') return '';
+    // Already a bare local calendar date - keep as-is rather than round-tripping it
+    // through Date (which would read it as UTC midnight).
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+      return value.trim();
+    }
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // Deterministic string representation of a dataset, projected to only the fields
+  // that actually round-trip through the Excel file. Used to detect whether a merge
+  // result genuinely differs from a side, rather than inferring it from which merge
+  // branch fired (see computeSyncFlags).
+  canonicalizeSyncData(recipes, lastCookedDates, pinnedRecipes) {
+    const sortedRecipes = [...(recipes || [])]
+      .map(recipe => ({ name: recipe.name || '', url: recipe.url || '', comment: recipe.comment || '' }))
+      .sort((a, b) => this.getRecipeKey(a).localeCompare(this.getRecipeKey(b)));
+
+    const sortedPinned = [...(pinnedRecipes || [])].sort();
+
+    const sortedLastCookedEntries = Object.entries(lastCookedDates || {}).sort(([a], [b]) => a.localeCompare(b));
+    const sortedLastCooked = {};
+    for (const [key, value] of sortedLastCookedEntries) {
+      sortedLastCooked[key] = this.canonicalizeCookedDate(value);
+    }
+
+    return JSON.stringify({ recipes: sortedRecipes, pinnedRecipes: sortedPinned, lastCookedDates: sortedLastCooked });
+  }
+
+  // Compares the merged dataset against each original side to determine what actually
+  // needs to happen: hasChanges drives saving locally / reloading the UI, needsUpload
+  // drives re-uploading to Drive. Each dataset is { recipes, lastCookedDates, pinnedRecipes }.
+  computeSyncFlags(merged, local, drive) {
+    const mergedCanon = this.canonicalizeSyncData(merged.recipes, merged.lastCookedDates, merged.pinnedRecipes);
+    const localCanon = this.canonicalizeSyncData(local.recipes, local.lastCookedDates, local.pinnedRecipes);
+    const driveCanon = this.canonicalizeSyncData(drive.recipes, drive.lastCookedDates, drive.pinnedRecipes);
+
+    return {
+      hasChanges: mergedCanon !== localCanon,
+      needsUpload: mergedCanon !== driveCanon
     };
   }
 
@@ -907,38 +1016,33 @@ class SyncService {
     }
   }
 
-  // Quick sync for immediate updates
-  async quickSync() {
+  // Merge-aware background sync. Safe to call frequently (e.g. after every local
+  // edit) because it always downloads and merges remote state via performExcelSync
+  // before ever uploading - unlike the old quickSync, which blind-pushed local data
+  // with no download/merge step and could overwrite whatever another device had
+  // written to Drive in the meantime.
+  async safeBackgroundSync() {
     try {
       if (!this.driveClient?.isAuthenticated()) {
         return { success: false, message: 'Not authenticated' };
       }
 
-      // Check if already syncing to prevent multiple simultaneous syncs
       if (this.isSyncing) {
         return { success: false, message: 'Sync already in progress' };
       }
 
-      // Set syncing flag to prevent concurrent syncs
-      this.isSyncing = true;
-
-      // Update local Excel and upload to Drive
-      await this.excelProcessor.createLocalExcelFile();
-      const uploadResult = await this.driveClient.upload(this.excelProcessor.getLocalFilePath());
-
-      if (uploadResult.success) {
-        await this.setLastSyncTime();
-        return { success: true, message: 'Quick Excel sync completed' };
-      } else {
-        throw new Error('Quick sync upload failed');
-      }
+      return await this.performExcelSync(false);
     } catch (error) {
-      console.error('Quick Excel sync error:', error);
+      console.error('Safe background sync error:', error);
       return { success: false, message: error.message };
-    } finally {
-      // Always reset syncing flag
-      this.isSyncing = false;
     }
+  }
+
+  // Quick sync for immediate updates - kept for backwards compatibility with existing
+  // callers. Reimplemented to delegate to the merge-aware safeBackgroundSync so no
+  // caller retains the old unsafe blind-push behaviour.
+  async quickSync() {
+    return this.safeBackgroundSync();
   }
 
   // Force download from Drive
@@ -1344,6 +1448,16 @@ class ExcelProcessorAdapter {
     return this.excelService.importFromExcel();
   }
 
+  // Read-only counterpart to importFromExcel(): parses the downloaded remote file
+  // without the side effect of writing it into local AsyncStorage. Falls back to
+  // importFromExcel() if the underlying excel service doesn't implement it yet.
+  async parseExcelFile() {
+    if (this.excelService && typeof this.excelService.parseExcelFile === 'function') {
+      return this.excelService.parseExcelFile();
+    }
+    return this.importFromExcel();
+  }
+
   getLocalFilePath() {
     if (!this.excelService) {
       throw new Error('Excel service not initialized');
@@ -1368,13 +1482,6 @@ class ExcelProcessorAdapter {
       return ['merge', 'local', 'remote'];
     }
     return this.excelService.getConflictResolutionOptions();
-  }
-
-  async importFromExcel() {
-    if (!this.excelService || typeof this.excelService.importFromExcel !== 'function') {
-      throw new Error('Excel service importFromExcel method not available');
-    }
-    return this.excelService.importFromExcel();
   }
 
   async checkConflicts() {

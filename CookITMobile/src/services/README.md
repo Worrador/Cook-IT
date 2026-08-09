@@ -94,11 +94,19 @@ The Sync Service has been updated to work with Excel files instead of JSON, prov
 - `checkExcelConflicts()` - Check for Excel-specific conflicts
 - `resolveExcelConflict(resolution)` - Resolve Excel conflicts
 
+#### Background Sync
+
+- `safeBackgroundSync()` - Merge-aware background sync used by every local data
+  mutation (see `src/utils/storage.js`). No-ops when unauthenticated or when a sync
+  is already running. Background writes MUST go through this rather than uploading
+  directly, otherwise a local edit silently overwrites whatever the desktop app
+  wrote to Drive since the last sync.
+
 #### Legacy Support
 
 - `performSync()` - Redirects to `performExcelSync()`
 - `mergeData()` - Redirects to Excel-based merging
-- `quickSync()` - Updated to work with Excel files
+- `quickSync()` - Delegates to `safeBackgroundSync()` (previously a blind push)
 - `forceDownloadFromDrive()` - Updated to download Excel files
 
 ### Sync Process Flow

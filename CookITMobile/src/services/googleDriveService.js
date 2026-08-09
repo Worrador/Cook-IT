@@ -275,6 +275,13 @@ class GoogleDriveService {
   }
 
   async setDriveFileId(fileId) {
+    // AsyncStorage.setItem rejects non-string values, so null/undefined (used by
+    // deleteFile/signOut to clear the stored file) must route to removeItem instead -
+    // otherwise this throws, the stale ID never gets cleared, and (in signOut's case)
+    // the caller sees a false failure even though sign-out otherwise succeeded.
+    if (fileId === null || fileId === undefined) {
+      return this.clearDriveFileId();
+    }
     this.driveFileId = fileId;
     await AsyncStorage.setItem(DRIVE_FILE_ID_KEY, fileId);
   }

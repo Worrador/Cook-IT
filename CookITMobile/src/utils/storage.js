@@ -36,12 +36,23 @@ const importServices = async () => {
   return { syncService, excelService };
 };
 
-// Helper function to trigger Excel sync after data changes
-let excelSyncTimeout = null;
-let lastExcelSyncError = null;
-const EXCEL_SYNC_ERROR_COOLDOWN = 30000; // 30 seconds cooldown after sync errors
+// Helper function to trigger a background sync after data changes.
+//
+// This intentionally goes through syncService.safeBackgroundSync() - a merge-aware
+// sync that downloads the Drive workbook, merges it with local data per-recipe, and
+// only uploads when needed - rather than the old approach of rebuilding the local
+// Excel file and blindly uploading it. A blind upload silently destroys any change
+// made by another device/app (e.g. the desktop app) since the last full sync, because
+// it never looks at what's currently on Drive. safeBackgroundSync() also no-ops if a
+// sync is already running or the user isn't authenticated, so it's safe to call from
+// every mutation without risking overlapping Drive writes.
+let backgroundSyncTimeout = null;
+let backgroundSyncRunning = false;
+let lastBackgroundSyncError = null;
+const BACKGROUND_SYNC_ERROR_COOLDOWN = 30000; // 30 seconds cooldown after sync errors
+const BACKGROUND_SYNC_DEBOUNCE_MS = 4000; // Debounce a few seconds - this is a heavier download+merge+upload, not a cheap local write
 
-const triggerExcelSync = async () => {
+const triggerBackgroundSync = async () => {
   try {
     // Check if Excel sync is enabled
     const excelSyncEnabled = await AsyncStorage.getItem(EXCEL_SYNC_ENABLED_KEY);
@@ -50,93 +61,58 @@ const triggerExcelSync = async () => {
     }
 
     // Check if we're in a cooldown period due to recent sync errors
-    if (lastExcelSyncError && (Date.now() - lastExcelSyncError) < EXCEL_SYNC_ERROR_COOLDOWN) {
+    if (lastBackgroundSyncError && (Date.now() - lastBackgroundSyncError) < BACKGROUND_SYNC_ERROR_COOLDOWN) {
       return;
     }
 
-    // Clear any existing timeout to prevent multiple rapid sync calls
-    if (excelSyncTimeout) {
-      clearTimeout(excelSyncTimeout);
+    // Clear any existing timeout so rapid successive edits collapse into one sync
+    if (backgroundSyncTimeout) {
+      clearTimeout(backgroundSyncTimeout);
     }
 
-    // Debounce sync calls to prevent rapid successive calls
-    excelSyncTimeout = setTimeout(async () => {
-      try {
-        const { excelService } = await importServices();
-        if (excelService) {
-          // Update local Excel file with current data
-          const updateResult = await excelService.createLocalExcelFile();
-          if (updateResult) {
-            // Upload updated Excel to Drive
-            const uploadResult = await excelService.uploadToDrive();
-            if (uploadResult) {
-              // Record successful Excel sync
-              await AsyncStorage.setItem(LAST_EXCEL_SYNC_KEY, new Date().toISOString());
-              lastExcelSyncError = null;
-              console.log('Excel sync completed successfully');
-            } else {
-              throw new Error('Excel upload failed');
-            }
-          } else {
-            throw new Error('Excel update failed');
-          }
-        }
-      } catch (error) {
-        // Record sync error and start cooldown
-        lastExcelSyncError = Date.now();
-        console.warn('Excel sync failed:', error);
-      } finally {
-        excelSyncTimeout = null;
+    // Debounce sync calls to prevent rapid successive calls from stacking overlapping
+    // downloads/uploads against the same local file and the same Drive file.
+    const runSync = async () => {
+      // If a previously scheduled sync is still in flight, don't start a second one
+      // (belt-and-suspenders on top of safeBackgroundSync's own self-guard) - just
+      // retry shortly instead of dropping this pending change on the floor.
+      if (backgroundSyncRunning) {
+        backgroundSyncTimeout = setTimeout(runSync, BACKGROUND_SYNC_DEBOUNCE_MS);
+        return;
       }
-    }, 1000); // Wait 1 second before actually triggering sync
-  } catch (error) {
-    console.warn('Failed to trigger Excel sync:', error);
-  }
-};
 
-// Legacy sync trigger for backward compatibility
-let syncTimeout = null;
-let lastSyncError = null;
-const SYNC_ERROR_COOLDOWN = 30000; // 30 seconds cooldown after sync errors
+      backgroundSyncTimeout = null;
+      backgroundSyncRunning = true;
 
-const triggerSync = async () => {
-  try {
-    // Check if we're in a cooldown period due to recent sync errors
-    if (lastSyncError && (Date.now() - lastSyncError) < SYNC_ERROR_COOLDOWN) {
-      return;
-    }
-
-    // Clear any existing timeout to prevent multiple rapid sync calls
-    if (syncTimeout) {
-      clearTimeout(syncTimeout);
-    }
-
-    // Debounce sync calls to prevent rapid successive calls
-    syncTimeout = setTimeout(async () => {
       try {
         const { syncService } = await importServices();
         if (syncService) {
-          // Use quickSync for immediate updates without full merge logic
-          const result = await syncService.quickSync();
-          if (!result.success) {
+          const result = await syncService.safeBackgroundSync();
+          if (!result || !result.success) {
             // Record sync error and start cooldown
-            lastSyncError = Date.now();
-            console.warn('Background sync failed:', result.message);
+            lastBackgroundSyncError = Date.now();
+            console.warn('Background sync failed:', result && result.message);
           } else {
-            // Clear error state on successful sync
-            lastSyncError = null;
+            // Clear error state. Deliberately do NOT stamp LAST_EXCEL_SYNC_KEY here:
+            // performExcelSync already writes it (via setLastSyncTime) using the time
+            // the sync STARTED, so that edits made while the sync was running are
+            // still seen as newer than the last sync. Overwriting it with the
+            // completion time would silently swallow exactly those edits.
+            lastBackgroundSyncError = null;
           }
         }
       } catch (error) {
         // Record sync error and start cooldown
-        lastSyncError = Date.now();
-        console.warn('Failed to trigger sync:', error);
+        lastBackgroundSyncError = Date.now();
+        console.warn('Failed to trigger background sync:', error);
       } finally {
-        syncTimeout = null;
+        backgroundSyncRunning = false;
       }
-    }, 1000); // Wait 1 second before actually triggering sync
+    };
+
+    backgroundSyncTimeout = setTimeout(runSync, BACKGROUND_SYNC_DEBOUNCE_MS);
   } catch (error) {
-    console.warn('Failed to trigger sync:', error);
+    console.warn('Failed to trigger background sync:', error);
   }
 };
 
@@ -212,9 +188,9 @@ export const saveRecipes = async (recipes, skipModificationTimeUpdate = false) =
       await updateDataModificationTime('saveRecipes');
     }
 
-    // Trigger Excel sync if enabled (only if not called by sync process)
+    // Trigger background sync if enabled (only if not called by sync process)
     if (!skipModificationTimeUpdate) {
-      await triggerExcelSync();
+      await triggerBackgroundSync();
     }
   } catch (error) {
     console.error('Error saving recipes:', error);
@@ -241,12 +217,9 @@ export const addRecipe = async (recipe) => {
       cooked: false,
     };
     recipes.push(newRecipe);
-    
-    await saveRecipes(recipes);
 
-    // Trigger both legacy and Excel sync for backward compatibility
-    triggerSync();
-    triggerExcelSync();
+    // saveRecipes() already schedules a background sync; no separate trigger needed here.
+    await saveRecipes(recipes);
 
     return recipes;
   } catch (error) {
@@ -259,7 +232,9 @@ export const deleteRecipe = async (recipeName) => {
   try {
     const recipes = await loadRecipes();
     const updatedRecipes = recipes.filter(recipe => recipe.name !== recipeName);
-    
+
+    // saveRecipes() schedules a debounced background sync; since it only fires a few
+    // seconds later, it still picks up the cleanup writes below - no separate trigger needed.
     await saveRecipes(updatedRecipes);
 
     // Clean up pinned recipes
@@ -288,10 +263,6 @@ export const deleteRecipe = async (recipeName) => {
       await AsyncStorage.setItem(COOK_COUNTS_KEY, JSON.stringify(cookCounts));
     }
 
-    // Trigger both legacy and Excel sync for backward compatibility
-    triggerSync();
-    triggerExcelSync();
-
     return updatedRecipes;
   } catch (error) {
     console.error('Error deleting recipe:', error);
@@ -305,12 +276,9 @@ export const updateRecipe = async (recipeName, updates) => {
     const updatedRecipes = recipes.map(recipe =>
       recipe.name === recipeName ? { ...recipe, ...updates, lastModified: new Date().toISOString() } : recipe
     );
-    
-    await saveRecipes(updatedRecipes);
 
-    // Trigger both legacy and Excel sync for backward compatibility
-    triggerSync();
-    triggerExcelSync();
+    // saveRecipes() already schedules a background sync; no separate trigger needed here.
+    await saveRecipes(updatedRecipes);
 
     return updatedRecipes;
   } catch (error) {
@@ -382,9 +350,9 @@ export const setCookedStatus = async (recipeName, isCooked) => {
     }
     await AsyncStorage.setItem(LAST_COOKED_DATES_KEY, JSON.stringify(lastCookedDates));
 
-    // Trigger both legacy and Excel sync for backward compatibility
-    triggerSync();
-    triggerExcelSync();
+    // Writes here go directly to AsyncStorage (not through saveRecipes), so trigger
+    // the background sync explicitly - exactly once for this action.
+    triggerBackgroundSync();
 
     return cookedRecipes;
   } catch (error) {
@@ -449,9 +417,9 @@ export const togglePinnedRecipe = async (recipeName) => {
 
     await AsyncStorage.setItem(PINNED_RECIPES_KEY, JSON.stringify(updatedPinnedRecipes));
 
-    // Trigger both legacy and Excel sync for backward compatibility
-    triggerSync();
-    triggerExcelSync();
+    // Writes here go directly to AsyncStorage (not through saveRecipes), so trigger
+    // the background sync explicitly - exactly once for this action.
+    triggerBackgroundSync();
 
     return updatedPinnedRecipes;
   } catch (error) {
@@ -644,8 +612,9 @@ export const cleanupStaleReferences = async () => {
     // Return cleaned data if any changes were made
     if (cookedRecipesChanged || lastCookedDatesChanged || cookCountsChanged || cleanedPinnedRecipes.length !== pinnedRecipes.length) {
       console.log('Stale references found and cleaned up');
-      triggerSync();
-      triggerExcelSync();
+      // Writes here go directly to AsyncStorage (not through saveRecipes), so trigger
+      // the background sync explicitly - exactly once, and only when something changed.
+      triggerBackgroundSync();
       return {
         cookedRecipes: cleanedCookedRecipes,
         pinnedRecipes: cleanedPinnedRecipes,
@@ -783,11 +752,8 @@ export const addSampleRecipes = async () => {
       recipes.push(newRecipe);
     }
 
+    // saveRecipes() already schedules a background sync; no separate trigger needed here.
     await saveRecipes(recipes);
-
-    // Trigger both legacy and Excel sync for backward compatibility
-    triggerSync();
-    triggerExcelSync();
 
     return recipes;
   } catch (error) {

@@ -8,7 +8,10 @@ node_modules
 # Ignore sensitive files
 source/token.json
 source/credentials.json
+source/cook-it-435613-fbbce8edbe8b.json
+source/*service-account*.json
 /python_resources/dist/
 /python_resources/build/
 /python_resources/venv/
 *.spec
+CLAUDE.md

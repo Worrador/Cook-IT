@@ -135,6 +135,7 @@ const AppContent = () => {
   const progressBarFill = useRef(new Animated.Value(0)).current; // For actual progress bar fill
   const syncButtonPop = useRef(new Animated.Value(0)).current; // For primary sync button pop animation (disabled for connect)
   const searchPrefPop = useRef(new Animated.Value(0)).current; // For checkbox pop animation
+  const pendingAuthTimeoutsRef = useRef([]); // Staged auth-progress setTimeout handles from handleManualSync, cleared on completion/unmount
 
   // Helper function to get or create recipe animations
   const getRecipeAnimation = (recipeName) => {
@@ -198,6 +199,15 @@ const AppContent = () => {
   useEffect(() => {
     syncButtonPop.setValue(0);
   }, [showSyncInfo, syncStatus.isAuthenticated]);
+
+  // Cancel any staged auth-progress timeouts from handleManualSync on unmount, so they
+  // never call setState (via onProgress) after the component is gone.
+  useEffect(() => {
+    return () => {
+      pendingAuthTimeoutsRef.current.forEach(clearTimeout);
+      pendingAuthTimeoutsRef.current = [];
+    };
+  }, []);
 
   // Pop the checkbox row when the sync dialog opens (before authentication)
   useEffect(() => {
@@ -579,22 +589,27 @@ const AppContent = () => {
         // Keep the UI in sync mode during authentication
         // Don't rely on checkSyncStatus during auth as it will show "not connected" until auth completes
 
-        // Start monitoring authentication progress
-        const authProgressInterval = setInterval(async () => {
-          // During authentication, keep showing progress instead of checking actual status
-          // The real progress happens inside initializeSync
-        }, 1000);
+        // Stage progress messages during authentication. Handles are collected so they
+        // can be cancelled below (and on unmount) instead of firing onProgress/setState
+        // up to 8s later against a dialog/component that may already be gone.
+        pendingAuthTimeoutsRef.current.push(
+          setTimeout(() => onProgress(0.2, 'Opening Google authentication...'), 1000),
+          setTimeout(() => onProgress(0.3, 'Waiting for user authentication...'), 3000),
+          setTimeout(() => onProgress(0.5, 'Processing authentication...'), 6000),
+          setTimeout(() => onProgress(0.7, 'Setting up Google Drive access...'), 8000)
+        );
 
-        // Update progress messages during authentication
-        setTimeout(() => onProgress(0.2, 'Opening Google authentication...'), 1000);
-        setTimeout(() => onProgress(0.3, 'Waiting for user authentication...'), 3000);
-        setTimeout(() => onProgress(0.5, 'Processing authentication...'), 6000);
-        setTimeout(() => onProgress(0.7, 'Setting up Google Drive access...'), 8000);
+        let initResult;
+        try {
+          initResult = await syncService.initializeSync();
+        } finally {
+          // Cancel any staged messages that haven't fired yet, whether initializeSync
+          // succeeded or threw.
+          pendingAuthTimeoutsRef.current.forEach(clearTimeout);
+          pendingAuthTimeoutsRef.current = [];
+        }
 
-        const initResult = await syncService.initializeSync();
-
-        // Clear the monitoring interval and reset flag
-        clearInterval(authProgressInterval);
+        // Reset flag
         setIsManualAuthInProgress(false);
 
         if (initResult.success) {

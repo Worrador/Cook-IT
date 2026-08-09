@@ -379,21 +379,26 @@ class CookITLogic:
             raise
 
     def calculate_recency(self, last_shown):
-        """Calculate recency (0-100) based on time since last shown"""
+        """Calculate selection weight (20-100) based on time since last shown.
+
+        Recipes shown/cooked LONGER ago get a HIGHER weight so they resurface,
+        while recently shown recipes get the minimum weight. This matches the
+        app's goal of suggesting recipes you haven't made in a while.
+        """
         if pd.isna(last_shown):
-            return 0  # Never shown recipes get lowest priority
+            return 100  # Never shown recipes get highest priority
 
         current_time = pd.Timestamp.now()
         time_diff = (current_time - last_shown).total_seconds() / 3600  # hours
 
-        # Calculate decay based on time difference
-        decay = 0.2 * time_diff
+        # Weight grows with time since last shown
+        boost = 0.2 * time_diff
 
-        # Cap the decay at 80 (to keep recipes highly relevant)
-        decay = min(decay, 80)
+        # Cap the boost at 80 (so weight maxes out at 100)
+        boost = min(boost, 80)
 
-        # Recency is 100 minus decay
-        return max(100 - decay, 0)
+        # Weight ranges from 20 (just shown) up to 100 (long ago / never)
+        return min(20 + boost, 100)
 
     def choose_recipe(self, suggested_recipes=None):
         # Initialize DataFrame if it doesn't exist

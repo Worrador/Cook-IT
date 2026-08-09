@@ -89,6 +89,41 @@ class CrossPlatformFileSystem {
 
 const fileSystem = new CrossPlatformFileSystem();
 
+/**
+ * Format a timestamp (ms since epoch) as a local calendar date 'YYYY-MM-DD'.
+ * Uses local date components (not UTC) so a recipe cooked late at night in a
+ * UTC-negative timezone doesn't get serialised as the next day.
+ */
+export function formatLocalDate(timestampMs) {
+  if (!timestampMs) return '';
+  const date = new Date(timestampMs);
+  if (isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Format a timestamp (ms since epoch) as a local, timezone-naive datetime
+ * string (e.g. '2024-01-15T14:30:00') that `pandas.to_datetime` parses
+ * cleanly. Used for the 'Last Shown' column, which desktop keeps in lockstep
+ * with 'Last Cooked Date' (see Cook_IT.py update_recency) but expects at
+ * full timestamp precision rather than day granularity.
+ */
+export function formatLocalDateTime(timestampMs) {
+  if (!timestampMs) return '';
+  const date = new Date(timestampMs);
+  if (isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+}
+
 class ExcelService {
   constructor() {
     this.isInitialized = false;
@@ -262,15 +297,23 @@ class ExcelService {
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.json_to_sheet(excelData);
 
-      // Hide the 'Pinned' column (it's the 6th column, index 5)
+      // Column layout (matches desktop's default_columns order in Cook_IT.py):
+      // 0 Recipe Name, 1 URL, 2 Comment, 3 Last Shown, 4 Last Cooked Date,
+      // 5 Pinned. Hide 'Pinned' (index 5) since it's an internal flag that's
+      // mirrored in the separate 'Pinned Recipes' sheet for desktop.
       if (!worksheet['!cols']) worksheet['!cols'] = [];
       worksheet['!cols'][5] = { hidden: true };
 
       // Add worksheet to workbook
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Recipes');
 
-      // Create pinned recipes worksheet
-      const pinnedSheet = XLSX.utils.json_to_sheet(pinnedRecipes.map(name => ({ 'Recipe Name': name })));
+      // Create pinned recipes worksheet. Defensively dedupe - pinnedRecipes
+      // can end up with duplicates (e.g. a recipe pinned via both the
+      // 'Pinned' column and the 'Pinned Recipes' sheet on a prior import),
+      // and writing that straight back would compound the duplication on
+      // every round trip.
+      const dedupedPinnedRecipes = [...new Set(pinnedRecipes)];
+      const pinnedSheet = XLSX.utils.json_to_sheet(dedupedPinnedRecipes.map(name => ({ 'Recipe Name': name })));
       XLSX.utils.book_append_sheet(workbook, pinnedSheet, 'Pinned Recipes');
 
       // Write workbook directly to a base64 string
@@ -296,9 +339,15 @@ class ExcelService {
   }
 
   /**
-   * Import data from Excel file
+   * Read-only parse of the local Excel file. Returns the parsed contents
+   * WITHOUT writing anything to AsyncStorage. Safe to call purely to inspect
+   * remote data for merge analysis (see syncService.performExcelSync and
+   * mergeWithLocalData below) - unlike importFromExcel(), it never clobbers
+   * local storage before a merge decision has been made.
+   *
+   * @returns {Promise<{recipes: Array, lastCookedDates: Object, pinnedRecipes: Array<string>}>}
    */
-  async importFromExcel() {
+  async parseExcelFile() {
     try {
       // Check if local file exists
       const fileInfo = await fileSystem.getInfo(this.localFilePath);
@@ -306,20 +355,40 @@ class ExcelService {
         throw new Error('Local Excel file does not exist');
       }
 
-      console.log('Importing data from Excel file...');
+      console.log('Parsing Excel file...');
 
       // Read file content
       const fileContent = await fileSystem.readFile(this.localFilePath);
 
       const workbook = XLSX.read(fileContent, { type: 'base64' });
 
-      // Process recipes
+      // Process recipes. The 'Recipes' sheet is the interop contract with
+      // desktop (Cook_IT.py reads sheet_name='Recipes'). A missing sheet
+      // means a corrupt/unexpected workbook, not a legitimately empty one -
+      // XLSX.utils.sheet_to_json(undefined) silently returns [], which would
+      // otherwise be indistinguishable from "remote genuinely has zero
+      // recipes" and risk downstream merge logic overwriting local data.
       const recipesSheet = workbook.Sheets['Recipes'];
+      if (!recipesSheet) {
+        throw new Error('Invalid Excel file: missing required "Recipes" sheet');
+      }
       const recipesData = XLSX.utils.sheet_to_json(recipesSheet);
 
-      // Process pinned recipes
+      // Desktop only writes 'Pinned Recipes' conditionally, so a missing
+      // sheet here is expected - tolerate it and treat as empty.
       const pinnedSheet = workbook.Sheets['Pinned Recipes'];
-      const pinnedData = XLSX.utils.sheet_to_json(pinnedSheet);
+      const pinnedData = pinnedSheet ? XLSX.utils.sheet_to_json(pinnedSheet) : [];
+
+      // Look up existing local recipes so we can preserve their timestamps.
+      // The Excel file carries no timestamp columns, so there is nothing to
+      // restore from the sheet - but stamping every imported recipe as
+      // "modified right now" would make every downloaded recipe look freshly
+      // changed, which poisons comparisons in getDataTimingInfo,
+      // performIntelligentMerge and mergeWithLocalData (all of which read
+      // recipe.createdAt || recipe.lastModified). Only genuinely new
+      // recipes get a fresh timestamp.
+      const existingRecipes = await loadRecipes();
+      const existingByName = new Map(existingRecipes.map(r => [r.name, r]));
 
       const recipes = [];
       const lastCookedDates = {};
@@ -327,13 +396,18 @@ class ExcelService {
 
       for (const row of recipesData) {
         if (row['Recipe Name']) {
-          // Create recipe object
+          const existing = existingByName.get(row['Recipe Name']);
+          const nowIso = new Date().toISOString();
+
+          // Create recipe object. storage.js writes createdAt/lastModified
+          // as ISO strings (addRecipe/updateRecipe) - stay consistent with
+          // that instead of the epoch numbers this file used to write.
           const recipe = {
             name: row['Recipe Name'],
             url: row['URL'] || '',
             comment: row['Comment'] || '',
-            createdAt: Date.now(),
-            lastModified: Date.now()
+            createdAt: existing?.createdAt || nowIso,
+            lastModified: existing?.lastModified || nowIso
           };
           recipes.push(recipe);
 
@@ -357,6 +431,30 @@ class ExcelService {
           pinnedRecipes.push(row['Recipe Name']);
         }
       }
+
+      // Dedupe - a recipe can be marked 'Yes' in the Recipes sheet AND
+      // listed in the separate 'Pinned Recipes' sheet, and without this the
+      // duplicate compounds every time the data round-trips through Excel.
+      const dedupedPinnedRecipes = [...new Set(pinnedRecipes)];
+
+      console.log(`Parsed ${recipes.length} recipes from Excel`);
+      return { recipes, lastCookedDates, pinnedRecipes: dedupedPinnedRecipes };
+    } catch (error) {
+      console.error('Error parsing Excel file:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Import data from the Excel file AND persist it to local storage. Use
+   * this when the caller genuinely wants the device to adopt the Excel
+   * file's contents (e.g. resolving a conflict with the 'remote' strategy).
+   * Callers that only want to read remote data for merge analysis should use
+   * parseExcelFile() instead, which has no persistence side effects.
+   */
+  async importFromExcel() {
+    try {
+      const { recipes, lastCookedDates, pinnedRecipes } = await this.parseExcelFile();
 
       // Save imported data (skip modification time update since this is import, not user action)
       await saveRecipes(recipes, true);
@@ -493,8 +591,11 @@ class ExcelService {
       // Download remote version
       await this.downloadFromDrive();
 
-      // Import remote data
-      const remoteData = await this.importFromExcel();
+      // Read (do not persist) remote data - using importFromExcel() here
+      // would overwrite local storage with remote data before the merge
+      // below has decided anything, causing local reads just below to see
+      // remote data instead of genuine local data.
+      const remoteData = await this.parseExcelFile();
 
       // Get current local data
       const localRecipes = await loadRecipes();
@@ -625,8 +726,19 @@ class ExcelService {
       if (!dateValue) {
         return new Date(0);
       }
-      
-      const parsed = new Date(dateValue);
+
+      // A bare 'YYYY-MM-DD' is parsed by JS as UTC midnight, but we WRITE that
+      // column from local date components (see formatLocalDate). In a UTC-negative
+      // timezone the UTC-midnight reading falls on the previous local day, so the
+      // date would drift one day earlier on every export/import round trip. Parse
+      // date-only values as LOCAL midnight so the round trip is stable everywhere.
+      const dateOnlyMatch = typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue.trim());
+      const parsed = dateOnlyMatch
+        ? (() => {
+            const [year, month, day] = dateValue.trim().split('-').map(Number);
+            return new Date(year, month - 1, day);
+          })()
+        : new Date(dateValue);
       if (isNaN(parsed.getTime())) {
         console.warn(`⚠️  Invalid date in ${fieldName}: "${dateValue}", using epoch`);
         return new Date(0);
@@ -652,13 +764,28 @@ class ExcelService {
    * Prepare data for Excel export
    */
   prepareExcelData(recipes, lastCookedDates, pinnedRecipes) {
-    return recipes.map(recipe => ({
-      'Recipe Name': recipe.name,
-      'URL': recipe.url || '',
-      'Comment': recipe.comment || '',
-      'Last Cooked Date': lastCookedDates[recipe.name] ? new Date(lastCookedDates[recipe.name]).toISOString().split('T')[0] : '',
-      'Pinned': pinnedRecipes.includes(recipe.name) ? 'Yes' : 'No'
-    }));
+    return recipes.map(recipe => {
+      const cookedTimestamp = lastCookedDates[recipe.name];
+      return {
+        'Recipe Name': recipe.name,
+        'URL': recipe.url || '',
+        'Comment': recipe.comment || '',
+        // Desktop keeps 'Last Shown' and 'Last Cooked Date' in lockstep -
+        // both are updated together whenever a recipe is cooked (see
+        // Cook_IT.py update_recency) - so deriving 'Last Shown' from the
+        // same lastCookedDates map is faithful to the desktop's own
+        // behaviour. Desktop's weighted-random suggestion keys off
+        // 'Last Shown', so omitting it (as this used to) silently broke
+        // that feature for every recipe uploaded from mobile.
+        'Last Shown': cookedTimestamp ? formatLocalDateTime(cookedTimestamp) : '',
+        // Desktop truncates this to '%Y-%m-%d' on its own saves anyway, so
+        // day granularity here is all that survives round-trips - but use
+        // local date components (not UTC) so a recipe cooked late at night
+        // in a UTC-negative timezone doesn't get serialised as the next day.
+        'Last Cooked Date': cookedTimestamp ? formatLocalDate(cookedTimestamp) : '',
+        'Pinned': pinnedRecipes.includes(recipe.name) ? 'Yes' : 'No'
+      };
+    });
   }
 
   /**
