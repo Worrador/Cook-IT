@@ -1,6 +1,5 @@
 import * as XLSX from 'xlsx';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Buffer } from 'buffer'; // Import Buffer
 import googleDriveService from './googleDriveService';
 import {
   loadRecipes,
@@ -9,90 +8,14 @@ import {
   getLastCookedDates,
   setLastCookedDates
 } from '../utils/storage';
-
-// Cross-platform file system imports
-let FileSystem;
-let RNFS;
-
-try {
-  // Try to import Expo FileSystem first (for development builds)
-  FileSystem = require('expo-file-system');
-} catch (error) {
-  // Fall back to react-native-fs (for production builds)
-  RNFS = require('react-native-fs');
-}
+// Cross-platform file system wrapper (Expo FileSystem / react-native-fs /
+// web OPFS-backed implementation) - shared with recipeImageService.js, see
+// crossPlatformFileSystem.js for why web needs its own branch.
+import fileSystem from './crossPlatformFileSystem';
 
 const EXCEL_FILE_NAME = 'CookIT_Recipes.xlsx';
 const EXCEL_METADATA_KEY = '@cookit_excel_metadata';
 const EXCEL_CONFLICT_KEY = '@cookit_excel_conflict';
-
-// Cross-platform file system wrapper
-class CrossPlatformFileSystem {
-  constructor() {
-    this.isExpo = !!FileSystem;
-    this.isRNFS = !!RNFS;
-  }
-
-  get documentDirectory() {
-    if (this.isExpo) {
-      return FileSystem.documentDirectory;
-    } else if (this.isRNFS) {
-      return RNFS.DocumentDirectoryPath;
-    }
-    throw new Error('No file system available');
-  }
-
-  async writeFile(path, content, encoding = 'base64') {
-    if (this.isExpo) {
-      return await FileSystem.writeAsStringAsync(path, content, {
-        encoding: FileSystem.EncodingType.Base64
-      });
-    } else if (this.isRNFS) {
-      return await RNFS.writeFile(path, content, encoding);
-    }
-    throw new Error('No file system available');
-  }
-
-  async readFile(path, encoding = 'base64') {
-    if (this.isExpo) {
-      return await FileSystem.readAsStringAsync(path, {
-        encoding: FileSystem.EncodingType.Base64
-      });
-    } else if (this.isRNFS) {
-      return await RNFS.readFile(path, encoding);
-    }
-    throw new Error('No file system available');
-  }
-
-  async getInfo(path) {
-    if (this.isExpo) {
-      return await FileSystem.getInfoAsync(path);
-    } else if (this.isRNFS) {
-      const exists = await RNFS.exists(path);
-      if (exists) {
-        const stats = await RNFS.stat(path);
-        return {
-          exists: true,
-          size: stats.size,
-          modificationTime: stats.mtime.getTime() / 1000
-        };
-      }
-      return { exists: false };
-    }
-    throw new Error('No file system available');
-  }
-
-  async deleteFile(path) {
-    if (this.isExpo) {
-      return await FileSystem.deleteAsync(path);
-    } else if (this.isRNFS) {
-      return await RNFS.unlink(path);
-    }
-    throw new Error('No file system available');
-  }
-}
-
-const fileSystem = new CrossPlatformFileSystem();
 
 /**
  * Format a timestamp (ms since epoch) as a local calendar date 'YYYY-MM-DD'.

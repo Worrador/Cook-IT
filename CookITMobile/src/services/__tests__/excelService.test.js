@@ -27,6 +27,15 @@ jest.mock('expo-file-system', () => ({
   deleteAsync: jest.fn()
 }));
 
+// excelService.js now goes through crossPlatformFileSystem.js, which imports
+// `Platform` from 'react-native' to decide the web branch (see that file's
+// header comment). The real 'react-native' package isn't safe to load under
+// Jest's Node test environment, so it's mocked down to just the bit that
+// module needs - 'ios' keeps these tests on the existing Expo-branch behavior.
+jest.mock('react-native', () => ({
+  Platform: { OS: 'ios' }
+}));
+
 jest.mock('../googleDriveService', () => ({
   __esModule: true,
   default: {

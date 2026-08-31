@@ -17,10 +17,6 @@ module.exports = [
       'babel.config.js',
       'metro.config.js',
       'tailwind.config.js',
-      // Unreferenced legacy file: imports 'react-native-sqlite-storage', which is not
-      // a dependency of this project and is not imported by any live code. Left in
-      // place rather than deleted, but excluded so it can't fail the lint run.
-      'src/services/database.js',
     ],
   },
   ...expoConfig,

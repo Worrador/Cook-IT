@@ -21,98 +21,22 @@ import googleDriveService from './googleDriveService';
 // storage.js itself) are already fully loaded. Mirrors excelService.js,
 // which statically imports the same storage.js functions today.
 import { loadRecipes, saveRecipes } from '../utils/storage';
+// Cross-platform file system wrapper (Expo FileSystem / react-native-fs /
+// web OPFS-backed implementation) - shared with excelService.js, see
+// crossPlatformFileSystem.js for why web needs its own branch.
+import fileSystem from './crossPlatformFileSystem';
 
-// Cross-platform file system, same pattern as excelService.js's
-// CrossPlatformFileSystem: Expo FileSystem in dev/most builds, react-native-fs
-// as a fallback in production builds where Expo's module isn't present.
+// cleanupOrphanedFiles() below needs Expo's raw directory-listing API, which
+// isn't part of the fileSystem wrapper's method surface (RNFS/web have no
+// equivalent it can be generalised behind) - kept as a direct, best-effort
+// import purely for that one call site.
 let FileSystem;
-let RNFS;
-
 try {
   FileSystem = require('expo-file-system');
 } catch (_error) {
-  RNFS = require('react-native-fs');
+  // No Expo FileSystem available (RNFS fallback build, or web) - orphan
+  // cleanup below already guards on `fileSystem.isExpo` and skips itself.
 }
-
-class ImageFileSystem {
-  constructor() {
-    this.isExpo = !!FileSystem;
-    this.isRNFS = !!RNFS;
-  }
-
-  get documentDirectory() {
-    if (this.isExpo) return FileSystem.documentDirectory;
-    if (this.isRNFS) return RNFS.DocumentDirectoryPath + '/';
-    throw new Error('No file system available');
-  }
-
-  async ensureDirectory(path) {
-    if (this.isExpo) {
-      const info = await FileSystem.getInfoAsync(path);
-      if (!info.exists) {
-        await FileSystem.makeDirectoryAsync(path, { intermediates: true });
-      }
-      return;
-    }
-    if (this.isRNFS) {
-      const exists = await RNFS.exists(path);
-      if (!exists) {
-        await RNFS.mkdir(path);
-      }
-      return;
-    }
-    throw new Error('No file system available');
-  }
-
-  async writeFile(path, content, encoding = 'base64') {
-    if (this.isExpo) {
-      return FileSystem.writeAsStringAsync(path, content, {
-        encoding: FileSystem.EncodingType.Base64
-      });
-    }
-    if (this.isRNFS) {
-      return RNFS.writeFile(path, content, encoding);
-    }
-    throw new Error('No file system available');
-  }
-
-  async readFile(path, encoding = 'base64') {
-    if (this.isExpo) {
-      return FileSystem.readAsStringAsync(path, {
-        encoding: FileSystem.EncodingType.Base64
-      });
-    }
-    if (this.isRNFS) {
-      return RNFS.readFile(path, encoding);
-    }
-    throw new Error('No file system available');
-  }
-
-  async getInfo(path) {
-    if (this.isExpo) {
-      return FileSystem.getInfoAsync(path);
-    }
-    if (this.isRNFS) {
-      const exists = await RNFS.exists(path);
-      return { exists };
-    }
-    throw new Error('No file system available');
-  }
-
-  async deleteFile(path) {
-    if (this.isExpo) {
-      return FileSystem.deleteAsync(path, { idempotent: true });
-    }
-    if (this.isRNFS) {
-      const exists = await RNFS.exists(path);
-      if (exists) await RNFS.unlink(path);
-      return;
-    }
-    throw new Error('No file system available');
-  }
-}
-
-const fileSystem = new ImageFileSystem();
 
 const IMAGE_DIR_NAME = 'recipe_images/';
 const DRIVE_IMAGES_FOLDER_NAME = 'Cook-IT Images';
