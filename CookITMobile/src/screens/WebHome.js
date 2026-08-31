@@ -40,6 +40,7 @@ import BuyCoffeeDialog from '../components/BuyCoffeeDialog';
 import VoteSession from './VoteSession';
 import CookCalendar from './CookCalendar';
 import { pickWeighted } from '../services/suggestion';
+import { scaleIngredient, parseServings } from '../services/ingredientScaling';
 import { BROWN, ORANGE, YELLOW, SAND, CREAM, NAVY, ERROR, PAGE_BG, INK, MUTED } from '../theme/webPalette';
 
 const CONTENT_MAX = 1180;
@@ -239,6 +240,8 @@ export default function WebHome() {
   const [cookConfirm, setCookConfirm] = useState(null);
   const [recipeView, setRecipeView] = useState(null);
   const [recipeData, setRecipeData] = useState({ loading: false, data: null });
+  const [baseServings, setBaseServings] = useState(null);
+  const [servings, setServings] = useState(1);
   const [showHelp, setShowHelp] = useState(false);
   const [showCoffee, setShowCoffee] = useState(false);
   const [voteOpen, setVoteOpen] = useState(false);
@@ -407,6 +410,12 @@ export default function WebHome() {
     setRecipeData({ loading: true, data: null });
     const data = await getPreview(recipe.url);
     setRecipeData({ loading: false, data });
+
+    // Start the stepper at whatever the recipe itself says it serves, so the
+    // amounts shown initially are the ones the author wrote.
+    const parsed = parseServings(data?.servings);
+    setBaseServings(parsed);
+    setServings(parsed || 1);
   };
 
   const handlePin = async (recipe) => {
@@ -469,6 +478,10 @@ export default function WebHome() {
       });
     }
   };
+
+  // 1 when there's no baseline to scale against, which makes scaleIngredient a
+  // no-op and leaves the author's original text untouched.
+  const scaleFactor = baseServings ? servings / baseServings : 1;
 
   const pinnedVisible = useMemo(
     () => visible.filter(r => pinned.includes(r.name)),
@@ -956,10 +969,40 @@ export default function WebHome() {
                   <Text style={styles.badgeText}>{formatDuration(recipeData.data.totalTime)}</Text>
                 </View>
               ) : null}
-              {recipeData.data.servings ? (
+
+              {/* The stepper only appears when the page published a serving count
+                  we could parse - without a baseline there is nothing to scale
+                  against, and guessing one would silently produce wrong amounts. */}
+              {baseServings ? (
+                <View style={styles.servingStepper}>
+                  <MaterialCommunityIcons name="account-group-outline" size={15} color={BROWN} />
+                  <Hoverable
+                    onPress={() => setServings(s => Math.max(1, s - 1))}
+                    style={styles.stepBtn}
+                    hoverStyle={styles.stepBtnHover}
+                  >
+                    <MaterialCommunityIcons name="minus" size={15} color={BROWN} />
+                  </Hoverable>
+                  <Text style={styles.servingCount}>serves {servings}</Text>
+                  <Hoverable
+                    onPress={() => setServings(s => Math.min(99, s + 1))}
+                    style={styles.stepBtn}
+                    hoverStyle={styles.stepBtnHover}
+                  >
+                    <MaterialCommunityIcons name="plus" size={15} color={BROWN} />
+                  </Hoverable>
+                </View>
+              ) : recipeData.data.servings ? (
                 <View style={styles.badge}>
                   <MaterialCommunityIcons name="account-group-outline" size={13} color={BROWN} />
-                  <Text style={styles.badgeText}>serves {recipeData.data.servings}</Text>
+                  <Text style={styles.badgeText}>{recipeData.data.servings}</Text>
+                </View>
+              ) : null}
+
+              {baseServings && servings !== baseServings ? (
+                <View style={styles.scaledBadge}>
+                  <MaterialCommunityIcons name="scale-balance" size={13} color={BROWN} />
+                  <Text style={styles.badgeText}>scaled from {baseServings}</Text>
                 </View>
               ) : null}
             </View>
@@ -972,7 +1015,9 @@ export default function WebHome() {
                     <View style={styles.bullet} />
                     {/* selectable: an ingredient list is the one thing here
                         people genuinely want to copy (into a shopping list). */}
-                    <Text selectable style={styles.ingredientText}>{item}</Text>
+                    <Text selectable style={styles.ingredientText}>
+                      {scaleIngredient(item, scaleFactor)}
+                    </Text>
                   </View>
                 ))}
               </>
@@ -1228,7 +1273,20 @@ const styles = StyleSheet.create({
 
   recipeLoading: { alignItems: 'center', gap: 12, paddingVertical: 40 },
   recipeScroll: { maxHeight: 460 },
-  recipeMetaRow: { flexDirection: 'row', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
+  recipeMetaRow: { flexDirection: 'row', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' },
+  servingStepper: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999,
+    backgroundColor: YELLOW,
+  },
+  servingCount: { color: BROWN, fontSize: 12, fontWeight: '800', minWidth: 62, textAlign: 'center' },
+  stepBtn: { padding: 3, borderRadius: 999 },
+  stepBtnHover: { backgroundColor: 'rgba(90,66,48,0.16)' },
+  scaledBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999,
+    borderWidth: 1, borderColor: 'rgba(90,66,48,0.28)',
+  },
   recipeHeading: { color: BROWN, fontSize: 18, fontWeight: '800', marginTop: 18, marginBottom: 10 },
   ingredientRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 7 },
   bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: ORANGE, marginTop: 8 },
