@@ -17,7 +17,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView, Modal,
-  ActivityIndicator, StyleSheet, useWindowDimensions,
+  ActivityIndicator, StyleSheet, useWindowDimensions, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
@@ -29,6 +29,11 @@ import {
 import googleDriveService from '../services/googleDriveService';
 import excelService from '../services/excelService';
 import syncService from '../services/syncService';
+import { pickDriveFile, preloadPicker, XLSX_MIME } from '../services/drivePicker';
+import { isPickerConfigured } from '../config/webConfig';
+import recipeImageService from '../services/recipeImageService';
+import { useImageUrl, releaseImageUrl } from '../services/imageDisplay';
+import { getOgImage, getFaviconUrl, getDomain } from '../services/linkPreview';
 import { BROWN, ORANGE, YELLOW, SAND, CREAM, NAVY, ERROR, PAGE_BG, INK, MUTED } from '../theme/webPalette';
 
 const CONTENT_MAX = 1180;
@@ -103,6 +108,53 @@ function Button({ label, icon, onPress, kind = 'primary', disabled, style }) {
   );
 }
 
+// Renders one stored image. The URL resolves asynchronously (on web the bytes
+// have to be pulled out of OPFS and wrapped in a blob URL), so a placeholder
+// holds the layout until it arrives.
+function Photo({ imageRef, style, onPress }) {
+  const url = useImageUrl(imageRef);
+  const content = url
+    ? <Image source={{ uri: url }} style={styles.photoImg} resizeMode="cover" />
+    : <View style={styles.photoPending}><ActivityIndicator size="small" color={MUTED} /></View>;
+
+  if (!onPress) return <View style={[styles.photo, style]}>{content}</View>;
+  return (
+    <Hoverable onPress={onPress} style={[styles.photo, style]} hoverStyle={styles.photoHover}>
+      {content}
+    </Hoverable>
+  );
+}
+
+// Shown in place of a photo when a recipe has only a link. Uses the site's
+// og:image when a preview proxy is configured, otherwise a favicon-and-domain
+// card - see linkPreview.js for why a browser can't scrape og:image unaided.
+function LinkPreview({ url, style, onPress }) {
+  const [ogImage, setOgImage] = useState(null);
+  const domain = getDomain(url);
+  const favicon = getFaviconUrl(url);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOgImage(url).then(image => { if (!cancelled) setOgImage(image); });
+    return () => { cancelled = true; };
+  }, [url]);
+
+  const body = ogImage
+    ? <Image source={{ uri: ogImage }} style={styles.photoImg} resizeMode="cover" />
+    : (
+      <View style={styles.linkFallback}>
+        {favicon ? <Image source={{ uri: favicon }} style={styles.linkFavicon} /> : null}
+        <Text style={styles.linkDomain} numberOfLines={1}>{domain || 'recipe link'}</Text>
+      </View>
+    );
+
+  return (
+    <Hoverable onPress={onPress} style={[styles.photo, style]} hoverStyle={styles.photoHover}>
+      {body}
+    </Hoverable>
+  );
+}
+
 function Field({ label, value, onChangeText, placeholder, multiline, autoFocus }) {
   return (
     <View style={styles.field}>
@@ -164,6 +216,8 @@ export default function WebHome() {
   const [editText, setEditText] = useState('');
 
   const [driveState, setDriveState] = useState({ connected: false, busy: false, message: '' });
+  const [gallery, setGallery] = useState(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     const [list, pins, counts, dates] = await Promise.all([
@@ -184,6 +238,9 @@ export default function WebHome() {
       } catch (_error) {
         // Drive is a background backup; the app is fully usable without it.
       }
+      // Warm the Picker scripts now so the click handler doesn't await a network
+      // fetch, which would cost the user-activation needed to open its window.
+      preloadPicker().catch(() => {});
       setLoading(false);
     })();
   }, [refresh]);
@@ -257,6 +314,35 @@ export default function WebHome() {
     await refresh();
   };
 
+  // Photos go through the same recipeImageService the phone uses: pick ->
+  // resize/compress -> save locally -> background Drive upload. Only the display
+  // step differs on web (see imageDisplay.js).
+  const handleAddPhoto = async (recipe) => {
+    setPhotoBusy(true);
+    try {
+      const added = await recipeImageService.pickFromLibrary();
+      if (added.length) {
+        const images = [...(recipe.images || []), ...added];
+        await updateRecipe(recipe.name, { images });
+        setGallery(g => (g && g.name === recipe.name ? { ...g, images } : g));
+        await refresh();
+      }
+    } catch (error) {
+      setDriveState(s => ({ ...s, message: error?.message || 'Could not add the photo' }));
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const handleDeletePhoto = async (recipe, imageRef) => {
+    await recipeImageService.deleteImage(imageRef);
+    releaseImageUrl(imageRef.id);
+    const images = (recipe.images || []).filter(img => img.id !== imageRef.id);
+    await updateRecipe(recipe.name, { images });
+    setGallery(g => (g && g.name === recipe.name ? { ...g, images } : g));
+    await refresh();
+  };
+
   const handlePin = async (recipe) => {
     await togglePinnedRecipe(recipe.name);
     setPinned(await getPinnedRecipes());
@@ -318,6 +404,52 @@ export default function WebHome() {
     }
   };
 
+  // Attach a specific Drive file, bypassing the hardcoded CookIT_Recipes.xlsx
+  // name lookup in googleDriveService.getDriveFileId() - once an ID is stored it
+  // is returned before any name search happens.
+  const handleChooseFile = async () => {
+    setDriveState(s => ({ ...s, busy: true, message: '' }));
+    try {
+      if (!googleDriveService.isAuthenticated()) {
+        await googleDriveService.authenticate();
+      }
+      const file = await pickDriveFile(googleDriveService.accessToken);
+      if (!file) {
+        setDriveState(s => ({ ...s, busy: false, message: '' }));
+        return;
+      }
+      if (file.mimeType !== XLSX_MIME) {
+        setDriveState(s => ({
+          ...s,
+          busy: false,
+          message: `“${file.name}” is not an .xlsx workbook, so Cook-IT can't read it.`,
+        }));
+        return;
+      }
+
+      await googleDriveService.setDriveFileId(file.id);
+      const result = await syncService.performExcelSync();
+      await refresh();
+
+      if (result && result.success === false) {
+        setDriveState({
+          connected: googleDriveService.isAuthenticated(),
+          busy: false,
+          message: `${result.message || 'Sync failed'} — ${lastConsoleError()}`.trim(),
+        });
+        return;
+      }
+      const count = (await loadRecipes()).length;
+      setDriveState({
+        connected: true,
+        busy: false,
+        message: `Linked “${file.name}” — ${count} recipe${count === 1 ? '' : 's'} loaded`,
+      });
+    } catch (error) {
+      setDriveState(s => ({ ...s, busy: false, message: error?.message || 'Could not open the Drive picker' }));
+    }
+  };
+
   const cookedThisWeek = useMemo(() => {
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     return Object.values(lastCooked).filter(d => new Date(d).getTime() >= weekAgo).length;
@@ -342,6 +474,18 @@ export default function WebHome() {
             <Text style={styles.brandName}>Cook<Text style={{ color: YELLOW }}>-IT</Text></Text>
           </View>
           <View style={styles.navRight}>
+            {/* Hidden entirely until a Picker API key is configured - a button
+                that can only ever explain why it doesn't work is just noise. */}
+            {isPickerConfigured() ? (
+              <Hoverable
+                onPress={handleChooseFile}
+                style={styles.chip}
+                hoverStyle={styles.chipHover}
+              >
+                <MaterialCommunityIcons name="file-find-outline" size={18} color={CREAM} />
+                <Text style={styles.chipText}>Choose Drive file</Text>
+              </Hoverable>
+            ) : null}
             <Hoverable
               onPress={handleDrive}
               style={[styles.chip, driveState.connected && styles.chipOn]}
@@ -471,6 +615,19 @@ export default function WebHome() {
                   style={[styles.card, { width: `${100 / columns}%` }]}
                 >
                   <View style={styles.cardInner}>
+                    {recipe.images?.length ? (
+                      <Photo
+                        imageRef={recipe.images[0]}
+                        style={styles.cardPhoto}
+                        onPress={() => setGallery(recipe)}
+                      />
+                    ) : recipe.url ? (
+                      <LinkPreview
+                        url={recipe.url}
+                        style={styles.cardPhoto}
+                        onPress={() => openUrl(recipe.url)}
+                      />
+                    ) : null}
                     <View style={styles.cardTop}>
                       <Text style={styles.cardTitle} numberOfLines={2}>{recipe.name}</Text>
                       <Hoverable
@@ -520,6 +677,17 @@ export default function WebHome() {
                           <MaterialCommunityIcons name="open-in-new" size={18} color={NAVY} />
                         </Hoverable>
                       ) : null}
+                      <Hoverable
+                        onPress={() => setGallery(recipe)}
+                        style={styles.cardIcon}
+                        hoverStyle={styles.cardIconHover}
+                      >
+                        <MaterialCommunityIcons
+                          name={recipe.images?.length ? 'image-multiple' : 'camera-plus-outline'}
+                          size={18}
+                          color={BROWN}
+                        />
+                      </Hoverable>
                       <Hoverable
                         onPress={() => setConfirm(recipe)}
                         style={styles.cardIcon}
@@ -571,6 +739,48 @@ export default function WebHome() {
         }
       >
         <Field label="Note" value={editText} onChangeText={setEditText} placeholder="Add a note…" multiline autoFocus />
+      </Sheet>
+
+      <Sheet
+        visible={!!gallery}
+        onClose={() => setGallery(null)}
+        title={gallery ? `Photos — ${gallery.name}` : ''}
+        width={680}
+        footer={
+          <>
+            <Button label="Close" kind="ghost" onPress={() => setGallery(null)} />
+            <Button
+              label={photoBusy ? 'Adding…' : 'Add photo'}
+              icon="camera-plus-outline"
+              onPress={() => handleAddPhoto(gallery)}
+              disabled={photoBusy}
+            />
+          </>
+        }
+      >
+        {gallery?.images?.length ? (
+          <View style={styles.galleryGrid}>
+            {gallery.images.map(img => (
+              <View key={img.id} style={styles.galleryItem}>
+                <Photo imageRef={img} style={styles.galleryPhoto} />
+                <Hoverable
+                  onPress={() => handleDeletePhoto(gallery, img)}
+                  style={styles.galleryDelete}
+                  hoverStyle={{ backgroundColor: ERROR }}
+                >
+                  <MaterialCommunityIcons name="trash-can-outline" size={16} color="#fff" />
+                </Hoverable>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.galleryEmpty}>
+            <MaterialCommunityIcons name="image-off-outline" size={40} color={MUTED} />
+            <Text style={styles.galleryEmptyText}>
+              No photos yet. Add a snap of the recipe page or the finished dish.
+            </Text>
+          </View>
+        )}
       </Sheet>
 
       <Sheet
@@ -683,6 +893,29 @@ const styles = StyleSheet.create({
   cardBtn: { flex: 1 },
   cardIcon: { padding: 9, borderRadius: 8 },
   cardIconHover: { backgroundColor: 'rgba(90,66,48,0.10)' },
+
+  // photos
+  photo: { borderRadius: 10, overflow: 'hidden', backgroundColor: 'rgba(90,66,48,0.10)' },
+  photoHover: { opacity: 0.88 },
+  photoImg: { width: '100%', height: '100%' },
+  photoPending: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 60 },
+  cardPhoto: { width: '100%', height: 150, marginBottom: 14 },
+  linkFallback: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: SAND, borderWidth: 1, borderColor: 'rgba(90,66,48,0.10)', borderRadius: 10,
+  },
+  linkFavicon: { width: 40, height: 40, borderRadius: 8 },
+  linkDomain: { color: MUTED, fontSize: 13, fontWeight: '700', maxWidth: '85%' },
+
+  galleryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  galleryItem: { width: 180, height: 140, position: 'relative' },
+  galleryPhoto: { width: '100%', height: '100%' },
+  galleryDelete: {
+    position: 'absolute', top: 6, right: 6, padding: 7, borderRadius: 8,
+    backgroundColor: 'rgba(46,34,22,0.72)',
+  },
+  galleryEmpty: { alignItems: 'center', gap: 12, paddingVertical: 34 },
+  galleryEmptyText: { color: MUTED, fontSize: 15, textAlign: 'center', maxWidth: 320, lineHeight: 22 },
 
   empty: { alignItems: 'center', gap: 14, paddingVertical: 60, ...card },
   emptyText: { color: MUTED, fontSize: 16 },
