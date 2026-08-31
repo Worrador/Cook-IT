@@ -9,6 +9,13 @@ const LAST_EXCEL_SYNC_KEY = '@cookit_last_excel_sync';
 const LAST_COOKED_DATES_KEY = '@cookit_last_cooked_dates';
 const COOK_COUNTS_KEY = '@cookit_cook_counts';
 const LAST_DATA_MODIFICATION_KEY = '@cookit_last_data_modification';
+// Append-only log of individual cooking events, so the app can show *when* things
+// were cooked rather than only the most recent date per recipe. LAST_COOKED_DATES
+// keeps one date per recipe and COOK_COUNTS keeps a tally, so between them the
+// history was unrecoverable - you could tell a recipe had been cooked five times
+// but not when any of the first four were.
+const COOK_HISTORY_KEY = '@cookit_cook_history';
+const COOK_HISTORY_SEEDED_KEY = '@cookit_cook_history_seeded';
 
 // Import services
 let syncService = null;
@@ -380,6 +387,11 @@ export const setCookedStatus = async (recipeName, isCooked) => {
       } else {
         console.log(`Recipe ${recipeName} was cooked recently, only updating date`);
       }
+
+      // Logged regardless of the 3-day count guard: the guard exists to stop the
+      // *tally* inflating, but the calendar should show every occasion, including
+      // cooking the same thing twice in one week.
+      await recordCookEvent(recipeName, currentDate);
     } else {
       // If uncooked, clear last cooked date but don't reset count
       delete lastCookedDates[recipeName];
@@ -394,6 +406,56 @@ export const setCookedStatus = async (recipeName, isCooked) => {
   } catch (error) {
     console.error('Error setting cooked status:', error);
     return {};
+  }
+};
+
+/**
+ * Every recorded cooking event, oldest first: [{ name, date }].
+ *
+ * On first read this is seeded from LAST_COOKED_DATES so existing users see
+ * something rather than an empty calendar - but that only recovers ONE event per
+ * recipe (the most recent), because that is all the app ever stored. Genuine
+ * per-cook history only accumulates from here on.
+ */
+export const getCookHistory = async () => {
+  try {
+    const raw = await AsyncStorage.getItem(COOK_HISTORY_KEY);
+    if (raw) return JSON.parse(raw);
+
+    // Seed exactly once; an empty log afterwards is a real empty log, not a
+    // missing one, so a user who deletes their history doesn't get it re-seeded.
+    const seeded = await AsyncStorage.getItem(COOK_HISTORY_SEEDED_KEY);
+    if (seeded) return [];
+
+    const lastCookedDates = await getLastCookedDates();
+    const backfilled = Object.entries(lastCookedDates)
+      .filter(([, date]) => Boolean(date))
+      .map(([name, date]) => ({ name, date, backfilled: true }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    await AsyncStorage.setItem(COOK_HISTORY_KEY, JSON.stringify(backfilled));
+    await AsyncStorage.setItem(COOK_HISTORY_SEEDED_KEY, 'true');
+    return backfilled;
+  } catch (error) {
+    console.error('Error loading cook history:', error);
+    return [];
+  }
+};
+
+/**
+ * Append one cooking event. Called from setCookedStatus so every surface that
+ * marks something cooked - phone, web, vote - logs it without needing to know
+ * this exists.
+ */
+export const recordCookEvent = async (recipeName, when = new Date()) => {
+  try {
+    const history = await getCookHistory();
+    history.push({ name: recipeName, date: new Date(when).toISOString() });
+    await AsyncStorage.setItem(COOK_HISTORY_KEY, JSON.stringify(history));
+    return history;
+  } catch (error) {
+    console.error('Error recording cook event:', error);
+    return [];
   }
 };
 

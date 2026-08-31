@@ -213,8 +213,10 @@ export default function VoteSession({ visible, onClose, recipes, lastCooked, onC
               ) : (
                 <MaterialCommunityIcons name="vote-outline" size={22} color={YELLOW} />
               )}
+              {/* Not "dinner" - people cook at all hours, and the vote is about
+                  what to cook, not which meal it is. */}
               <Text style={styles.headTitle}>
-                {stage === 'results' ? 'The verdict' : 'Vote on dinner'}
+                {stage === 'results' ? 'The verdict' : 'What are we cooking?'}
               </Text>
             </View>
             <Pressable onPress={close} style={styles.iconBtn}>

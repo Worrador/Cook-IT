@@ -38,6 +38,7 @@ import { getOgImage, getFaviconUrl, getDomain, getPreview, formatDuration } from
 import HelpDialog from '../components/HelpDialog';
 import BuyCoffeeDialog from '../components/BuyCoffeeDialog';
 import VoteSession from './VoteSession';
+import CookCalendar from './CookCalendar';
 import { pickWeighted } from '../services/suggestion';
 import { BROWN, ORANGE, YELLOW, SAND, CREAM, NAVY, ERROR, PAGE_BG, INK, MUTED } from '../theme/webPalette';
 
@@ -241,6 +242,7 @@ export default function WebHome() {
   const [showHelp, setShowHelp] = useState(false);
   const [showCoffee, setShowCoffee] = useState(false);
   const [voteOpen, setVoteOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const [list, pins, counts, dates] = await Promise.all([
@@ -547,12 +549,24 @@ export default function WebHome() {
             <Text style={styles.brandName}>Cook<Text style={{ color: YELLOW }}>-IT</Text></Text>
           </View>
           <View style={styles.navRight}>
-            <Hoverable onPress={() => setShowHelp(true)} style={styles.navIcon} hoverStyle={styles.chipHover}>
-              <MaterialCommunityIcons name="help-circle-outline" size={22} color={CREAM} />
-            </Hoverable>
-            <Hoverable onPress={() => setShowCoffee(true)} style={styles.navIcon} hoverStyle={styles.chipHover}>
-              <MaterialCommunityIcons name="coffee-outline" size={22} color={CREAM} />
-            </Hoverable>
+            {/* Icon actions are grouped and separated from the Drive chip: they
+                are app-level utilities, the chip is account state, and mixing
+                them at equal weight made the bar read as a row of loose icons. */}
+            <View style={styles.navGroup}>
+              <Hoverable onPress={() => setCalendarOpen(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
+                <MaterialCommunityIcons name="calendar-month-outline" size={20} color={CREAM} />
+              </Hoverable>
+              <Hoverable onPress={() => setVoteOpen(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
+                <MaterialCommunityIcons name="vote-outline" size={20} color={CREAM} />
+              </Hoverable>
+              <Hoverable onPress={() => setShowHelp(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
+                <MaterialCommunityIcons name="help-circle-outline" size={20} color={CREAM} />
+              </Hoverable>
+              <Hoverable onPress={() => setShowCoffee(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
+                <MaterialCommunityIcons name="coffee-outline" size={20} color={CREAM} />
+              </Hoverable>
+            </View>
+            <View style={styles.navDivider} />
             {/* Hidden entirely until a Picker API key is configured - a button
                 that can only ever explain why it doesn't work is just noise. */}
             {isPickerConfigured() ? (
@@ -613,8 +627,10 @@ export default function WebHome() {
                 style={styles.heroPrimary}
               />
               <Button label="Add recipe" icon="plus" kind="secondary" onPress={() => setAddOpen(true)} />
+              {/* Not "Start a vote": this is also how you rejoin or check an
+                  ongoing one, and a label that only promises starting hides that. */}
               <Button
-                label="Start a vote"
+                label="Vote"
                 icon="vote-outline"
                 kind="ghost"
                 onPress={() => setVoteOpen(true)}
@@ -868,6 +884,8 @@ export default function WebHome() {
       >
         <Field label="Note" value={editText} onChangeText={setEditText} placeholder="Add a note…" multiline autoFocus />
       </Sheet>
+
+      <CookCalendar visible={calendarOpen} onClose={() => setCalendarOpen(false)} />
 
       <VoteSession
         visible={voteOpen}
@@ -1187,8 +1205,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(46,34,22,0.72)',
   },
   panelPhoto: { width: '100%', height: 168, marginBottom: 16 },
-  paperDialog: { alignSelf: 'center', width: '100%', maxWidth: 620, backgroundColor: CREAM },
+  // maxHeight is load-bearing, not cosmetic: HelpDialog renders its own
+  // ScrollView, but a ScrollView only scrolls inside a bounded parent. Without a
+  // height limit the dialog grew past the viewport and its content became
+  // unreachable - visible but unscrollable.
+  paperDialog: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 620,
+    maxHeight: '85%',
+    backgroundColor: CREAM,
+  },
   navIcon: { padding: 9, borderRadius: 999 },
+  navIconHover: { backgroundColor: 'rgba(247,240,226,0.14)' },
+  navGroup: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  navDivider: { width: 1, height: 22, backgroundColor: 'rgba(247,240,226,0.20)', marginHorizontal: 6 },
   pinRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16,
     padding: 12, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(90,66,48,0.18)',
