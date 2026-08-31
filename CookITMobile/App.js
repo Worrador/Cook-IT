@@ -6,6 +6,11 @@ import { Button } from './src/components/Button';
 import { Input } from './src/components/Input';
 import { RecipeDetailsDialog } from './src/components/RecipeDetailsDialog';
 import HelpDialog from './src/components/HelpDialog';
+// Web gets its own screen rather than the phone layout - see WebHome's header
+// comment. Both screens read and write through src/utils/storage.js, so they
+// share the same data and the same Drive backup.
+import WebShell from './src/components/WebShell';
+import WebHome from './src/screens/WebHome';
 import BuyCoffeeDialog from './src/components/BuyCoffeeDialog';
 import AddRecipeDialog from './src/components/AddRecipeDialog';
 import InteractivePin from './src/components/InteractivePin';
@@ -1688,7 +1693,9 @@ export default function App() {
     <GestureHandlerRootView style={styles.gestureRoot}>
       <SafeAreaProvider>
         <PaperProvider theme={theme}>
-          <AppContent />
+          {Platform.OS === 'web'
+            ? <WebShell><WebHome /></WebShell>
+            : <AppContent />}
         </PaperProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

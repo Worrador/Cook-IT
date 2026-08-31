@@ -17,22 +17,30 @@
 import { Platform } from 'react-native';
 import webFileSystem from './webFileSystem';
 
+const IS_WEB = Platform.OS === 'web';
+
 let FileSystem;
 let RNFS;
 
-try {
-  // Try to import Expo FileSystem first (for development builds).
-  FileSystem = require('expo-file-system');
-} catch (_error) {
-  // Fall back to react-native-fs (for production builds).
-  RNFS = require('react-native-fs');
+// Skipped entirely on web. Beyond not needing either module there, the fallback
+// is actively dangerous in a browser bundle: react-native-fs has no web build,
+// so if the expo-file-system require ever failed, the require inside the catch
+// would throw *out* of this try/catch and take the whole module down with it -
+// which surfaces far away as an unrelated "failed to initialize" error, because
+// the modules that import this one are pulled in via dynamic import().
+if (!IS_WEB) {
+  try {
+    // Try to import Expo FileSystem first (for development builds).
+    FileSystem = require('expo-file-system');
+  } catch (_error) {
+    // Fall back to react-native-fs (for production builds).
+    RNFS = require('react-native-fs');
+  }
 }
 
 class CrossPlatformFileSystem {
   constructor() {
-    this.isWeb = Platform.OS === 'web';
-    // Deliberately excludes `isWeb` even though `FileSystem` is truthy there
-    // too - see the module comment above.
+    this.isWeb = IS_WEB;
     this.isExpo = !this.isWeb && !!FileSystem;
     this.isRNFS = !this.isWeb && !!RNFS;
   }

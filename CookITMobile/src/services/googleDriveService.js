@@ -1,4 +1,8 @@
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
+// Resolved per-platform: googleSignin.js re-exports the native module on
+// iOS/Android, googleSignin.web.js reimplements the same surface over Google
+// Identity Services in the browser (the native module bundles for web but does
+// not work there). Nothing in this file needs to know which one it got.
+import { GoogleSignin } from './googleSignin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Buffer } from 'buffer'; // Import Buffer
 
