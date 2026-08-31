@@ -18,6 +18,21 @@ const GLOBAL_CSS = `
     -webkit-font-smoothing: antialiased;
     font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   }
+  /* Buttons and chrome are not selectable: double-clicking "Next" or "Cook it"
+     otherwise highlights the label instead of firing twice, which looks broken.
+     Content that is genuinely worth copying - ingredients, method steps - opts
+     back in via React Native's selectable prop, which react-native-web maps to
+     user-select: text. (No backticks in here: this string is a template
+     literal.) */
+  body {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+  }
+  input, textarea, [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
   ::selection { background: #F2BC42; color: #3D2E1F; }
   ::-webkit-scrollbar { width: 12px; height: 12px; }
   ::-webkit-scrollbar-track { background: ${PAGE_BG}; }

@@ -422,6 +422,35 @@ class GoogleDriveService {
     }
   }
 
+  /**
+   * The signed-in user's Google profile (name, email, picture).
+   *
+   * BASE_SCOPES already requests openid/profile/email, so no extra consent is
+   * needed - this just spends the token we already hold. Used to prefill things
+   * like the voter name so people aren't asked to type what Google already knows.
+   *
+   * Returns null rather than throwing: a missing display name is a cosmetic
+   * problem, never a reason to fail the caller.
+   */
+  async getUserProfile() {
+    try {
+      if (!this.isAuthenticated()) return null;
+      const response = await this.makeAuthenticatedRequest(
+        'https://www.googleapis.com/oauth2/v3/userinfo'
+      );
+      if (!response.ok) return null;
+      const profile = await response.json();
+      return {
+        name: profile.name || profile.given_name || null,
+        email: profile.email || null,
+        picture: profile.picture || null,
+      };
+    } catch (error) {
+      console.warn('Could not read the Google profile:', error?.message || error);
+      return null;
+    }
+  }
+
   async getDriveFileId() {
     // Return cached ID if available
     if (this.driveFileId) return this.driveFileId;

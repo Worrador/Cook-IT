@@ -42,6 +42,65 @@ function extractMeta(html, property) {
   return null;
 }
 
+// Most recipe sites publish schema.org/Recipe as JSON-LD in a <script> tag -
+// it's what powers Google's recipe cards, so there's strong incentive to include
+// it. That makes ingredients and steps extractable from an arbitrary recipe URL
+// without site-specific scraping. Sites that omit it simply yield no recipe, and
+// the app falls back to showing just the link.
+function extractRecipeLd(html) {
+  const blocks = [...html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)];
+
+  for (const block of blocks) {
+    let parsed;
+    try {
+      parsed = JSON.parse(block[1].trim());
+    } catch (_error) {
+      continue; // Malformed JSON-LD is common; skip rather than fail the request.
+    }
+
+    // A page may ship a bare object, an array, or an @graph wrapper.
+    const nodes = Array.isArray(parsed) ? parsed : (parsed['@graph'] || [parsed]);
+    for (const node of nodes) {
+      const types = [].concat(node?.['@type'] || []);
+      if (!types.includes('Recipe')) continue;
+
+      return {
+        ingredients: (node.recipeIngredient || node.ingredients || []).filter(Boolean),
+        steps: normaliseInstructions(node.recipeInstructions),
+        totalTime: node.totalTime || null,
+        servings: Array.isArray(node.recipeYield) ? node.recipeYield[0] : node.recipeYield || null,
+      };
+    }
+  }
+  return null;
+}
+
+// recipeInstructions is the least consistent field in the schema: sites use a
+// plain string, an array of strings, an array of HowToStep objects, or HowToSection
+// objects wrapping nested steps. Flatten all of them to an array of strings.
+function normaliseInstructions(instructions) {
+  if (!instructions) return [];
+  if (typeof instructions === 'string') {
+    return instructions.split(/\r?\n+/).map(s => s.trim()).filter(Boolean);
+  }
+  if (!Array.isArray(instructions)) return [];
+
+  const steps = [];
+  for (const entry of instructions) {
+    if (typeof entry === 'string') {
+      steps.push(entry.trim());
+    } else if (entry?.['@type'] === 'HowToSection' && Array.isArray(entry.itemListElement)) {
+      for (const child of entry.itemListElement) {
+        const text = typeof child === 'string' ? child : child?.text;
+        if (text) steps.push(String(text).trim());
+      }
+    } else if (entry?.text) {
+      steps.push(String(entry.text).trim());
+    }
+  }
+  return steps.filter(Boolean);
+}
+
 async function lookup(target) {
   if (cache.has(target)) return cache.get(target);
 
@@ -54,9 +113,14 @@ async function lookup(target) {
   // og:image lives in <head>; no need to parse megabytes of body markup.
   const html = (await response.text()).slice(0, 300000);
 
+  const recipe = extractRecipeLd(html);
   const result = {
     image: extractMeta(html, 'og:image') || extractMeta(html, 'twitter:image'),
     title: extractMeta(html, 'og:title'),
+    ingredients: recipe?.ingredients || [],
+    steps: recipe?.steps || [],
+    totalTime: recipe?.totalTime || null,
+    servings: recipe?.servings || null,
   };
   cache.set(target, result);
   return result;

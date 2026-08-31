@@ -805,28 +805,45 @@ const AppContent = () => {
     }
 
     try {
-      let attempts = 0;
-      let recipe = null;
+      // History-weighted pick. Previously this drew uniformly at random, so a
+      // recipe cooked yesterday was exactly as likely as one untouched for a
+      // year. Weight is now how long it has been since the recipe was last
+      // cooked, so neglected recipes resurface more often - the same idea the
+      // original desktop app used (recency scores decayed per cook in
+      // Cook_IT.py), which was lost in the move to React Native.
+      //
+      // Kept in step with the web screen's suggest() in src/screens/WebHome.js:
+      // both must weight the same way or the two clients would recommend
+      // differently from identical data.
+      const NEVER_COOKED_WEIGHT = 120;
+      const MAX_DAYS = 90;
 
-      while (attempts < 10) {
-        const randomIndex = Math.floor(Math.random() * recipes.length);
-        recipe = recipes[randomIndex];
+      const weightFor = (candidate) => {
+        const last = lastCookedDates[candidate.name];
+        if (!last) return NEVER_COOKED_WEIGHT;
+        const days = (Date.now() - new Date(last).getTime()) / 86400000;
+        if (!Number.isFinite(days)) return NEVER_COOKED_WEIGHT;
+        // +1 floor keeps something cooked today unlikely rather than impossible.
+        return Math.min(Math.max(days, 0), MAX_DAYS) + 1;
+      };
 
-        // If we got a recipe and it hasn't been shown before, use it
-        if (recipe && !suggestedRecipes.has(recipe.name)) {
-          setSuggestedRecipes(prev => new Set([...prev, recipe.name]));
-          setSelectedRecipe(recipe);
-          setIsSuggestionFlow(true);
-          setShowRecipeDetails(true);
-          return;
-        }
+      // Exclude anything already suggested this session; reset the pool once
+      // everything has been seen, rather than looping.
+      let pool = recipes.filter(r => !suggestedRecipes.has(r.name));
+      const resetting = pool.length === 0;
+      if (resetting) pool = recipes;
 
-        attempts++;
+      const weights = pool.map(weightFor);
+      const total = weights.reduce((sum, w) => sum + w, 0);
+      let ticket = Math.random() * total;
+      let recipe = pool[pool.length - 1]; // Guards against floating-point drift.
+      for (let i = 0; i < pool.length; i++) {
+        ticket -= weights[i];
+        if (ticket <= 0) { recipe = pool[i]; break; }
       }
 
-      // If we've tried 10 times and still haven't found a new recipe
-      setSuggestedRecipes(new Set()); // Reset the set of seen recipes
-      setSelectedRecipe(recipes[Math.floor(Math.random() * recipes.length)]);
+      setSuggestedRecipes(resetting ? new Set([recipe.name]) : new Set([...suggestedRecipes, recipe.name]));
+      setSelectedRecipe(recipe);
       setIsSuggestionFlow(true);
       setShowRecipeDetails(true);
     } catch (error) {

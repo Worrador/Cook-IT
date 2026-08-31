@@ -20,10 +20,11 @@ import {
   ActivityIndicator, StyleSheet, useWindowDimensions, Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Portal, Dialog as PaperDialog } from 'react-native-paper';
 import {
   loadRecipes, addRecipe, deleteRecipe, updateRecipe,
   getPinnedRecipes, togglePinnedRecipe,
-  getCookCounts, incrementCookCount,
+  getCookCounts,
   getLastCookedDates, setCookedStatus,
 } from '../utils/storage';
 import googleDriveService from '../services/googleDriveService';
@@ -33,7 +34,11 @@ import { pickDriveFile, preloadPicker, XLSX_MIME } from '../services/drivePicker
 import { isPickerConfigured } from '../config/webConfig';
 import recipeImageService from '../services/recipeImageService';
 import { useImageUrl, releaseImageUrl } from '../services/imageDisplay';
-import { getOgImage, getFaviconUrl, getDomain } from '../services/linkPreview';
+import { getOgImage, getFaviconUrl, getDomain, getPreview, formatDuration } from '../services/linkPreview';
+import HelpDialog from '../components/HelpDialog';
+import BuyCoffeeDialog from '../components/BuyCoffeeDialog';
+import VoteSession from './VoteSession';
+import { pickWeighted } from '../services/suggestion';
 import { BROWN, ORANGE, YELLOW, SAND, CREAM, NAVY, ERROR, PAGE_BG, INK, MUTED } from '../theme/webPalette';
 
 const CONTENT_MAX = 1180;
@@ -62,6 +67,18 @@ if (typeof console !== 'undefined' && !console.__cookitTee) {
 
 function lastConsoleError() {
   return errorLog.length ? errorLog[errorLog.length - 1] : '';
+}
+
+// Human phrasing for how stale a recipe is, so the suggestion can explain itself
+// rather than looking arbitrary.
+function describeAge(isoDate) {
+  const days = Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000);
+  if (!Number.isFinite(days)) return 'a while ago';
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 14) return `${days} days ago`;
+  if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
+  return `${Math.floor(days / 30)} months ago`;
 }
 
 // --- small building blocks ------------------------------------------------
@@ -218,6 +235,12 @@ export default function WebHome() {
   const [driveState, setDriveState] = useState({ connected: false, busy: false, message: '' });
   const [gallery, setGallery] = useState(null);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [cookConfirm, setCookConfirm] = useState(null);
+  const [recipeView, setRecipeView] = useState(null);
+  const [recipeData, setRecipeData] = useState({ loading: false, data: null });
+  const [showHelp, setShowHelp] = useState(false);
+  const [showCoffee, setShowCoffee] = useState(false);
+  const [voteOpen, setVoteOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const [list, pins, counts, dates] = await Promise.all([
@@ -260,23 +283,39 @@ export default function WebHome() {
     });
   }, [recipes, query, pinned]);
 
-  // Mirrors handleChooseRecipe() in App.js: random pick that avoids repeating a
-  // name already suggested this session, giving up and resetting after 10 tries.
+  // History-weighted suggestion.
+  //
+  // App.js picks uniformly at random and only avoids repeating a name within the
+  // session, so something cooked yesterday is as likely as something untouched
+  // for a year. The original desktop app did weight by recency (scores 0-105,
+  // decayed 5 per cook); that was lost in the mobile rewrite. This restores the
+  // idea in a simpler form: a recipe's weight is how long it has been since it
+  // was last cooked, so long-neglected recipes surface more often.
+  //
+  // Never-cooked recipes get the highest weight of all - they are the ones the
+  // user most plausibly wants reminding of.
   const suggest = useCallback(() => {
     if (recipes.length === 0) return;
-    let next = null;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const candidate = recipes[Math.floor(Math.random() * recipes.length)];
-      if (candidate && !seen.has(candidate.name)) { next = candidate; break; }
+
+    // Candidates exclude anything already shown this session; when everything
+    // has been seen, the pool resets rather than looping forever.
+    let pool = recipes.filter(r => !seen.has(r.name));
+    let resetting = false;
+    if (pool.length === 0) {
+      pool = recipes;
+      resetting = true;
     }
-    if (next) {
-      setSeen(prev => new Set([...prev, next.name]));
+
+    const next = pickWeighted(pool, lastCooked);
+    if (!next) return;
+
+    if (resetting) {
+      setSeen(new Set([next.name]));
     } else {
-      next = recipes[Math.floor(Math.random() * recipes.length)];
-      setSeen(new Set(next ? [next.name] : []));
+      setSeen(prev => new Set([...prev, next.name]));
     }
     setSuggestion(next);
-  }, [recipes, seen]);
+  }, [recipes, seen, lastCooked]);
 
   const openUrl = (url) => {
     if (!url) return;
@@ -284,10 +323,24 @@ export default function WebHome() {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const handleCook = async (recipe) => {
+  // "Cook it" opens the recipe and then asks for confirmation, rather than
+  // recording the cook straight away - the user hasn't cooked anything yet at
+  // the moment they click. Confirming is what marks it.
+  //
+  // NOTE: setCookedStatus() already increments the cook count internally, with a
+  // 3-day guard so re-cooking the same thing twice in a week doesn't inflate the
+  // number. Calling incrementCookCount() alongside it double-counts and bypasses
+  // that guard - which is exactly the bug that made one click read as "cooked 2x".
+  const handleCook = (recipe) => {
     openUrl(recipe.url);
+    setCookConfirm(recipe);
+  };
+
+  const confirmCooked = async () => {
+    const recipe = cookConfirm;
+    if (!recipe) return;
     await setCookedStatus(recipe.name, true);
-    await incrementCookCount(recipe.name);
+    setCookConfirm(null);
     await refresh();
   };
 
@@ -341,6 +394,17 @@ export default function WebHome() {
     await updateRecipe(recipe.name, { images });
     setGallery(g => (g && g.name === recipe.name ? { ...g, images } : g));
     await refresh();
+  };
+
+  // Pull the recipe's ingredients and steps from the linked page. Works for any
+  // site that publishes schema.org/Recipe JSON-LD, which most recipe sites do
+  // because it's what drives Google's recipe cards. Sites without it show just
+  // the link, which is the pre-existing behaviour.
+  const openRecipe = async (recipe) => {
+    setRecipeView(recipe);
+    setRecipeData({ loading: true, data: null });
+    const data = await getPreview(recipe.url);
+    setRecipeData({ loading: false, data });
   };
 
   const handlePin = async (recipe) => {
@@ -403,6 +467,15 @@ export default function WebHome() {
       });
     }
   };
+
+  const pinnedVisible = useMemo(
+    () => visible.filter(r => pinned.includes(r.name)),
+    [visible, pinned]
+  );
+  const otherVisible = useMemo(
+    () => visible.filter(r => !pinned.includes(r.name)),
+    [visible, pinned]
+  );
 
   // Attach a specific Drive file, bypassing the hardcoded CookIT_Recipes.xlsx
   // name lookup in googleDriveService.getDriveFileId() - once an ID is stored it
@@ -474,6 +547,12 @@ export default function WebHome() {
             <Text style={styles.brandName}>Cook<Text style={{ color: YELLOW }}>-IT</Text></Text>
           </View>
           <View style={styles.navRight}>
+            <Hoverable onPress={() => setShowHelp(true)} style={styles.navIcon} hoverStyle={styles.chipHover}>
+              <MaterialCommunityIcons name="help-circle-outline" size={22} color={CREAM} />
+            </Hoverable>
+            <Hoverable onPress={() => setShowCoffee(true)} style={styles.navIcon} hoverStyle={styles.chipHover}>
+              <MaterialCommunityIcons name="coffee-outline" size={22} color={CREAM} />
+            </Hoverable>
             {/* Hidden entirely until a Picker API key is configured - a button
                 that can only ever explain why it doesn't work is just noise. */}
             {isPickerConfigured() ? (
@@ -518,7 +597,7 @@ export default function WebHome() {
           <View style={styles.heroCopy}>
             <Text style={styles.heroKicker}>YOUR RECIPE BOOK</Text>
             <Text style={[styles.heroTitle, narrow && { fontSize: 40 }]}>
-              What&apos;s for dinner?
+              What shall we cook?
             </Text>
             <Text style={styles.heroSub}>
               {recipes.length === 0
@@ -534,6 +613,13 @@ export default function WebHome() {
                 style={styles.heroPrimary}
               />
               <Button label="Add recipe" icon="plus" kind="secondary" onPress={() => setAddOpen(true)} />
+              <Button
+                label="Start a vote"
+                icon="vote-outline"
+                kind="ghost"
+                onPress={() => setVoteOpen(true)}
+                disabled={recipes.length < 2}
+              />
             </View>
           </View>
 
@@ -541,14 +627,26 @@ export default function WebHome() {
           <View style={styles.heroPanel}>
             {suggestion ? (
               <>
-                <Text style={styles.panelKicker}>TONIGHT&apos;S PICK</Text>
-                <Text style={styles.panelTitle} numberOfLines={3}>{suggestion.name}</Text>
+                {suggestion.images?.length ? (
+                  <Photo imageRef={suggestion.images[0]} style={styles.panelPhoto} onPress={() => setGallery(suggestion)} />
+                ) : suggestion.url ? (
+                  <LinkPreview url={suggestion.url} style={styles.panelPhoto} onPress={() => openRecipe(suggestion)} />
+                ) : null}
+                <Text style={styles.panelKicker}>
+                  {lastCooked[suggestion.name]
+                    ? `LAST COOKED ${describeAge(lastCooked[suggestion.name])}`.toUpperCase()
+                    : 'NEVER COOKED YET'}
+                </Text>
+                <Text style={styles.panelTitle} numberOfLines={2}>{suggestion.name}</Text>
                 {suggestion.comment ? (
-                  <Text style={styles.panelNote} numberOfLines={4}>{suggestion.comment}</Text>
+                  <Text style={styles.panelNote} numberOfLines={2}>{suggestion.comment}</Text>
                 ) : null}
                 <View style={styles.panelActions}>
                   <Button label="Cook it" icon="silverware-fork-knife" onPress={() => handleCook(suggestion)} />
-                  <Button label="Next" icon="arrow-right" kind="secondary" onPress={suggest} />
+                  {suggestion.url ? (
+                    <Button label="Recipe" icon="text-box-outline" kind="secondary" onPress={() => openRecipe(suggestion)} />
+                  ) : null}
+                  <Button label="Next" icon="arrow-right" kind="ghost" onPress={suggest} />
                 </View>
               </>
             ) : (
@@ -605,8 +703,34 @@ export default function WebHome() {
             ) : null}
           </View>
         ) : (
-          <View style={styles.grid}>
-            {visible.map(recipe => {
+          <>
+            {/* Pinned recipes get their own labelled group. Previously they were
+                merely sorted to the front with a slightly different pin icon,
+                which is not a findable affordance - there was no way to tell what
+                pinning had actually done. */}
+            {pinnedVisible.length ? (
+              <View style={styles.subHead}>
+                <MaterialCommunityIcons name="pin" size={17} color={ORANGE} />
+                <Text style={styles.subHeadText}>Pinned</Text>
+                <Text style={styles.subHeadCount}>{pinnedVisible.length}</Text>
+              </View>
+            ) : null}
+
+            {[
+              { key: 'pinned', items: pinnedVisible },
+              { key: 'rest', items: otherVisible, heading: pinnedVisible.length ? 'Everything else' : null },
+            ].map(group => (
+              group.items.length ? (
+                <View key={group.key}>
+                  {group.heading ? (
+                    <View style={styles.subHead}>
+                      <MaterialCommunityIcons name="book-open-variant" size={17} color={MUTED} />
+                      <Text style={styles.subHeadText}>{group.heading}</Text>
+                      <Text style={styles.subHeadCount}>{group.items.length}</Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.grid}>
+            {group.items.map(recipe => {
               const isPinned = pinned.includes(recipe.name);
               const count = cookCounts[recipe.name] || 0;
               return (
@@ -614,7 +738,7 @@ export default function WebHome() {
                   key={recipe.name}
                   style={[styles.card, { width: `${100 / columns}%` }]}
                 >
-                  <View style={styles.cardInner}>
+                  <View style={[styles.cardInner, isPinned && styles.cardPinned]}>
                     {recipe.images?.length ? (
                       <Photo
                         imageRef={recipe.images[0]}
@@ -670,11 +794,11 @@ export default function WebHome() {
                       />
                       {recipe.url ? (
                         <Hoverable
-                          onPress={() => openUrl(recipe.url)}
+                          onPress={() => openRecipe(recipe)}
                           style={styles.cardIcon}
                           hoverStyle={styles.cardIconHover}
                         >
-                          <MaterialCommunityIcons name="open-in-new" size={18} color={NAVY} />
+                          <MaterialCommunityIcons name="text-box-outline" size={18} color={NAVY} />
                         </Hoverable>
                       ) : null}
                       <Hoverable
@@ -700,7 +824,11 @@ export default function WebHome() {
                 </View>
               );
             })}
-          </View>
+                  </View>
+                </View>
+              ) : null
+            ))}
+          </>
         )}
       </View>
 
@@ -740,6 +868,141 @@ export default function WebHome() {
       >
         <Field label="Note" value={editText} onChangeText={setEditText} placeholder="Add a note…" multiline autoFocus />
       </Sheet>
+
+      <VoteSession
+        visible={voteOpen}
+        onClose={() => setVoteOpen(false)}
+        recipes={recipes}
+        lastCooked={lastCooked}
+        onCookIt={(recipe) => { setSuggestion(recipe); handleCook(recipe); }}
+      />
+
+      <Sheet
+        visible={!!cookConfirm}
+        onClose={() => setCookConfirm(null)}
+        title="Did you cook it?"
+        width={460}
+        footer={
+          <>
+            <Button label="Not this time" kind="ghost" onPress={() => setCookConfirm(null)} />
+            <Button label="Yes, I cooked it" icon="check" onPress={confirmCooked} />
+          </>
+        }
+      >
+        <Text style={styles.confirmText}>
+          “{cookConfirm?.name}” is open in a new tab. Confirm once you&apos;ve actually
+          cooked it and Cook-IT will record it and bump its cook count.
+        </Text>
+        {cookConfirm ? (
+          <Hoverable
+            onPress={() => handlePin(cookConfirm)}
+            style={styles.pinRow}
+            hoverStyle={{ backgroundColor: 'rgba(90,66,48,0.08)' }}
+          >
+            <MaterialCommunityIcons
+              name={pinned.includes(cookConfirm.name) ? 'pin' : 'pin-outline'}
+              size={20}
+              color={pinned.includes(cookConfirm.name) ? ORANGE : MUTED}
+            />
+            <Text style={styles.pinRowText}>
+              {pinned.includes(cookConfirm.name) ? 'Pinned to the top of your library' : 'Pin this recipe'}
+            </Text>
+          </Hoverable>
+        ) : null}
+      </Sheet>
+
+      <Sheet
+        visible={!!recipeView}
+        onClose={() => setRecipeView(null)}
+        title={recipeView?.name || ''}
+        width={760}
+        footer={
+          <>
+            <Button label="Close" kind="ghost" onPress={() => setRecipeView(null)} />
+            <Button label="Open site" icon="open-in-new" kind="secondary" onPress={() => openUrl(recipeView?.url)} />
+            <Button label="Cook it" icon="silverware-fork-knife" onPress={() => { setRecipeView(null); handleCook(recipeView); }} />
+          </>
+        }
+      >
+        {recipeData.loading ? (
+          <View style={styles.recipeLoading}>
+            <ActivityIndicator color={ORANGE} />
+            <Text style={styles.galleryEmptyText}>Reading the recipe…</Text>
+          </View>
+        ) : recipeData.data?.ingredients?.length || recipeData.data?.steps?.length ? (
+          <ScrollView style={styles.recipeScroll}>
+            <View style={styles.recipeMetaRow}>
+              {formatDuration(recipeData.data.totalTime) ? (
+                <View style={styles.badge}>
+                  <MaterialCommunityIcons name="clock-outline" size={13} color={BROWN} />
+                  <Text style={styles.badgeText}>{formatDuration(recipeData.data.totalTime)}</Text>
+                </View>
+              ) : null}
+              {recipeData.data.servings ? (
+                <View style={styles.badge}>
+                  <MaterialCommunityIcons name="account-group-outline" size={13} color={BROWN} />
+                  <Text style={styles.badgeText}>serves {recipeData.data.servings}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {recipeData.data.ingredients.length ? (
+              <>
+                <Text style={styles.recipeHeading}>Ingredients</Text>
+                {recipeData.data.ingredients.map((item, i) => (
+                  <View key={i} style={styles.ingredientRow}>
+                    <View style={styles.bullet} />
+                    {/* selectable: an ingredient list is the one thing here
+                        people genuinely want to copy (into a shopping list). */}
+                    <Text selectable style={styles.ingredientText}>{item}</Text>
+                  </View>
+                ))}
+              </>
+            ) : null}
+
+            {recipeData.data.steps.length ? (
+              <>
+                <Text style={styles.recipeHeading}>Method</Text>
+                {recipeData.data.steps.map((step, i) => (
+                  <View key={i} style={styles.stepRow}>
+                    <Text style={styles.stepNum}>{i + 1}</Text>
+                    <Text selectable style={styles.stepText}>{step}</Text>
+                  </View>
+                ))}
+              </>
+            ) : null}
+          </ScrollView>
+        ) : (
+          <View style={styles.galleryEmpty}>
+            <MaterialCommunityIcons name="text-box-remove-outline" size={40} color={MUTED} />
+            <Text style={styles.galleryEmptyText}>
+              Couldn&apos;t read a recipe from this page. Not every site publishes one in a
+              machine-readable form — open the site to view it.
+            </Text>
+          </View>
+        )}
+      </Sheet>
+
+      {/* Both dialogs render their own Paper Dialog.Title/Content and have no
+          `visible` prop of their own - App.js controls them by wrapping in a
+          Portal + Dialog, so this mirrors that rather than inventing a new
+          contract. Rendering them bare would show their content permanently. */}
+      <Portal>
+        <PaperDialog
+          visible={showHelp}
+          onDismiss={() => setShowHelp(false)}
+          style={styles.paperDialog}
+        >
+          <HelpDialog onClose={() => setShowHelp(false)} isFirstTime={false} />
+        </PaperDialog>
+        <PaperDialog
+          visible={showCoffee}
+          onDismiss={() => setShowCoffee(false)}
+          style={styles.paperDialog}
+        >
+          <BuyCoffeeDialog onClose={() => setShowCoffee(false)} />
+        </PaperDialog>
+      </Portal>
 
       <Sheet
         visible={!!gallery}
@@ -877,6 +1140,15 @@ const styles = StyleSheet.create({
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -8 },
   cardInner: { flex: 1, padding: 20, ...card },
+  // Pinned cards are visually distinct on their own, not just grouped - the
+  // grouping explains where they went, this explains which ones they are.
+  cardPinned: { borderColor: ORANGE, borderWidth: 2, backgroundColor: '#fffdf6' },
+  subHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, marginBottom: 14 },
+  subHeadText: { color: BROWN, fontSize: 17, fontWeight: '800', letterSpacing: 0.2 },
+  subHeadCount: {
+    color: BROWN, fontSize: 12, fontWeight: '800', overflow: 'hidden',
+    backgroundColor: YELLOW, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2,
+  },
   card: { padding: 8 },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 },
   cardTitle: { flex: 1, color: BROWN, fontSize: 19, fontWeight: '700', lineHeight: 25 },
@@ -914,6 +1186,29 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 6, right: 6, padding: 7, borderRadius: 8,
     backgroundColor: 'rgba(46,34,22,0.72)',
   },
+  panelPhoto: { width: '100%', height: 168, marginBottom: 16 },
+  paperDialog: { alignSelf: 'center', width: '100%', maxWidth: 620, backgroundColor: CREAM },
+  navIcon: { padding: 9, borderRadius: 999 },
+  pinRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16,
+    padding: 12, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(90,66,48,0.18)',
+  },
+  pinRowText: { color: INK, fontSize: 14, fontWeight: '600' },
+
+  recipeLoading: { alignItems: 'center', gap: 12, paddingVertical: 40 },
+  recipeScroll: { maxHeight: 460 },
+  recipeMetaRow: { flexDirection: 'row', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
+  recipeHeading: { color: BROWN, fontSize: 18, fontWeight: '800', marginTop: 18, marginBottom: 10 },
+  ingredientRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 7 },
+  bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: ORANGE, marginTop: 8 },
+  ingredientText: { flex: 1, color: INK, fontSize: 15, lineHeight: 22 },
+  stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
+  stepNum: {
+    width: 24, height: 24, borderRadius: 12, backgroundColor: YELLOW, color: BROWN,
+    fontSize: 13, fontWeight: '800', textAlign: 'center', lineHeight: 24,
+  },
+  stepText: { flex: 1, color: INK, fontSize: 15, lineHeight: 23 },
+
   galleryEmpty: { alignItems: 'center', gap: 12, paddingVertical: 34 },
   galleryEmptyText: { color: MUTED, fontSize: 15, textAlign: 'center', maxWidth: 320, lineHeight: 22 },
 

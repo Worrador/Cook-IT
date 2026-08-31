@@ -4,7 +4,10 @@
 export const BROWN = '#5A4230';      // theme.colors.primary
 export const ORANGE = '#D86A3A';     // theme.colors.secondary
 export const YELLOW = '#F2BC42';     // theme.colors.tertiary
-export const SAND = '#F0DCA0';       // theme.colors.background
+// The app's background is #F0DCA0, which reads as very saturated yellow across a
+// full desktop viewport - far more surface area than a phone screen. Desaturated
+// and lifted slightly for the web layout; same hue family, less intensity.
+export const SAND = '#EADFC6';
 export const CREAM = '#f7f0e2';      // theme.colors.surface
 export const NAVY = '#2C3E50';       // theme.colors.accent
 export const ERROR = '#d63031';      // theme.colors.error

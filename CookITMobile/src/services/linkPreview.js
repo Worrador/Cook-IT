@@ -51,7 +51,17 @@ export function getFaviconUrl(url, size = 128) {
  * image URL. Both the microlink shape ({ data: { image: { url } } }) and a flat
  * { image } shape are accepted so a self-hosted worker can stay trivial.
  */
-export async function getOgImage(url) {
+/**
+ * Fetch everything the proxy knows about a URL: og:image plus, when the page
+ * publishes schema.org/Recipe JSON-LD, its ingredients and steps.
+ *
+ * Resolves to null when no proxy is configured or the lookup fails - callers
+ * treat "no preview" as an ordinary outcome.
+ *
+ * @returns {Promise<{image: string|null, title: string|null, ingredients: string[],
+ *                    steps: string[], totalTime: string|null, servings: string|null} | null>}
+ */
+export async function getPreview(url) {
   if (!PREVIEW_PROXY_URL || !url) return null;
   if (ogCache.has(url)) return ogCache.get(url);
 
@@ -60,13 +70,39 @@ export async function getOgImage(url) {
     const response = await fetch(endpoint);
     if (!response.ok) throw new Error(`Preview lookup failed: ${response.status}`);
     const json = await response.json();
-    const image = json?.data?.image?.url || json?.image || null;
-    ogCache.set(url, image);
-    return image;
+
+    // Accept microlink's nested shape as well as the flat shape our own proxy
+    // returns, so either can be swapped in without touching callers.
+    const result = {
+      image: json?.data?.image?.url || json?.image || null,
+      title: json?.data?.title || json?.title || null,
+      ingredients: json?.ingredients || [],
+      steps: json?.steps || [],
+      totalTime: json?.totalTime || null,
+      servings: json?.servings || null,
+    };
+    ogCache.set(url, result);
+    return result;
   } catch (error) {
     // Cached as null so a failing URL isn't retried on every render.
     ogCache.set(url, null);
     console.warn('Link preview unavailable for', url, error?.message || error);
     return null;
   }
+}
+
+export async function getOgImage(url) {
+  const preview = await getPreview(url);
+  return preview?.image || null;
+}
+
+// "PT1H30M" -> "1 h 30 min". Returns null for anything unparseable so callers
+// can just omit the field.
+export function formatDuration(iso) {
+  if (!iso || typeof iso !== 'string') return null;
+  const match = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?$/i);
+  if (!match) return null;
+  const [, hours, minutes] = match;
+  if (!hours && !minutes) return null;
+  return [hours ? `${hours} h` : null, minutes ? `${minutes} min` : null].filter(Boolean).join(' ');
 }
