@@ -190,8 +190,16 @@ function idbRequest(store, method, ...args) {
 
 async function idbRun(mode, fn) {
   const db = await idbOpen();
-  const store = db.transaction(IDB_STORE, mode).objectStore(IDB_STORE);
-  return fn(store);
+  try {
+    const store = db.transaction(IDB_STORE, mode).objectStore(IDB_STORE);
+    return await fn(store);
+  } finally {
+    // Every call opens its own connection (see the note above), so every call
+    // must close it. Leaving them open leaks a connection per operation and,
+    // worse, open connections block any future IDB_VERSION upgrade - the
+    // database would silently refuse to migrate.
+    db.close();
+  }
 }
 
 async function idbEnsureDirectory(path) {

@@ -42,6 +42,42 @@ function extractMeta(html, property) {
   return null;
 }
 
+// schema.org says recipeInstructions/recipeIngredient are plain text, but plenty
+// of sites embed HTML in them anyway ("<p>Preheat the oven...</p>") and some pack
+// several paragraphs into a single step. Left alone that markup renders literally
+// in the app, so tags are stripped, entities decoded, and block boundaries turned
+// into step separators.
+function decodeEntities(text) {
+  return text
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;|&rsquo;|&#0?39;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    // Ampersand last: doing it first would turn "&amp;lt;" into a real "<".
+    .replace(/&amp;/gi, '&');
+}
+
+// Block-level closers become newlines first so paragraph boundaries survive as
+// step breaks; everything else is dropped.
+function stripHtml(value) {
+  return decodeEntities(
+    String(value ?? '')
+      .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+      .replace(/<\/\s*(p|div|li|ol|ul|h[1-6])\s*>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+  )
+    .replace(/[ \t ]+/g, ' ')
+    .replace(/\n\s*\n+/g, '\n')
+    .trim();
+}
+
+// One instruction entry can contain several paragraphs; each becomes its own step.
+function toSteps(value) {
+  return stripHtml(value).split('\n').map(s => s.trim()).filter(Boolean);
+}
+
 // Most recipe sites publish schema.org/Recipe as JSON-LD in a <script> tag -
 // it's what powers Google's recipe cards, so there's strong incentive to include
 // it. That makes ingredients and steps extractable from an arbitrary recipe URL
@@ -65,7 +101,9 @@ function extractRecipeLd(html) {
       if (!types.includes('Recipe')) continue;
 
       return {
-        ingredients: (node.recipeIngredient || node.ingredients || []).filter(Boolean),
+        ingredients: (node.recipeIngredient || node.ingredients || [])
+          .map(stripHtml)
+          .filter(Boolean),
         steps: normaliseInstructions(node.recipeInstructions),
         totalTime: node.totalTime || null,
         servings: Array.isArray(node.recipeYield) ? node.recipeYield[0] : node.recipeYield || null,
@@ -80,22 +118,20 @@ function extractRecipeLd(html) {
 // objects wrapping nested steps. Flatten all of them to an array of strings.
 function normaliseInstructions(instructions) {
   if (!instructions) return [];
-  if (typeof instructions === 'string') {
-    return instructions.split(/\r?\n+/).map(s => s.trim()).filter(Boolean);
-  }
+  if (typeof instructions === 'string') return toSteps(instructions);
   if (!Array.isArray(instructions)) return [];
 
   const steps = [];
   for (const entry of instructions) {
     if (typeof entry === 'string') {
-      steps.push(entry.trim());
+      steps.push(...toSteps(entry));
     } else if (entry?.['@type'] === 'HowToSection' && Array.isArray(entry.itemListElement)) {
       for (const child of entry.itemListElement) {
         const text = typeof child === 'string' ? child : child?.text;
-        if (text) steps.push(String(text).trim());
+        if (text) steps.push(...toSteps(text));
       }
     } else if (entry?.text) {
-      steps.push(String(entry.text).trim());
+      steps.push(...toSteps(entry.text));
     }
   }
   return steps.filter(Boolean);

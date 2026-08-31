@@ -131,7 +131,13 @@ function installFakeIndexedDB() {
   const db = {
     objectStoreNames: { contains: (name) => stores.has(name) },
     createObjectStore: (name) => { stores.set(name, new Map()); },
-    transaction: (name) => ({ objectStore: () => makeStore(name) })
+    transaction: (name) => ({ objectStore: () => makeStore(name) }),
+    // Part of the real IDBDatabase API. The fake originally omitted it, which
+    // made these tests pass against code that leaked a connection per call -
+    // the fake was more forgiving than a browser. Counting closes also lets the
+    // leak itself be asserted below.
+    close: () => { db.closeCount += 1; },
+    closeCount: 0,
   };
 
   global.indexedDB = {

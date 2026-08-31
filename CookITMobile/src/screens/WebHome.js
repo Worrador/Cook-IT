@@ -41,35 +41,13 @@ import VoteSession from './VoteSession';
 import CookCalendar from './CookCalendar';
 import { pickWeighted } from '../services/suggestion';
 import { scaleIngredient, parseServings } from '../services/ingredientScaling';
+import {
+  getShoppingList, addRecipeToList, toggleItem,
+  removeItem as removeShopItem, clearChecked, groupByRecipe,
+} from '../services/shoppingList';
 import { BROWN, ORANGE, YELLOW, SAND, CREAM, NAVY, ERROR, PAGE_BG, INK, MUTED } from '../theme/webPalette';
 
 const CONTENT_MAX = 1180;
-
-// --- temporary diagnostic -------------------------------------------------
-// Several modules in the sync chain (excelService.initialize, syncService's
-// lazy-loading Proxy, googleDriveService.initialize) catch their own errors and
-// report only a boolean or a generic message, logging the real cause to the
-// console. That makes a failure impossible to diagnose from the UI alone.
-//
-// This tees console.error into a small ring buffer so the most recent underlying
-// error can be shown in the banner alongside the generic message. Remove once
-// the web sync path is confirmed working - it is a debugging aid, not a feature.
-const errorLog = [];
-if (typeof console !== 'undefined' && !console.__cookitTee) {
-  const original = console.error;
-  console.error = (...args) => {
-    try {
-      errorLog.push(args.map(a => (a instanceof Error ? a.message : String(a))).join(' '));
-      if (errorLog.length > 10) errorLog.shift();
-    } catch (_e) { /* never let logging break the app */ }
-    original.apply(console, args);
-  };
-  console.__cookitTee = true;
-}
-
-function lastConsoleError() {
-  return errorLog.length ? errorLog[errorLog.length - 1] : '';
-}
 
 // Human phrasing for how stale a recipe is, so the suggestion can explain itself
 // rather than looking arbitrary.
@@ -230,6 +208,8 @@ export default function WebHome() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [draft, setDraft] = useState({ name: '', url: '', comment: '' });
+  const [draftPreview, setDraftPreview] = useState(null);
+  const [draftBusy, setDraftBusy] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [editing, setEditing] = useState(null);
   const [editText, setEditText] = useState('');
@@ -246,6 +226,8 @@ export default function WebHome() {
   const [showCoffee, setShowCoffee] = useState(false);
   const [voteOpen, setVoteOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [shopOpen, setShopOpen] = useState(false);
+  const [shopItems, setShopItems] = useState([]);
 
   const refresh = useCallback(async () => {
     const [list, pins, counts, dates] = await Promise.all([
@@ -269,6 +251,7 @@ export default function WebHome() {
       // Warm the Picker scripts now so the click handler doesn't await a network
       // fetch, which would cost the user-activation needed to open its window.
       preloadPicker().catch(() => {});
+      setShopItems(await getShoppingList());
       setLoading(false);
     })();
   }, [refresh]);
@@ -347,6 +330,43 @@ export default function WebHome() {
     await setCookedStatus(recipe.name, true);
     setCookConfirm(null);
     await refresh();
+  };
+
+  // Paste a link, get the name filled in. The preview proxy already fetches the
+  // page for the og:image, and its title comes back in the same response - so
+  // this costs one request that was going to happen anyway and removes the most
+  // tedious part of adding a recipe.
+  //
+  // Only fills a field the user hasn't typed into: overwriting a name someone
+  // deliberately entered would be worse than not helping at all.
+  const handleLookup = async () => {
+    const url = draft.url.trim();
+    if (!url) return;
+
+    setDraftBusy(true);
+    try {
+      const preview = await getPreview(url);
+      if (preview?.title) {
+        setDraft(prev => (prev.name.trim() ? prev : { ...prev, name: preview.title }));
+      }
+      setDraftPreview(preview);
+    } catch (_error) {
+      // A failed lookup just means no autofill; the user types it themselves.
+      setDraftPreview(null);
+    } finally {
+      setDraftBusy(false);
+    }
+  };
+
+  // Ingredients are added at the serving count currently shown, not the
+  // recipe's original - if you scaled it for six people, the list should be for
+  // six people.
+  const handleAddToList = async () => {
+    const ingredients = (recipeData.data?.ingredients || [])
+      .map(line => scaleIngredient(line, scaleFactor));
+    setShopItems(await addRecipeToList(recipeView.name, ingredients));
+    setRecipeView(null);
+    setShopOpen(true);
   };
 
   const handleAdd = async () => {
@@ -438,7 +458,7 @@ export default function WebHome() {
         setDriveState({
           connected: googleDriveService.isAuthenticated(),
           busy: false,
-          message: `Excel service failed to initialize. ${lastConsoleError() || ''}`.trim(),
+          message: 'Excel service failed to initialize — see the browser console for details.',
         });
         return;
       }
@@ -453,13 +473,10 @@ export default function WebHome() {
       await refresh();
 
       if (result && result.success === false) {
-        const underlying = lastConsoleError();
         setDriveState({
           connected: googleDriveService.isAuthenticated(),
           busy: false,
-          message: underlying
-            ? `${result.message || 'Sync failed'} — ${underlying}`
-            : (result.message || 'Sync failed'),
+          message: result.message || 'Sync failed',
         });
         return;
       }
@@ -523,7 +540,7 @@ export default function WebHome() {
         setDriveState({
           connected: googleDriveService.isAuthenticated(),
           busy: false,
-          message: `${result.message || 'Sync failed'} — ${lastConsoleError()}`.trim(),
+          message: result.message || 'Sync failed',
         });
         return;
       }
@@ -566,6 +583,10 @@ export default function WebHome() {
                 are app-level utilities, the chip is account state, and mixing
                 them at equal weight made the bar read as a row of loose icons. */}
             <View style={styles.navGroup}>
+              <Hoverable onPress={() => setShopOpen(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
+                <MaterialCommunityIcons name="cart-outline" size={20} color={CREAM} />
+                {shopItems.some(i => !i.checked) ? <View style={styles.navDot} /> : null}
+              </Hoverable>
               <Hoverable onPress={() => setCalendarOpen(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
                 <MaterialCommunityIcons name="calendar-month-outline" size={20} color={CREAM} />
               </Hoverable>
@@ -775,10 +796,13 @@ export default function WebHome() {
                         onPress={() => setGallery(recipe)}
                       />
                     ) : recipe.url ? (
+                      // Opens the parsed recipe rather than navigating away: the
+                      // whole point of parsing is that you can read it here.
+                      // "Open site" inside that view still goes to the source.
                       <LinkPreview
                         url={recipe.url}
                         style={styles.cardPhoto}
-                        onPress={() => openUrl(recipe.url)}
+                        onPress={() => openRecipe(recipe)}
                       />
                     ) : null}
                     <View style={styles.cardTop}>
@@ -879,8 +903,40 @@ export default function WebHome() {
           </>
         }
       >
-        <Field label="Name" value={draft.name} onChangeText={v => setDraft({ ...draft, name: v })} placeholder="Carbonara" autoFocus />
-        <Field label="Link" value={draft.url} onChangeText={v => setDraft({ ...draft, url: v })} placeholder="https://…" />
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Link</Text>
+          <View style={styles.lookupRow}>
+            <TextInput
+              value={draft.url}
+              onChangeText={v => setDraft({ ...draft, url: v })}
+              onBlur={handleLookup}
+              onSubmitEditing={handleLookup}
+              placeholder="https://…"
+              placeholderTextColor={MUTED}
+              style={[styles.input, { flex: 1 }]}
+              autoFocus
+            />
+            <Button
+              label={draftBusy ? '…' : 'Fetch'}
+              icon="download-outline"
+              kind="secondary"
+              onPress={handleLookup}
+              disabled={!draft.url.trim() || draftBusy}
+            />
+          </View>
+          {draftPreview?.ingredients?.length ? (
+            <Text style={styles.lookupHint}>
+              Found “{draftPreview.title}” — {draftPreview.ingredients.length} ingredients,
+              {' '}{draftPreview.steps.length} steps.
+            </Text>
+          ) : null}
+        </View>
+
+        {draftPreview?.image ? (
+          <Image source={{ uri: draftPreview.image }} style={styles.draftPreview} resizeMode="cover" />
+        ) : null}
+
+        <Field label="Name" value={draft.name} onChangeText={v => setDraft({ ...draft, name: v })} placeholder="Carbonara" />
         <Field label="Note" value={draft.comment} onChangeText={v => setDraft({ ...draft, comment: v })} placeholder="Needs guanciale" multiline />
       </Sheet>
 
@@ -899,6 +955,66 @@ export default function WebHome() {
       </Sheet>
 
       <CookCalendar visible={calendarOpen} onClose={() => setCalendarOpen(false)} />
+
+      <Sheet
+        visible={shopOpen}
+        onClose={() => setShopOpen(false)}
+        title="Shopping list"
+        width={560}
+        footer={
+          <>
+            <Button
+              label="Clear ticked"
+              kind="ghost"
+              onPress={async () => setShopItems(await clearChecked())}
+              disabled={!shopItems.some(i => i.checked)}
+            />
+            <Button label="Done" icon="check" onPress={() => setShopOpen(false)} />
+          </>
+        }
+      >
+        {shopItems.length === 0 ? (
+          <View style={styles.galleryEmpty}>
+            <MaterialCommunityIcons name="cart-outline" size={40} color={MUTED} />
+            <Text style={styles.galleryEmptyText}>
+              Nothing on the list. Open a recipe and use “Add to list” — the amounts
+              follow whatever serving count you set.
+            </Text>
+          </View>
+        ) : (
+          <ScrollView style={styles.shopScroll}>
+            {groupByRecipe(shopItems).map(group => (
+              <View key={group.recipe} style={styles.shopGroup}>
+                <Text style={styles.shopGroupTitle}>{group.recipe}</Text>
+                {group.items.map(item => (
+                  <Hoverable
+                    key={item.id}
+                    onPress={async () => setShopItems(await toggleItem(item.id))}
+                    style={styles.shopRow}
+                    hoverStyle={{ backgroundColor: 'rgba(90,66,48,0.06)' }}
+                  >
+                    <MaterialCommunityIcons
+                      name={item.checked ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                      size={20}
+                      color={item.checked ? ORANGE : MUTED}
+                    />
+                    <Text style={[styles.shopText, item.checked && styles.shopTextDone]}>
+                      {item.text}
+                    </Text>
+                    <Hoverable
+                      onPress={async () => setShopItems(await removeShopItem(item.id))}
+                      style={styles.cardIcon}
+                      hoverStyle={styles.cardIconHover}
+                    >
+                      <MaterialCommunityIcons name="close" size={15} color={MUTED} />
+                    </Hoverable>
+                  </Hoverable>
+                ))}
+              </View>
+            ))}
+          </ScrollView>
+        )}
+      </Sheet>
 
       <VoteSession
         visible={voteOpen}
@@ -950,6 +1066,14 @@ export default function WebHome() {
         footer={
           <>
             <Button label="Close" kind="ghost" onPress={() => setRecipeView(null)} />
+            {recipeData.data?.ingredients?.length ? (
+              <Button
+                label="Add to list"
+                icon="cart-plus"
+                kind="secondary"
+                onPress={handleAddToList}
+              />
+            ) : null}
             <Button label="Open site" icon="open-in-new" kind="secondary" onPress={() => openUrl(recipeView?.url)} />
             <Button label="Cook it" icon="silverware-fork-knife" onPress={() => { setRecipeView(null); handleCook(recipeView); }} />
           </>
@@ -962,6 +1086,14 @@ export default function WebHome() {
           </View>
         ) : recipeData.data?.ingredients?.length || recipeData.data?.steps?.length ? (
           <ScrollView style={styles.recipeScroll}>
+            {/* The user's own photo wins over the site's og:image - if they
+                bothered to take one, it's the more useful picture. */}
+            {recipeView?.images?.length ? (
+              <Photo imageRef={recipeView.images[0]} style={styles.recipeHero} />
+            ) : recipeData.data?.image ? (
+              <Image source={{ uri: recipeData.data.image }} style={styles.recipeHero} resizeMode="cover" />
+            ) : null}
+
             <View style={styles.recipeMetaRow}>
               {formatDuration(recipeData.data.totalTime) ? (
                 <View style={styles.badge}>
@@ -1264,6 +1396,16 @@ const styles = StyleSheet.create({
   navIcon: { padding: 9, borderRadius: 999 },
   navIconHover: { backgroundColor: 'rgba(247,240,226,0.14)' },
   navGroup: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  navDot: {
+    position: 'absolute', top: 7, right: 7, width: 8, height: 8,
+    borderRadius: 4, backgroundColor: ORANGE,
+  },
+  shopScroll: { maxHeight: 420 },
+  shopGroup: { marginBottom: 18 },
+  shopGroupTitle: { color: BROWN, fontSize: 15, fontWeight: '800', marginBottom: 6 },
+  shopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, paddingHorizontal: 6, borderRadius: 8 },
+  shopText: { flex: 1, color: INK, fontSize: 15, lineHeight: 21 },
+  shopTextDone: { color: MUTED, textDecorationLine: 'line-through' },
   navDivider: { width: 1, height: 22, backgroundColor: 'rgba(247,240,226,0.20)', marginHorizontal: 6 },
   pinRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16,
@@ -1273,6 +1415,7 @@ const styles = StyleSheet.create({
 
   recipeLoading: { alignItems: 'center', gap: 12, paddingVertical: 40 },
   recipeScroll: { maxHeight: 460 },
+  recipeHero: { width: '100%', height: 190, borderRadius: 12, marginBottom: 14, backgroundColor: SAND },
   recipeMetaRow: { flexDirection: 'row', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' },
   servingStepper: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -1341,4 +1484,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fffdf6', outlineStyle: 'none',
   },
   inputMultiline: { minHeight: 84, textAlignVertical: 'top' },
+  lookupRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  lookupHint: { color: MUTED, fontSize: 13, marginTop: 8, lineHeight: 19 },
+  draftPreview: { width: '100%', height: 140, borderRadius: 10, marginBottom: 14 },
 });

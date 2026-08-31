@@ -1,8 +1,13 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Dimensions, Platform } from 'react-native';
 import { Surface, useTheme, Dialog } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Button } from './Button';
+
+// The web build has its own screen (src/screens/WebHome.js) with different
+// button labels and a few features the phone doesn't have, so the help text
+// branches rather than describing an app the reader isn't looking at.
+const IS_WEB = Platform.OS === 'web';
 
 const HelpDialog = ({ onClose, isFirstTime = false }) => {
   const theme = useTheme();
@@ -57,7 +62,7 @@ const HelpDialog = ({ onClose, isFirstTime = false }) => {
             title="Adding Recipes"
             content={
               <View>
-                <ListItem icon="➕" text="Click 'Add Recipe'" theme={theme} />
+                <ListItem icon="➕" text={IS_WEB ? "Click 'Add recipe', paste a link and hit Fetch - the name and picture fill themselves in" : "Click 'Add Recipe'"} theme={theme} />
                 <ListItem icon="📝" text="Enter a name" theme={theme} />
                 <ListItem icon="🌐" text="Add a web URL to the recipe or just a path to a local file (e.g: C:\Documents\Recipe.pdf)" theme={theme} />
                 <ListItem icon="💬" text="Add optional comments or notes (e.g: Use more water)" theme={theme} />
@@ -69,7 +74,9 @@ const HelpDialog = ({ onClose, isFirstTime = false }) => {
           <Section
             icon="🎲"
             title="Choosing What to Cook"
-            content="Click 'Choose Recipe' and Cook-IT suggests something based on how recently you've made each dish. Recipes you haven't cooked in a while are more likely to be picked."
+            content={IS_WEB
+              ? "Click 'Choose a recipe' and Cook-IT suggests something based on how recently you've made each dish - recipes you haven't cooked in a while are more likely to come up. Or hit 'Vote' to let the whole household pick together."
+              : "Click 'Choose Recipe' and Cook-IT suggests something based on how recently you've made each dish. Recipes you haven't cooked in a while are more likely to be picked."}
             theme={theme}
           />
 
@@ -84,9 +91,9 @@ const HelpDialog = ({ onClose, isFirstTime = false }) => {
                 <ListItem icon="🗑️" text="Delete recipes you no longer want" theme={theme} />
                 <ListItem icon="✏️" text="Edit comments anytime" theme={theme} />
                 <ListItem icon="➔" text="Navigate to the next recipe suggestion by clicking 'Next'" theme={theme} />
-                <ListItem icon="👀" text="View recipe details by clicking 'I will Cook IT!'. The app will remember your choice" theme={theme} />
+                <ListItem icon="👀" text={IS_WEB ? "Open the recipe itself with the notes icon - ingredients and method are pulled from the site, and you can rescale them for more or fewer people" : "View recipe details by clicking 'I will Cook IT!'. The app will remember your choice"} theme={theme} />
                 <ListItem icon="↺" text="You then will have the option to undo your choice" theme={theme} />
-                <ListItem icon="📌" text="Or save the recipe to the homescreen" theme={theme} />
+                <ListItem icon="📌" text={IS_WEB ? "Pin a recipe to keep it at the top of your library" : "Or save the recipe to the homescreen"} theme={theme} />
               </View>
             }
             theme={theme}
@@ -95,7 +102,9 @@ const HelpDialog = ({ onClose, isFirstTime = false }) => {
           <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
             <MaterialCommunityIcons name="lightbulb" size={32} color={theme.colors.primary} style={styles.infoIcon} />
             <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
-              Tip: By first clicking "I will Cook IT!" you get the chance to create your shopping list. And then by saving the recipe to the homescreen, you can quickly find the recipe again for the actual cooking.
+              {IS_WEB
+                ? "Tip: open a recipe, set how many people you're feeding, then 'Add to list' - the shopping list is scaled to match. The calendar icon shows what you've cooked and when."
+                : 'Tip: By first clicking "I will Cook IT!" you get the chance to create your shopping list. And then by saving the recipe to the homescreen, you can quickly find the recipe again for the actual cooking.'}
             </Text>
           </View>
 
