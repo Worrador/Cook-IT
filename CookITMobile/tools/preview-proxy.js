@@ -19,6 +19,145 @@
 // fetch any URL it is handed - do not expose it to the internet as-is.
 const http = require('http');
 
+// The Anthropic SDK is loaded lazily and optionally: the preview proxy must keep
+// working for people who never set up an API key. A missing key is a normal
+// configuration state, not an error.
+let Anthropic;
+try {
+  Anthropic = require('@anthropic-ai/sdk');
+} catch (_error) {
+  Anthropic = null;
+}
+
+// The API key lives here, server-side, and never reaches the browser. That is
+// the whole reason the advice endpoint is on the proxy rather than in the app:
+// a key shipped in client JavaScript is a published key.
+const anthropic = (Anthropic && process.env.ANTHROPIC_API_KEY)
+  ? new (Anthropic.default || Anthropic)()
+  : null;
+
+const ADVISOR_SYSTEM = `You are a friendly, practical cook helping someone decide what to make next from their own recipe book.
+
+You will be given their recipes with, for each one, how long ago they last cooked it and how many times they have made it.
+
+Guidance:
+- Recommend from the list you are given. Never invent recipes they do not have.
+- Favour things they have neglected, but say why in terms a person would find useful ("you have not made this since the spring") rather than quoting statistics back at them.
+- Notice patterns worth mentioning: a rut, a favourite that has slipped, something never tried.
+- Be brief and warm. Two or three sentences of overall advice, then your picks.
+- Do not moralise about diet, health, or variety unless they ask.
+
+Reply with JSON only, no markdown fence, in exactly this shape:
+{"advice": "<2-3 sentences>", "picks": [{"name": "<exact recipe name>", "reason": "<one short sentence>"}]}
+
+Give between one and three picks.`;
+
+function summariseForModel(recipes, lastCooked, cookCounts) {
+  return recipes.map(recipe => {
+    const last = lastCooked?.[recipe.name];
+    const days = last
+      ? Math.floor((Date.now() - new Date(last).getTime()) / 86400000)
+      : null;
+    return {
+      name: recipe.name,
+      note: recipe.comment || undefined,
+      lastCookedDaysAgo: days,
+      timesCooked: cookCounts?.[recipe.name] || 0,
+    };
+  });
+}
+
+async function getAdvice({ recipes, lastCooked, cookCounts, mood }) {
+  if (!anthropic) {
+    const reason = !Anthropic
+      ? 'The @anthropic-ai/sdk package is not installed.'
+      : 'ANTHROPIC_API_KEY is not set on the proxy.';
+    const error = new Error(`Cook-IT's advisor is not configured. ${reason}`);
+    error.code = 'NOT_CONFIGURED';
+    throw error;
+  }
+
+  const summary = summariseForModel(recipes, lastCooked, cookCounts);
+  const userText = [
+    mood ? `What they said they feel like: ${mood}` : null,
+    `Their recipe book (${summary.length} recipes):`,
+    JSON.stringify(summary),
+  ].filter(Boolean).join('\n\n');
+
+  const response = await anthropic.messages.create({
+    // Haiku 4.5 ($1/$5 per MTok) rather than Opus 5 ($5/$25), chosen because the
+    // user asked for the cheapest workable option. This task is small and
+    // well-specified - pick from a supplied list and explain briefly - which is
+    // exactly the shape a small model handles well.
+    //
+    // No `thinking` and no `output_config.effort` here, for two reasons: this
+    // task doesn't need deliberation, and Haiku 4.5 rejects `effort` outright
+    // (it predates the adaptive-thinking/effort API). Thinking tokens are billed
+    // as output, so omitting them is most of the saving.
+    model: 'claude-haiku-4-5',
+    // Deliberately small: the reply is 2-3 sentences plus up to three picks.
+    // Enough headroom that it never truncates mid-JSON.
+    max_tokens: 1024,
+    system: ADVISOR_SYSTEM,
+    messages: [{ role: 'user', content: userText }],
+  });
+
+  if (response.stop_reason === 'refusal') {
+    const error = new Error('The advisor declined to answer that.');
+    error.code = 'REFUSED';
+    throw error;
+  }
+
+  const text = response.content
+    .filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join('')
+    .trim();
+
+  // Asked for bare JSON, but tolerate a stray markdown fence rather than failing
+  // the whole request over formatting.
+  const jsonText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  // Reported back so the cost of the feature is visible rather than guessed at.
+  // Haiku 4.5: $1 per MTok input, $5 per MTok output.
+  const usage = response.usage || {};
+  const cost =
+    ((usage.input_tokens || 0) / 1e6) * 1 +
+    ((usage.output_tokens || 0) / 1e6) * 5;
+
+  try {
+    const parsed = JSON.parse(jsonText);
+    return {
+      advice: parsed.advice || '',
+      picks: Array.isArray(parsed.picks) ? parsed.picks : [],
+      usage: { ...usage, estimatedCostUsd: cost },
+    };
+  } catch (_error) {
+    // Prose is still useful even if the JSON contract slipped.
+    return { advice: text, picks: [], usage: { ...usage, estimatedCostUsd: cost } };
+  }
+}
+
+function readJsonBody(req, limitBytes = 512 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > limitBytes) {
+        reject(new Error('Request body too large'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(body || '{}'));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
 // 8787 is a common default for other local dev tools, so this uses a less
 // contested port. Override with PREVIEW_PROXY_PORT if it clashes.
 const PORT = process.env.PREVIEW_PROXY_PORT || 8791;
@@ -42,99 +181,13 @@ function extractMeta(html, property) {
   return null;
 }
 
-// schema.org says recipeInstructions/recipeIngredient are plain text, but plenty
-// of sites embed HTML in them anyway ("<p>Preheat the oven...</p>") and some pack
-// several paragraphs into a single step. Left alone that markup renders literally
-// in the app, so tags are stripped, entities decoded, and block boundaries turned
-// into step separators.
-function decodeEntities(text) {
-  return text
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&quot;/gi, '"')
-    .replace(/&apos;|&rsquo;|&#0?39;/gi, "'")
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    // Ampersand last: doing it first would turn "&amp;lt;" into a real "<".
-    .replace(/&amp;/gi, '&');
-}
-
-// Block-level closers become newlines first so paragraph boundaries survive as
-// step breaks; everything else is dropped.
-function stripHtml(value) {
-  return decodeEntities(
-    String(value ?? '')
-      .replace(/<\s*br\s*\/?\s*>/gi, '\n')
-      .replace(/<\/\s*(p|div|li|ol|ul|h[1-6])\s*>/gi, '\n')
-      .replace(/<[^>]*>/g, '')
-  )
-    .replace(/[ \t ]+/g, ' ')
-    .replace(/\n\s*\n+/g, '\n')
-    .trim();
-}
-
-// One instruction entry can contain several paragraphs; each becomes its own step.
-function toSteps(value) {
-  return stripHtml(value).split('\n').map(s => s.trim()).filter(Boolean);
-}
-
-// Most recipe sites publish schema.org/Recipe as JSON-LD in a <script> tag -
-// it's what powers Google's recipe cards, so there's strong incentive to include
-// it. That makes ingredients and steps extractable from an arbitrary recipe URL
-// without site-specific scraping. Sites that omit it simply yield no recipe, and
-// the app falls back to showing just the link.
-function extractRecipeLd(html) {
-  const blocks = [...html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)];
-
-  for (const block of blocks) {
-    let parsed;
-    try {
-      parsed = JSON.parse(block[1].trim());
-    } catch (_error) {
-      continue; // Malformed JSON-LD is common; skip rather than fail the request.
-    }
-
-    // A page may ship a bare object, an array, or an @graph wrapper.
-    const nodes = Array.isArray(parsed) ? parsed : (parsed['@graph'] || [parsed]);
-    for (const node of nodes) {
-      const types = [].concat(node?.['@type'] || []);
-      if (!types.includes('Recipe')) continue;
-
-      return {
-        ingredients: (node.recipeIngredient || node.ingredients || [])
-          .map(stripHtml)
-          .filter(Boolean),
-        steps: normaliseInstructions(node.recipeInstructions),
-        totalTime: node.totalTime || null,
-        servings: Array.isArray(node.recipeYield) ? node.recipeYield[0] : node.recipeYield || null,
-      };
-    }
-  }
-  return null;
-}
-
-// recipeInstructions is the least consistent field in the schema: sites use a
-// plain string, an array of strings, an array of HowToStep objects, or HowToSection
-// objects wrapping nested steps. Flatten all of them to an array of strings.
-function normaliseInstructions(instructions) {
-  if (!instructions) return [];
-  if (typeof instructions === 'string') return toSteps(instructions);
-  if (!Array.isArray(instructions)) return [];
-
-  const steps = [];
-  for (const entry of instructions) {
-    if (typeof entry === 'string') {
-      steps.push(...toSteps(entry));
-    } else if (entry?.['@type'] === 'HowToSection' && Array.isArray(entry.itemListElement)) {
-      for (const child of entry.itemListElement) {
-        const text = typeof child === 'string' ? child : child?.text;
-        if (text) steps.push(...toSteps(text));
-      }
-    } else if (entry?.text) {
-      steps.push(...toSteps(entry.text));
-    }
-  }
-  return steps.filter(Boolean);
+// Parsing lives in src/services/recipeParser.js and is shared with the app, so
+// there is one implementation rather than a copy here and another in the worker.
+// Loaded via dynamic import because that module is ESM and this file is CommonJS.
+let parserPromise = null;
+function getParser() {
+  if (!parserPromise) parserPromise = import('../src/services/recipeParser.js');
+  return parserPromise;
 }
 
 async function lookup(target) {
@@ -149,15 +202,8 @@ async function lookup(target) {
   // og:image lives in <head>; no need to parse megabytes of body markup.
   const html = (await response.text()).slice(0, 300000);
 
-  const recipe = extractRecipeLd(html);
-  const result = {
-    image: extractMeta(html, 'og:image') || extractMeta(html, 'twitter:image'),
-    title: extractMeta(html, 'og:title'),
-    ingredients: recipe?.ingredients || [],
-    steps: recipe?.steps || [],
-    totalTime: recipe?.totalTime || null,
-    servings: recipe?.servings || null,
-  };
+  const { parseRecipeHtml } = await getParser();
+  const result = parseRecipeHtml(html);
   cache.set(target, result);
   return result;
 }
@@ -175,7 +221,40 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  const target = new URL(req.url, `http://localhost:${PORT}`).searchParams.get('url');
+  const requestUrl = new URL(req.url, `http://localhost:${PORT}`);
+
+  // Tells the client whether the advisor is usable, so the UI can hide the
+  // feature rather than offering a button that always fails.
+  if (requestUrl.pathname === '/advice/status') {
+    res.writeHead(200, cors);
+    res.end(JSON.stringify({ configured: Boolean(anthropic) }));
+    return;
+  }
+
+  if (requestUrl.pathname === '/advice' && req.method === 'POST') {
+    let payload;
+    try {
+      payload = await readJsonBody(req);
+    } catch (error) {
+      res.writeHead(400, cors);
+      res.end(JSON.stringify({ error: error.message }));
+      return;
+    }
+
+    try {
+      const result = await getAdvice(payload);
+      res.writeHead(200, cors);
+      res.end(JSON.stringify(result));
+    } catch (error) {
+      // 503 for "not configured" so the client can distinguish setup from failure.
+      const status = error.code === 'NOT_CONFIGURED' ? 503 : 502;
+      res.writeHead(status, cors);
+      res.end(JSON.stringify({ error: error.message, code: error.code || null }));
+    }
+    return;
+  }
+
+  const target = requestUrl.searchParams.get('url');
   if (!target || !/^https?:\/\//i.test(target)) {
     res.writeHead(400, cors);
     res.end(JSON.stringify({ error: 'A http(s) ?url= parameter is required' }));

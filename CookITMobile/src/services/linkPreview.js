@@ -20,7 +20,13 @@
 //      user opens. That is a real privacy decision and should be opted into, not
 //      switched on silently. Hosted free tiers are also heavily rate-limited
 //      (microlink is ~50 requests/day), so tier 1 remains the dependable path.
+import { Platform } from 'react-native';
 import { PREVIEW_PROXY_URL } from '../config/webConfig';
+import { parseRecipeHtml, BROWSER_UA } from './recipeParser';
+
+// On native there is no CORS, so the app fetches and parses the page itself and
+// no server is involved. The proxy exists only for the browser build.
+const IS_WEB = Platform.OS === 'web';
 
 const ogCache = new Map();
 
@@ -62,8 +68,28 @@ export function getFaviconUrl(url, size = 128) {
  *                    steps: string[], totalTime: string|null, servings: string|null} | null>}
  */
 export async function getPreview(url) {
-  if (!PREVIEW_PROXY_URL || !url) return null;
+  if (!url) return null;
   if (ogCache.has(url)) return ogCache.get(url);
+
+  // --- native: fetch and parse in-app, no server ---------------------------
+  if (!IS_WEB) {
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html,application/xhtml+xml' },
+      });
+      if (!response.ok) throw new Error(`Recipe page returned ${response.status}`);
+      const result = parseRecipeHtml(await response.text());
+      ogCache.set(url, result);
+      return result;
+    } catch (error) {
+      ogCache.set(url, null);
+      console.warn('Could not read recipe page', url, error?.message || error);
+      return null;
+    }
+  }
+
+  // --- web: must go through the proxy, because CORS blocks the direct fetch --
+  if (!PREVIEW_PROXY_URL) return null;
 
   try {
     const endpoint = `${PREVIEW_PROXY_URL}${PREVIEW_PROXY_URL.includes('?') ? '&' : '?'}url=${encodeURIComponent(url)}`;

@@ -13,7 +13,8 @@
 // participant votes on the same cards in the same order - otherwise tallying
 // would be comparing different shortlists.
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, ScrollView, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Modal, Pressable, ScrollView, Image, ActivityIndicator, TextInput, Platform } from 'react-native';
+import SwipeCard from '../components/SwipeCard';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { topByWeight, tallyVotes } from '../services/suggestion';
 import {
@@ -242,11 +243,12 @@ export default function VoteSession({ visible, onClose, recipes, lastCooked, onC
             <ScrollView style={styles.body}>
               <View style={styles.nameRow}>
                 <MaterialCommunityIcons name="account-outline" size={20} color={MUTED} />
-                <input
+                <TextInput
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChangeText={setName}
                   placeholder="Your name"
-                  style={inputStyle}
+                  placeholderTextColor={MUTED}
+                  style={styles.nameInput}
                 />
               </View>
 
@@ -327,7 +329,8 @@ export default function VoteSession({ visible, onClose, recipes, lastCooked, onC
                 </View>
               </View>
 
-              <View style={styles.voteCard}>
+              <SwipeCard onSwipe={swipe} disabled={busy}>
+                <View style={styles.voteCard}>
                 <VoteCardArt recipe={deck[cardIndex]} />
                 <Text style={styles.voteName} numberOfLines={2}>{deck[cardIndex].name}</Text>
                 {deck[cardIndex].comment ? (
@@ -338,7 +341,12 @@ export default function VoteSession({ visible, onClose, recipes, lastCooked, onC
                     ? `last cooked ${Math.floor((Date.now() - new Date(lastCooked[deck[cardIndex].name]).getTime()) / 86400000)} days ago`
                     : 'never cooked'}
                 </Text>
-              </View>
+                </View>
+              </SwipeCard>
+
+              {Platform.OS !== 'web' ? (
+                <Text style={styles.swipeHint}>Swipe right for yes, left for no</Text>
+              ) : null}
 
               <View style={styles.swipeRow}>
                 <Pressable onPress={() => swipe(false)} disabled={busy} style={[styles.swipeBtn, styles.swipeNo]}>
@@ -445,20 +453,6 @@ export default function VoteSession({ visible, onClose, recipes, lastCooked, onC
   );
 }
 
-// Plain DOM input: this screen is web-only, and RN's TextInput inside a Modal on
-// react-native-web is prone to losing focus mid-typing.
-const inputStyle = {
-  flex: 1,
-  border: '1px solid rgba(90,66,48,0.22)',
-  borderRadius: 8,
-  padding: '10px 12px',
-  fontSize: 15,
-  color: INK,
-  background: '#fffdf6',
-  outline: 'none',
-  fontFamily: 'inherit',
-};
-
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1, backgroundColor: 'rgba(46,34,22,0.62)',
@@ -486,6 +480,12 @@ const styles = StyleSheet.create({
   warn: { color: ERROR, fontSize: 14, marginBottom: 10, textAlign: 'center' },
 
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  nameInput: {
+    flex: 1, borderWidth: 1, borderColor: 'rgba(90,66,48,0.22)', borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: INK,
+    backgroundColor: '#fffdf6',
+  },
+  swipeHint: { color: MUTED, fontSize: 13, textAlign: 'center', marginTop: 14, fontWeight: '600' },
 
   openVote: {
     flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14,

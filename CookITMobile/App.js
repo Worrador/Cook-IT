@@ -9,6 +9,11 @@ import HelpDialog from './src/components/HelpDialog';
 // Web gets its own screen rather than the phone layout - see WebHome's header
 // comment. Both screens read and write through src/utils/storage.js, so they
 // share the same data and the same Drive backup.
+import CookCalendar from './src/screens/CookCalendar';
+import ShoppingListDialog from './src/components/ShoppingListDialog';
+import RecipeViewDialog from './src/components/RecipeViewDialog';
+import VoteSession from './src/screens/VoteSession';
+import { addRecipeToList } from './src/services/shoppingList';
 import WebShell from './src/components/WebShell';
 import WebHome from './src/screens/WebHome';
 import BuyCoffeeDialog from './src/components/BuyCoffeeDialog';
@@ -89,6 +94,12 @@ const AppContent = () => {
   const [showRecipeDetails, setShowRecipeDetails] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
+  // Both are plain React Native and store locally, so they work on the phone
+  // exactly as they do on the web screen - no platform branching needed.
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showShoppingList, setShowShoppingList] = useState(false);
+  const [showVote, setShowVote] = useState(false);
+  const [recipeView, setRecipeView] = useState(null);
   const [cookedRecipes, setCookedRecipes] = useState({});
   const [lastCookedDates, setLastCookedDates] = useState({});
   const [cookCounts, setCookCounts] = useState({});
@@ -1036,6 +1047,24 @@ const AppContent = () => {
               onPress={() => setShowPinnedOnly(!showPinnedOnly)}
             />
             <IconButton
+              icon="vote-outline"
+              size={28}
+              iconColor={theme.colors.tertiary}
+              onPress={() => setShowVote(true)}
+            />
+            <IconButton
+              icon="calendar-month-outline"
+              size={28}
+              iconColor={theme.colors.tertiary}
+              onPress={() => setShowCalendar(true)}
+            />
+            <IconButton
+              icon="cart-outline"
+              size={28}
+              iconColor={theme.colors.tertiary}
+              onPress={() => setShowShoppingList(true)}
+            />
+            <IconButton
               icon="book-open"
               size={28}
               iconColor={theme.colors.tertiary}
@@ -1316,6 +1345,29 @@ const AppContent = () => {
           onAddRecipe={handleAddRecipe}
         />
       </Portal>
+
+      <CookCalendar visible={showCalendar} onClose={() => setShowCalendar(false)} />
+
+      <VoteSession
+        visible={showVote}
+        onClose={() => setShowVote(false)}
+        recipes={recipes}
+        lastCooked={lastCookedDates}
+        onCookIt={(recipe) => { setSelectedRecipe(recipe); setShowRecipeDetails(true); }}
+      />
+
+      <RecipeViewDialog
+        visible={!!recipeView}
+        recipe={recipeView}
+        onClose={() => setRecipeView(null)}
+        onAddToList={async (ingredients) => {
+          await addRecipeToList(recipeView.name, ingredients);
+          setRecipeView(null);
+          setShowShoppingList(true);
+        }}
+        onCook={(recipe) => { setRecipeView(null); setSelectedRecipe(recipe); setShowRecipeDetails(true); }}
+      />
+      <ShoppingListDialog visible={showShoppingList} onClose={() => setShowShoppingList(false)} />
 
       <RecipeDetailsDialog
         visible={showRecipeDetails && selectedRecipe !== null}

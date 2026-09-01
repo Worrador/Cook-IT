@@ -54,7 +54,12 @@ jest.mock('../../utils/storage', () => ({
   saveRecipes: jest.fn(),
   getPinnedRecipes: jest.fn(),
   getLastCookedDates: jest.fn(),
-  setLastCookedDates: jest.fn()
+  setLastCookedDates: jest.fn(),
+  // Deterministic so assertions can match on it; the real one is random.
+  generateRecipeId: jest.fn(() => 'r_generated'),
+  getCookHistory: jest.fn(async () => []),
+  setCookHistory: jest.fn(async h => h),
+  mergeCookHistory: jest.fn(async h => h || [])
 }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -128,8 +133,8 @@ beforeEach(async () => {
   await excelService.initialize();
 });
 
-describe('prepareExcelData (Fix 1 + Fix 5: seven-column export schema)', () => {
-  test('emits all seven columns in desktop order, including Last Shown, with Images appended last', () => {
+describe('prepareExcelData (eight-column export schema)', () => {
+  test('emits all eight columns in desktop order, with Images then Id appended last', () => {
     const cookedMs = new Date(2024, 0, 15, 9, 5, 3).getTime(); // Jan 15 2024, 09:05:03 local
     const recipes = [
       { name: 'Soup', url: 'http://example.com/soup', comment: 'Tasty' },
@@ -144,8 +149,10 @@ describe('prepareExcelData (Fix 1 + Fix 5: seven-column export schema)', () => {
     // 'Images' is a mobile-only column appended LAST so it never shifts the
     // desktop-shared column indexes (see the hidden-'Pinned'-column comment
     // in createLocalExcelFile).
+    // 'Id' is appended after 'Images' for the same reason 'Images' comes after
+    // 'Pinned': mobile-only columns must never shift the desktop-shared indexes.
     expect(Object.keys(rows[0])).toEqual([
-      'Recipe Name', 'URL', 'Comment', 'Last Shown', 'Last Cooked Date', 'Pinned', 'Images'
+      'Recipe Name', 'URL', 'Comment', 'Last Shown', 'Last Cooked Date', 'Pinned', 'Images', 'Id'
     ]);
 
     const soupRow = rows.find(r => r['Recipe Name'] === 'Soup');
@@ -454,6 +461,7 @@ describe('parseExcelFile vs importFromExcel side effects (Fix 6)', () => {
     const parsed = await excelService.parseExcelFile();
     expect(parsed).toEqual({
       recipes: expect.any(Array),
+      cookHistory: expect.any(Array),
       lastCookedDates: expect.any(Object),
       pinnedRecipes: expect.any(Array)
     });

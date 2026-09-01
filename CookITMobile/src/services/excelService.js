@@ -2,6 +2,9 @@ import * as XLSX from 'xlsx';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import googleDriveService from './googleDriveService';
 import {
+  generateRecipeId,
+  getCookHistory,
+  mergeCookHistory,
   loadRecipes,
   saveRecipes,
   getPinnedRecipes,
@@ -215,6 +218,7 @@ class ExcelService {
       const recipes = await loadRecipes();
       const lastCookedDates = await getLastCookedDates();
       const pinnedRecipes = await getPinnedRecipes();
+      const cookHistory = await getCookHistory();
 
       console.log(`📊 Creating Excel with ${recipes.length} recipes`);
 
@@ -226,10 +230,10 @@ class ExcelService {
       const worksheet = XLSX.utils.json_to_sheet(excelData);
 
       // Column layout (matches desktop's default_columns order in Cook_IT.py),
-      // plus a mobile-only 'Images' column appended LAST so it doesn't shift
-      // any of the indexes below:
+      // plus mobile-only 'Images' and 'Id' columns appended LAST so they don't
+      // shift any of the indexes below:
       // 0 Recipe Name, 1 URL, 2 Comment, 3 Last Shown, 4 Last Cooked Date,
-      // 5 Pinned, 6 Images. Hide 'Pinned' (index 5) since it's an internal
+      // 5 Pinned, 6 Images, 7 Id. Hide 'Pinned' (index 5) since it's an internal
       // flag that's mirrored in the separate 'Pinned Recipes' sheet for
       // desktop. Desktop's ExcelWriter round-trips extra COLUMNS on the
       // 'Recipes' sheet untouched (it only rebuilds extra SHEETS), so
@@ -248,6 +252,24 @@ class ExcelService {
       const dedupedPinnedRecipes = [...new Set(pinnedRecipes)];
       const pinnedSheet = XLSX.utils.json_to_sheet(dedupedPinnedRecipes.map(name => ({ 'Recipe Name': name })));
       XLSX.utils.book_append_sheet(workbook, pinnedSheet, 'Pinned Recipes');
+
+      // Cook history: one row per cooking occasion, so the calendar survives a
+      // device change. This is a MOBILE/WEB-ONLY sheet - the desktop app never
+      // reads it. Desktop's ExcelWriter rebuilds extra sheets, so unlike the
+      // extra COLUMNS on the Recipes sheet this one can be dropped by a desktop
+      // save; losing it degrades the calendar rather than corrupting anything,
+      // and it is rebuilt from local data on the next upload from here.
+      //
+      // 'Approx' marks entries that were reconstructed from the single
+      // last-cooked date the app used to keep, rather than genuinely observed.
+      const historySheet = XLSX.utils.json_to_sheet(
+        (cookHistory || []).map(entry => ({
+          'Recipe Name': entry.name,
+          'Cooked At': entry.date,
+          'Approx': entry.backfilled ? 'Yes' : 'No',
+        }))
+      );
+      XLSX.utils.book_append_sheet(workbook, historySheet, 'Cook History');
 
       // Write workbook directly to a base64 string
       const excelBase64 = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
@@ -312,6 +334,17 @@ class ExcelService {
       const pinnedSheet = workbook.Sheets['Pinned Recipes'];
       const pinnedData = pinnedSheet ? XLSX.utils.sheet_to_json(pinnedSheet) : [];
 
+      // Absent for files written before this sheet existed, or by the desktop
+      // app - treated as "no remote history", never as an error.
+      const historySheet = workbook.Sheets['Cook History'];
+      const cookHistory = (historySheet ? XLSX.utils.sheet_to_json(historySheet) : [])
+        .filter(row => row['Recipe Name'] && row['Cooked At'])
+        .map(row => ({
+          name: row['Recipe Name'],
+          date: new Date(row['Cooked At']).toISOString(),
+          ...(String(row['Approx']).toLowerCase() === 'yes' ? { backfilled: true } : {}),
+        }));
+
       // Look up existing local recipes so we can preserve their timestamps.
       // The Excel file carries no timestamp columns, so there is nothing to
       // restore from the sheet - but stamping every imported recipe as
@@ -322,6 +355,11 @@ class ExcelService {
       // recipes get a fresh timestamp.
       const existingRecipes = await loadRecipes();
       const existingByName = new Map(existingRecipes.map(r => [r.name, r]));
+      // Id is the stronger match: it survives a rename, where the name lookup
+      // would treat the same recipe as a brand-new one and lose its timestamps
+      // and images. Name remains the fallback for rows written before ids
+      // existed, or by the desktop app which doesn't know about them.
+      const existingById = new Map(existingRecipes.filter(r => r.id).map(r => [r.id, r]));
 
       const recipes = [];
       const lastCookedDates = {};
@@ -329,13 +367,17 @@ class ExcelService {
 
       for (const row of recipesData) {
         if (row['Recipe Name']) {
-          const existing = existingByName.get(row['Recipe Name']);
+          const rowId = row['Id'] ? String(row['Id']).trim() : '';
+          const existing = (rowId && existingById.get(rowId)) || existingByName.get(row['Recipe Name']);
           const nowIso = new Date().toISOString();
 
           // Create recipe object. storage.js writes createdAt/lastModified
           // as ISO strings (addRecipe/updateRecipe) - stay consistent with
           // that instead of the epoch numbers this file used to write.
           const recipe = {
+            // Prefer the id from the file, then whatever the local copy already
+            // had, and only mint a new one if neither side has ever had one.
+            id: rowId || existing?.id || generateRecipeId(),
             name: row['Recipe Name'],
             url: row['URL'] || '',
             comment: row['Comment'] || '',
@@ -372,7 +414,7 @@ class ExcelService {
       const dedupedPinnedRecipes = [...new Set(pinnedRecipes)];
 
       console.log(`Parsed ${recipes.length} recipes from Excel`);
-      return { recipes, lastCookedDates, pinnedRecipes: dedupedPinnedRecipes };
+      return { recipes, lastCookedDates, pinnedRecipes: dedupedPinnedRecipes, cookHistory };
     } catch (error) {
       console.error('Error parsing Excel file:', error);
       throw error;
@@ -388,7 +430,7 @@ class ExcelService {
    */
   async importFromExcel() {
     try {
-      const { recipes, lastCookedDates, pinnedRecipes } = await this.parseExcelFile();
+      const { recipes, lastCookedDates, pinnedRecipes, cookHistory } = await this.parseExcelFile();
 
       // Save imported data (skip modification time update since this is import, not user action)
       await saveRecipes(recipes, true);
@@ -398,8 +440,14 @@ class ExcelService {
       const pinnedRecipesString = JSON.stringify(pinnedRecipes);
       await AsyncStorage.setItem('@cookit_pinned_recipes', pinnedRecipesString);
 
+      // MERGED, not overwritten. Everything else here is current-state that the
+      // remote file can legitimately replace, but cooking events are immutable
+      // facts: this device may hold occasions the remote copy never saw, and
+      // adopting the remote wholesale would delete them.
+      const mergedHistory = await mergeCookHistory(cookHistory);
+
       console.log(`Imported ${recipes.length} recipes from Excel`);
-      return { recipes, lastCookedDates, pinnedRecipes };
+      return { recipes, lastCookedDates, pinnedRecipes, cookHistory: mergedHistory };
     } catch (error) {
       console.error('Error importing from Excel:', error);
       throw error;
@@ -761,7 +809,13 @@ class ExcelService {
         'Images': (recipe.images || [])
           .map(img => img.driveFileId)
           .filter(Boolean)
-          .join(',')
+          .join(','),
+        // Stable identity, appended last for the same index-stability reason as
+        // 'Images'. Desktop round-trips unknown columns untouched, so this
+        // survives a desktop save even though desktop never reads it. Blank for
+        // a recipe that somehow has no id rather than inventing one here -
+        // storage.loadRecipes owns id assignment.
+        'Id': recipe.id || ''
       };
     });
   }

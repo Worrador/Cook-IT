@@ -224,10 +224,41 @@ export const saveRecipes = async (recipes, skipModificationTimeUpdate = false) =
   }
 };
 
+/**
+ * Stable per-recipe identity.
+ *
+ * Recipes were historically keyed by NAME everywhere - in the cooked/pinned/
+ * count/history maps, in the Excel merge, and in vote records. That makes a
+ * rename indistinguishable from "delete one recipe, add another": the old
+ * name's history silently orphans and the renamed recipe starts from zero.
+ * An immutable id fixes that.
+ *
+ * Name remains the interchange key with the desktop app for now (see
+ * excelService), so this is additive: ids are generated, persisted, and
+ * round-tripped through Excel, and the merge prefers them when both sides have
+ * one. Nothing breaks for a file that has no Id column yet.
+ */
+export const generateRecipeId = () =>
+  `r_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
 export const loadRecipes = async () => {
   try {
-    const recipes = await AsyncStorage.getItem(RECIPES_KEY);
-    return recipes ? JSON.parse(recipes) : [];
+    const raw = await AsyncStorage.getItem(RECIPES_KEY);
+    const recipes = raw ? JSON.parse(raw) : [];
+
+    // Backfill ids for anything stored before ids existed. Written back once so
+    // the id is stable from here on - generating on every read would defeat the
+    // entire purpose.
+    const missing = recipes.filter(recipe => !recipe.id);
+    if (missing.length) {
+      for (const recipe of missing) recipe.id = generateRecipeId();
+      // Written directly rather than via saveRecipes(): this is a migration,
+      // not a user edit, and it must not bump lastModified or trigger a sync
+      // that would look like a real change to every other device.
+      await AsyncStorage.setItem(RECIPES_KEY, JSON.stringify(recipes));
+    }
+
+    return recipes;
   } catch (error) {
     console.error('Error loading recipes:', error);
     return [];
@@ -239,6 +270,9 @@ export const addRecipe = async (recipe) => {
     const recipes = await loadRecipes();
     const newRecipe = {
       ...recipe,
+      // Preserve an id supplied by the caller (e.g. an import) rather than
+      // minting a second one for the same recipe.
+      id: recipe.id || generateRecipeId(),
       createdAt: new Date().toISOString(),
       lastModified: new Date().toISOString(),
       cooked: false,
@@ -456,6 +490,57 @@ export const recordCookEvent = async (recipeName, when = new Date()) => {
   } catch (error) {
     console.error('Error recording cook event:', error);
     return [];
+  }
+};
+
+/**
+ * Replace the stored history outright. Used by the sync path after merging;
+ * prefer mergeCookHistory() unless you genuinely mean to overwrite.
+ */
+export const setCookHistory = async (history) => {
+  try {
+    await AsyncStorage.setItem(COOK_HISTORY_KEY, JSON.stringify(history || []));
+    // Mark as seeded so a later read doesn't backfill on top of real data.
+    await AsyncStorage.setItem(COOK_HISTORY_SEEDED_KEY, 'true');
+    return history || [];
+  } catch (error) {
+    console.error('Error saving cook history:', error);
+    return [];
+  }
+};
+
+/**
+ * Union local and remote history.
+ *
+ * Cooking events are immutable facts - two devices each hold a partial record of
+ * what actually happened, so the correct merge is a union, not last-writer-wins.
+ * Overwriting would silently discard whatever the other device observed while
+ * offline.
+ *
+ * Deduped on name + timestamp: the same event synced twice is one event. A real
+ * entry beats a backfilled one for the same slot, since backfilled dates are
+ * reconstructions rather than observations.
+ */
+export const mergeCookHistory = async (remoteHistory) => {
+  try {
+    const local = await getCookHistory();
+    const byKey = new Map();
+
+    for (const entry of [...local, ...(remoteHistory || [])]) {
+      if (!entry?.name || !entry?.date) continue;
+      const key = `${entry.name}@${entry.date}`;
+      const existing = byKey.get(key);
+      // Prefer the observed entry when both sides have the same slot.
+      if (!existing || (existing.backfilled && !entry.backfilled)) {
+        byKey.set(key, entry);
+      }
+    }
+
+    const merged = [...byKey.values()].sort((a, b) => new Date(a.date) - new Date(b.date));
+    return setCookHistory(merged);
+  } catch (error) {
+    console.error('Error merging cook history:', error);
+    return getCookHistory();
   }
 };
 

@@ -65,7 +65,9 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.122.0",
     "@babel/core": "^7.20.0",
+    "@expo/ngrok": "^4.1.3",
     "@types/react": "~19.0.10",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~9.2.0",

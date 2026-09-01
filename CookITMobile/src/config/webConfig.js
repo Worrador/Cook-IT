@@ -26,6 +26,15 @@ export const GOOGLE_APP_ID = '609680746236';
 
 export const isPickerConfigured = () => Boolean(GOOGLE_PICKER_API_KEY);
 
+// Master switch for the "Ask Cook-IT" suggestion assistant - both the free
+// on-device advisor (src/services/localAdvisor.js) and the optional Claude-backed
+// one (src/services/cookAdvisor.js + the /advice endpoint on the preview proxy).
+//
+// Turned off for now. The code and its tests are left in place rather than
+// deleted, so switching this back to true is the only change needed to bring it
+// back. Nothing else references the advisor when this is false.
+export const ADVISOR_ENABLED = false;
+
 // Optional endpoint used to fetch a link's og:image for recipes that have a URL
 // but no photo. See linkPreview.js for why a browser cannot do this by itself.
 //

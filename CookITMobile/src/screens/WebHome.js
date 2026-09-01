@@ -31,7 +31,7 @@ import googleDriveService from '../services/googleDriveService';
 import excelService from '../services/excelService';
 import syncService from '../services/syncService';
 import { pickDriveFile, preloadPicker, XLSX_MIME } from '../services/drivePicker';
-import { isPickerConfigured } from '../config/webConfig';
+import { isPickerConfigured, ADVISOR_ENABLED } from '../config/webConfig';
 import recipeImageService from '../services/recipeImageService';
 import { useImageUrl, releaseImageUrl } from '../services/imageDisplay';
 import { getOgImage, getFaviconUrl, getDomain, getPreview, formatDuration } from '../services/linkPreview';
@@ -39,8 +39,11 @@ import HelpDialog from '../components/HelpDialog';
 import BuyCoffeeDialog from '../components/BuyCoffeeDialog';
 import VoteSession from './VoteSession';
 import CookCalendar from './CookCalendar';
+import ShoppingListDialog from '../components/ShoppingListDialog';
 import { pickWeighted } from '../services/suggestion';
 import { scaleIngredient, parseServings } from '../services/ingredientScaling';
+import { askForAdvice, isAdvisorAvailable } from '../services/cookAdvisor';
+import { adviseLocally } from '../services/localAdvisor';
 import {
   getShoppingList, addRecipeToList, toggleItem,
   removeItem as removeShopItem, clearChecked, groupByRecipe,
@@ -228,6 +231,10 @@ export default function WebHome() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
   const [shopItems, setShopItems] = useState([]);
+  const [advisorOn, setAdvisorOn] = useState(false);
+  const [adviceOpen, setAdviceOpen] = useState(false);
+  const [mood, setMood] = useState('');
+  const [advice, setAdvice] = useState({ loading: false, data: null, error: '' });
 
   const refresh = useCallback(async () => {
     const [list, pins, counts, dates] = await Promise.all([
@@ -252,6 +259,8 @@ export default function WebHome() {
       // fetch, which would cost the user-activation needed to open its window.
       preloadPicker().catch(() => {});
       setShopItems(await getShoppingList());
+      // Only probe the proxy when the feature is switched on at all.
+      setAdvisorOn(ADVISOR_ENABLED ? await isAdvisorAvailable() : false);
       setLoading(false);
     })();
   }, [refresh]);
@@ -367,6 +376,28 @@ export default function WebHome() {
     setShopItems(await addRecipeToList(recipeView.name, ingredients));
     setRecipeView(null);
     setShopOpen(true);
+  };
+
+  // Free, instant, offline. The default - there is no reason to pay per request
+  // for "what have I been neglecting", which is a deterministic question.
+  const handleAdviseLocally = () => {
+    setAdvice({
+      loading: false,
+      data: adviseLocally(recipes, lastCooked, cookCounts, mood),
+      error: '',
+    });
+  };
+
+  // Opt-in upgrade: better at reading a free-text mood, costs a fraction of a
+  // cent per ask, and sends recipe data to Anthropic.
+  const handleAskClaude = async () => {
+    setAdvice({ loading: true, data: null, error: '' });
+    try {
+      const result = await askForAdvice(recipes, lastCooked, cookCounts, mood);
+      setAdvice({ loading: false, data: { ...result, source: 'claude' }, error: '' });
+    } catch (error) {
+      setAdvice({ loading: false, data: null, error: error?.message || 'The advisor failed.' });
+    }
   };
 
   const handleAdd = async () => {
@@ -670,6 +701,15 @@ export default function WebHome() {
                 onPress={() => setVoteOpen(true)}
                 disabled={recipes.length < 2}
               />
+              {ADVISOR_ENABLED ? (
+                <Button
+                  label="Ask Cook-IT"
+                  icon="chef-hat"
+                  kind="ghost"
+                  onPress={() => { setAdviceOpen(true); setAdvice({ loading: false, data: null, error: '' }); }}
+                  disabled={recipes.length === 0}
+                />
+              ) : null}
             </View>
           </View>
 
@@ -952,6 +992,84 @@ export default function WebHome() {
         }
       >
         <Field label="Note" value={editText} onChangeText={setEditText} placeholder="Add a note…" multiline autoFocus />
+      </Sheet>
+
+      <Sheet
+        visible={ADVISOR_ENABLED && adviceOpen}
+        onClose={() => setAdviceOpen(false)}
+        title="Ask Cook-IT"
+        width={560}
+        footer={
+          <>
+            <Button label="Close" kind="ghost" onPress={() => setAdviceOpen(false)} />
+            {advisorOn ? (
+              <Button
+                label={advice.loading ? 'Thinking…' : 'Ask Claude'}
+                icon="creation"
+                kind="secondary"
+                onPress={handleAskClaude}
+                disabled={advice.loading}
+              />
+            ) : null}
+            <Button label="Suggest" icon="chef-hat" onPress={handleAdviseLocally} />
+          </>
+        }
+      >
+        <Field
+          label="Anything in particular? (optional)"
+          value={mood}
+          onChangeText={setMood}
+          placeholder="something quick, we have guests, use up the spinach…"
+        />
+
+        {advice.loading ? (
+          <View style={styles.adviceLoading}>
+            <ActivityIndicator color={ORANGE} />
+            <Text style={styles.galleryEmptyText}>Reading your recipe book…</Text>
+          </View>
+        ) : advice.error ? (
+          <Text style={styles.adviceError}>{advice.error}</Text>
+        ) : advice.data ? (
+          <View>
+            <Text style={styles.adviceText}>{advice.data.advice}</Text>
+            {advice.data.picks.map(pick => {
+              const match = recipes.find(r => r.name === pick.name);
+              return (
+                <View key={pick.name} style={styles.pickRow}>
+                  <MaterialCommunityIcons name="silverware-fork-knife" size={17} color={ORANGE} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pickName}>{pick.name}</Text>
+                    <Text style={styles.pickReason}>{pick.reason}</Text>
+                  </View>
+                  {match ? (
+                    <Button
+                      label="Cook it"
+                      onPress={() => { setAdviceOpen(false); handleCook(match); }}
+                      style={{ paddingVertical: 8, paddingHorizontal: 12 }}
+                    />
+                  ) : null}
+                </View>
+              );
+            })}
+            <Text style={styles.adviceFootnote}>
+              {advice.data.source === 'claude'
+                ? `Suggested by Claude (Haiku 4.5) from your recipe names, notes and cooking dates${
+                    advice.data.usage?.estimatedCostUsd
+                      ? ` — about $${advice.data.usage.estimatedCostUsd.toFixed(4)} for this answer`
+                      : ''
+                  }.`
+                : 'Worked out on your device from your cooking history — free, and nothing left your browser.'}
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.galleryEmptyText}>
+            “Suggest” works out an answer on your device from your cooking history —
+            free, instant, and nothing leaves your browser.
+            {advisorOn
+              ? ' “Ask Claude” is better at reading what you typed above, costs a fraction of a cent, and sends your recipe names and dates to Anthropic.'
+              : ''}
+          </Text>
+        )}
       </Sheet>
 
       <CookCalendar visible={calendarOpen} onClose={() => setCalendarOpen(false)} />
@@ -1400,6 +1518,16 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 7, right: 7, width: 8, height: 8,
     borderRadius: 4, backgroundColor: ORANGE,
   },
+  adviceLoading: { alignItems: 'center', gap: 12, paddingVertical: 26 },
+  adviceError: { color: ERROR, fontSize: 14, lineHeight: 21, paddingVertical: 10 },
+  adviceText: { color: INK, fontSize: 15.5, lineHeight: 24, marginBottom: 16 },
+  pickRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12,
+    borderTopWidth: 1, borderTopColor: 'rgba(90,66,48,0.12)',
+  },
+  pickName: { color: BROWN, fontSize: 15.5, fontWeight: '800' },
+  pickReason: { color: MUTED, fontSize: 13.5, lineHeight: 19, marginTop: 2 },
+  adviceFootnote: { color: MUTED, fontSize: 12, marginTop: 16, fontStyle: 'italic' },
   shopScroll: { maxHeight: 420 },
   shopGroup: { marginBottom: 18 },
   shopGroupTitle: { color: BROWN, fontSize: 15, fontWeight: '800', marginBottom: 6 },
