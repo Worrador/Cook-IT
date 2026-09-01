@@ -151,6 +151,11 @@ function LinkPreview({ url, style, onPress }) {
       </View>
     );
 
+  // Without an onPress this is decoration, so render a plain View. As a
+  // Pressable it captured the tap and did nothing, which made the image look
+  // dead while the rest of the card opened fine.
+  if (!onPress) return <View style={[styles.photo, style]}>{body}</View>;
+
   return (
     <Hoverable onPress={onPress} style={[styles.photo, style]} hoverStyle={styles.photoHover}>
       {body}
@@ -1363,7 +1368,7 @@ const styles = StyleSheet.create({
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -8 },
   cardInner: { flex: 1, padding: 20, ...card },
-  cardInnerHover: { borderColor: 'rgba(90,66,48,0.34)', backgroundColor: '#fffdf6' },
+  cardInnerHover: { borderColor: 'rgba(90,66,48,0.34)' },
   cardFooter: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginTop: 12, minHeight: 24,
@@ -1372,7 +1377,9 @@ const styles = StyleSheet.create({
   cardMetaText: { color: MUTED, fontSize: 12, fontWeight: '700' },
   // Pinned cards are visually distinct on their own, not just grouped - the
   // grouping explains where they went, this explains which ones they are.
-  cardPinned: { borderColor: ORANGE, borderWidth: 2, backgroundColor: '#fffdf6' },
+  // Border only - repainting the surface made pinned cards look like a
+  // different kind of object rather than the same card, highlighted.
+  cardPinned: { borderColor: ORANGE, borderWidth: 2 },
   subHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, marginBottom: 14 },
   subHeadText: { color: BROWN, fontSize: 17, fontWeight: '800', letterSpacing: 0.2 },
   subHeadCount: {

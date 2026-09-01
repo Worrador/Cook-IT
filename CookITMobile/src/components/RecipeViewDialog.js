@@ -324,11 +324,15 @@ const styles = StyleSheet.create({
   unitToggleOn: { backgroundColor: BROWN, borderColor: BROWN },
   unitToggleText: { color: BROWN, fontSize: 12, fontWeight: '800' },
 
+  // Deliberately flat. A bordered, lighter-filled box was the only raised
+  // surface in the dialog, so it read as pasted on rather than part of the
+  // page. A hairline rule separates it instead - same treatment as the
+  // Ingredients and Method sections below.
   noteBlock: {
-    marginTop: 16, padding: 14, borderRadius: 12, backgroundColor: '#fffdf6',
-    borderWidth: 1, borderColor: 'rgba(90,66,48,0.14)',
+    marginTop: 18, paddingTop: 14,
+    borderTopWidth: 1, borderTopColor: 'rgba(90,66,48,0.12)',
   },
-  noteHead: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 7 },
+  noteHead: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 6 },
   noteLabel: {
     flex: 1, color: MUTED, fontSize: 12, fontWeight: '800',
     letterSpacing: 0.8, textTransform: 'uppercase',
