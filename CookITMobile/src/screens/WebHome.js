@@ -43,6 +43,8 @@ import RecipeViewDialog from '../components/RecipeViewDialog';
 import DialogShell from '../components/DialogShell';
 import ShoppingListDialog from '../components/ShoppingListDialog';
 import { pickWeighted } from '../services/suggestion';
+import { collectTags, filterRecipes } from '../services/recipeTags';
+import Animated, { FadeInDown, FadeIn, LinearTransition } from 'react-native-reanimated';
 import { scaleIngredient, parseServings } from '../services/ingredientScaling';
 import { getUnitPreference, toggleUnitPreference, METRIC } from '../services/unitPreference';
 import { askForAdvice, isAdvisorAvailable } from '../services/cookAdvisor';
@@ -201,6 +203,7 @@ export default function WebHome() {
   const [lastCooked, setLastCooked] = useState({});
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
+  const [activeTags, setActiveTags] = useState([]);
 
   const [suggestion, setSuggestion] = useState(null);
   const [seen, setSeen] = useState(() => new Set());
@@ -263,12 +266,10 @@ export default function WebHome() {
     })();
   }, [refresh]);
 
+  // Text and tag filtering both live in recipeTags.js so the behaviour is
+  // tested rather than reimplemented inline.
   const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const filtered = q
-      ? recipes.filter(r =>
-          r.name?.toLowerCase().includes(q) || r.comment?.toLowerCase().includes(q))
-      : recipes;
+    const filtered = filterRecipes(recipes, { query, tags: activeTags });
     // Pinned first, then alphabetical - the grid has no other ordering cue.
     return [...filtered].sort((a, b) => {
       const ap = pinned.includes(a.name) ? 0 : 1;
@@ -276,7 +277,10 @@ export default function WebHome() {
       if (ap !== bp) return ap - bp;
       return (a.name || '').localeCompare(b.name || '');
     });
-  }, [recipes, query, pinned]);
+  }, [recipes, query, activeTags, pinned]);
+
+  // Derived from the recipes themselves - there is no tagging UI to maintain.
+  const availableTags = useMemo(() => collectTags(recipes), [recipes]);
 
   // History-weighted suggestion.
   //
@@ -729,7 +733,7 @@ export default function WebHome() {
           {/* Suggestion panel doubles as the hero's visual weight on desktop. */}
           <View style={styles.heroPanel}>
             {suggestion ? (
-              <>
+              <Animated.View key={suggestion.name} entering={FadeIn.duration(260)}>
                 {suggestion.images?.length ? (
                   <Photo imageRef={suggestion.images[0]} style={styles.panelPhoto} onPress={() => setGallery(suggestion)} />
                 ) : suggestion.url ? (
@@ -751,7 +755,7 @@ export default function WebHome() {
                   ) : null}
                   <Button label="Next" icon="arrow-right" kind="ghost" onPress={suggest} />
                 </View>
-              </>
+              </Animated.View>
             ) : (
               <View style={styles.panelEmpty}>
                 <MaterialCommunityIcons name="silverware-variant" size={52} color={MUTED} />
@@ -795,11 +799,46 @@ export default function WebHome() {
           </View>
         </View>
 
+        {availableTags.length ? (
+          <View style={styles.tagRow}>
+            {activeTags.length ? (
+              <Hoverable
+                onPress={() => setActiveTags([])}
+                style={[styles.tag, styles.tagClear]}
+                hoverStyle={styles.tagHover}
+              >
+                <MaterialCommunityIcons name="close" size={13} color={ERROR} />
+                <Text style={[styles.tagText, { color: ERROR }]}>Clear</Text>
+              </Hoverable>
+            ) : null}
+            {availableTags.map(({ tag, count }) => {
+              const on = activeTags.includes(tag);
+              return (
+                <Hoverable
+                  key={tag}
+                  onPress={() => setActiveTags(prev =>
+                    prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+                  )}
+                  style={[styles.tag, on && styles.tagOn]}
+                  hoverStyle={styles.tagHover}
+                >
+                  <Text style={[styles.tagText, on && { color: '#fff' }]}>{tag}</Text>
+                  <Text style={[styles.tagCount, on && { color: 'rgba(255,255,255,0.75)' }]}>{count}</Text>
+                </Hoverable>
+              );
+            })}
+          </View>
+        ) : null}
+
         {visible.length === 0 ? (
           <View style={styles.empty}>
             <MaterialCommunityIcons name="notebook-outline" size={44} color={MUTED} />
             <Text style={styles.emptyText}>
-              {recipes.length === 0 ? 'No recipes yet.' : 'Nothing matches that search.'}
+              {recipes.length === 0
+                ? 'No recipes yet.'
+                : activeTags.length
+                  ? `Nothing matches ${activeTags.join(' + ')}${query.trim() ? ' and that search' : ''}.`
+                  : 'Nothing matches that search.'}
             </Text>
             {recipes.length === 0 ? (
               <Button label="Add your first recipe" icon="plus" onPress={() => setAddOpen(true)} />
@@ -833,12 +872,18 @@ export default function WebHome() {
                     </View>
                   ) : null}
                   <View style={styles.grid}>
-            {group.items.map(recipe => {
+            {group.items.map((recipe, index) => {
               const isPinned = pinned.includes(recipe.name);
               const count = cookCounts[recipe.name] || 0;
               return (
-                <View
+                <Animated.View
                   key={recipe.name}
+                  // Staggered entrance, capped so a large book doesn't spend a
+                  // second and a half dealing itself out.
+                  entering={FadeInDown.delay(Math.min(index, 12) * 35).duration(280)}
+                  // Cards glide to their new positions when a filter changes,
+                  // instead of teleporting.
+                  layout={LinearTransition.duration(220)}
                   style={[styles.card, { width: `${100 / columns}%` }]}
                 >
                   {/* One clickable surface. Everything you can do to a recipe
@@ -918,7 +963,7 @@ export default function WebHome() {
                       </View>
                     </View>
                   </Hoverable>
-                </View>
+                </Animated.View>
               );
             })}
                   </View>
@@ -1367,6 +1412,17 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: INK, fontSize: 15, outlineStyle: 'none' },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -8 },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  tag: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 13, paddingVertical: 7, borderRadius: 999,
+    borderWidth: 1, borderColor: 'rgba(90,66,48,0.22)',
+  },
+  tagOn: { backgroundColor: BROWN, borderColor: BROWN },
+  tagHover: { borderColor: 'rgba(90,66,48,0.45)' },
+  tagClear: { borderColor: 'rgba(214,48,49,0.4)' },
+  tagText: { color: INK, fontSize: 13.5, fontWeight: '700' },
+  tagCount: { color: MUTED, fontSize: 12, fontWeight: '700' },
   cardInner: { flex: 1, padding: 20, ...card },
   cardInnerHover: { borderColor: 'rgba(90,66,48,0.34)' },
   cardFooter: {
