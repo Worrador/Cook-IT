@@ -7,7 +7,8 @@
 // if it was cooked many times. Backfilled entries are marked so the UI can be
 // honest about it rather than implying a complete record.
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import DialogShell from '../components/DialogShell';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getCookHistory } from '../utils/storage';
 import { BROWN, ORANGE, YELLOW, CREAM, PAGE_BG, INK, MUTED } from '../theme/webPalette';
@@ -74,19 +75,12 @@ export default function CookCalendar({ visible, onClose }) {
   const selectedEntries = selected ? (byDay.get(selected) || []) : [];
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          <View style={styles.head}>
-            <View style={styles.headLeft}>
-              <MaterialCommunityIcons name="calendar-month-outline" size={22} color={YELLOW} />
-              <Text style={styles.headTitle}>Cooking history</Text>
-            </View>
-            <Pressable onPress={onClose} style={styles.iconBtn}>
-              <MaterialCommunityIcons name="close" size={20} color={CREAM} />
-            </Pressable>
-          </View>
-
+    <DialogShell
+      visible={visible}
+      onClose={onClose}
+      title="Cooking history"
+      icon="calendar-month-outline"
+    >
           <ScrollView style={styles.body}>
             <View style={styles.monthBar}>
               <Pressable onPress={() => step(-1)} style={styles.monthBtn}>
@@ -184,9 +178,7 @@ export default function CookCalendar({ visible, onClose }) {
               </Text>
             ) : null}
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    </DialogShell>
   );
 }
 

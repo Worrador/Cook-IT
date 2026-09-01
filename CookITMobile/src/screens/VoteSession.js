@@ -13,7 +13,8 @@
 // participant votes on the same cards in the same order - otherwise tallying
 // would be comparing different shortlists.
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, ScrollView, Image, ActivityIndicator, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, Image, ActivityIndicator, TextInput, Platform } from 'react-native';
+import DialogShell from '../components/DialogShell';
 import SwipeCard from '../components/SwipeCard';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { topByWeight, tallyVotes } from '../services/suggestion';
@@ -200,31 +201,14 @@ export default function VoteSession({ visible, onClose, recipes, lastCooked, onC
   const voterNames = Object.values(session?.votes || {}).map(v => v.name);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          <View style={styles.head}>
-            <View style={styles.headLeft}>
-              {/* Every stage past the lobby needs a way back that isn't "close
-                  the whole thing" - otherwise the results are a dead end. */}
-              {stage !== 'lobby' && stage !== 'loading' ? (
-                <Pressable onPress={goBack} style={styles.iconBtn}>
-                  <MaterialCommunityIcons name="arrow-left" size={20} color={CREAM} />
-                </Pressable>
-              ) : (
-                <MaterialCommunityIcons name="vote-outline" size={22} color={YELLOW} />
-              )}
-              {/* Not "dinner" - people cook at all hours, and the vote is about
-                  what to cook, not which meal it is. */}
-              <Text style={styles.headTitle}>
-                {stage === 'results' ? 'The verdict' : 'What are we cooking?'}
-              </Text>
-            </View>
-            <Pressable onPress={close} style={styles.iconBtn}>
-              <MaterialCommunityIcons name="close" size={20} color={CREAM} />
-            </Pressable>
-          </View>
-
+    <DialogShell
+      visible={visible}
+      onClose={close}
+      title={stage === 'results' ? 'The verdict' : 'What are we cooking?'}
+      icon="vote-outline"
+      onBack={stage !== 'lobby' && stage !== 'loading' ? goBack : undefined}
+    >
+      <>
           {error ? (
             <View style={styles.errorBar}>
               <Text style={styles.errorText}>{error}</Text>
@@ -447,9 +431,8 @@ export default function VoteSession({ visible, onClose, recipes, lastCooked, onC
               )}
             </ScrollView>
           ) : null}
-        </View>
-      </View>
-    </Modal>
+      </>
+    </DialogShell>
   );
 }
 

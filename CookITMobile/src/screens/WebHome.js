@@ -39,6 +39,7 @@ import HelpDialog from '../components/HelpDialog';
 import BuyCoffeeDialog from '../components/BuyCoffeeDialog';
 import VoteSession from './VoteSession';
 import CookCalendar from './CookCalendar';
+import DialogShell from '../components/DialogShell';
 import ShoppingListDialog from '../components/ShoppingListDialog';
 import { pickWeighted } from '../services/suggestion';
 import { scaleIngredient, parseServings } from '../services/ingredientScaling';
@@ -172,27 +173,15 @@ function Field({ label, value, onChangeText, placeholder, multiline, autoFocus }
   );
 }
 
-function Sheet({ visible, onClose, title, children, footer, width = 520 }) {
+// Thin wrapper over the shared DialogShell so every call site in this file keeps
+// working while the chrome itself lives in one place.
+function Sheet({ visible, onClose, title, icon, children, footer, width = 520 }) {
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        {/* Stop clicks inside the sheet from closing it. */}
-        <Pressable style={[styles.sheet, { maxWidth: width }]} onPress={() => {}}>
-          <View style={styles.sheetHead}>
-            <Text style={styles.sheetTitle}>{title}</Text>
-            <Hoverable onPress={onClose} style={styles.iconBtn} hoverStyle={styles.iconBtnHover}>
-              <MaterialCommunityIcons name="close" size={20} color={CREAM} />
-            </Hoverable>
-          </View>
-          <View style={styles.sheetBody}>{children}</View>
-          {footer ? <View style={styles.sheetFoot}>{footer}</View> : null}
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <DialogShell visible={visible} onClose={onClose} title={title} icon={icon} width={width} footer={footer}>
+      <View style={styles.sheetBody}>{children}</View>
+    </DialogShell>
   );
 }
-
-// --- screen ---------------------------------------------------------------
 
 export default function WebHome() {
   const { width } = useWindowDimensions();
@@ -935,7 +924,7 @@ export default function WebHome() {
       <Sheet
         visible={addOpen}
         onClose={() => setAddOpen(false)}
-        title="Add a recipe"
+        title="Add a recipe" icon="plus-circle-outline"
         footer={
           <>
             <Button label="Cancel" kind="ghost" onPress={() => setAddOpen(false)} />
@@ -1077,7 +1066,7 @@ export default function WebHome() {
       <Sheet
         visible={shopOpen}
         onClose={() => setShopOpen(false)}
-        title="Shopping list"
+        title="Shopping list" icon="cart-outline"
         width={560}
         footer={
           <>
@@ -1179,7 +1168,7 @@ export default function WebHome() {
       <Sheet
         visible={!!recipeView}
         onClose={() => setRecipeView(null)}
-        title={recipeView?.name || ''}
+        title={recipeView?.name || ''} icon="text-box-outline"
         width={760}
         footer={
           <>
@@ -1300,27 +1289,41 @@ export default function WebHome() {
           `visible` prop of their own - App.js controls them by wrapping in a
           Portal + Dialog, so this mirrors that rather than inventing a new
           contract. Rendering them bare would show their content permanently. */}
-      <Portal>
-        <PaperDialog
-          visible={showHelp}
-          onDismiss={() => setShowHelp(false)}
-          style={styles.paperDialog}
-        >
-          <HelpDialog onClose={() => setShowHelp(false)} isFirstTime={false} />
-        </PaperDialog>
-        <PaperDialog
-          visible={showCoffee}
-          onDismiss={() => setShowCoffee(false)}
-          style={styles.paperDialog}
-        >
-          <BuyCoffeeDialog onClose={() => setShowCoffee(false)} />
-        </PaperDialog>
-      </Portal>
+      <DialogShell
+        visible={showHelp}
+        onClose={() => setShowHelp(false)}
+        title="How Cook-IT works"
+        icon="help-circle-outline"
+        width={620}
+        footer={<Button label="Got it" icon="check" onPress={() => setShowHelp(false)} />}
+      >
+        <HelpDialog isFirstTime={false} />
+      </DialogShell>
+
+      <DialogShell
+        visible={showCoffee}
+        onClose={() => setShowCoffee(false)}
+        title="Support Cook-IT"
+        icon="coffee-outline"
+        width={520}
+        footer={
+          <>
+            <Button label="Maybe later" kind="ghost" onPress={() => setShowCoffee(false)} />
+            <Button
+              label="Buy me a coffee"
+              icon="coffee"
+              onPress={() => { openUrl('https://www.buymeacoffee.com/worrador'); setShowCoffee(false); }}
+            />
+          </>
+        }
+      >
+        <BuyCoffeeDialog />
+      </DialogShell>
 
       <Sheet
         visible={!!gallery}
         onClose={() => setGallery(null)}
-        title={gallery ? `Photos — ${gallery.name}` : ''}
+        title={gallery ? `Photos — ${gallery.name}` : ''} icon="image-multiple"
         width={680}
         footer={
           <>
@@ -1362,7 +1365,7 @@ export default function WebHome() {
       <Sheet
         visible={!!confirm}
         onClose={() => setConfirm(null)}
-        title="Delete recipe"
+        title="Delete recipe" icon="trash-can-outline"
         width={420}
         footer={
           <>

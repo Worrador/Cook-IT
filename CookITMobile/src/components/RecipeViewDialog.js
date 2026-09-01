@@ -7,8 +7,9 @@
 // which.
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, Modal, Pressable, ScrollView, Image, ActivityIndicator, StyleSheet, Linking,
+  View, Text, Pressable, ScrollView, Image, ActivityIndicator, StyleSheet, Linking,
 } from 'react-native';
+import DialogShell from './DialogShell';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getPreview, formatDuration } from '../services/linkPreview';
 import { scaleIngredient, parseServings } from '../services/ingredientScaling';
@@ -43,16 +44,39 @@ export default function RecipeViewDialog({ visible, recipe, onClose, onAddToList
   const hasRecipe = Boolean(data?.ingredients?.length || data?.steps?.length);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          <View style={styles.head}>
-            <Text style={styles.headTitle} numberOfLines={1}>{recipe?.name || ''}</Text>
-            <Pressable onPress={onClose} style={styles.iconBtn} hitSlop={8}>
-              <MaterialCommunityIcons name="close" size={20} color={CREAM} />
+    <DialogShell
+      visible={visible}
+      onClose={onClose}
+      title={recipe?.name || ''}
+      icon="text-box-outline"
+      width={640}
+      footer={
+        <>
+          {hasRecipe && onAddToList ? (
+            <Pressable
+              onPress={() => onAddToList(data.ingredients.map(l => scaleIngredient(l, factor)))}
+              style={styles.ghostBtn}
+            >
+              <MaterialCommunityIcons name="cart-plus" size={16} color={BROWN} />
+              <Text style={styles.ghostBtnText}>Add to list</Text>
             </Pressable>
-          </View>
-
+          ) : null}
+          {recipe?.url ? (
+            <Pressable onPress={() => Linking.openURL(recipe.url)} style={styles.ghostBtn}>
+              <MaterialCommunityIcons name="open-in-new" size={16} color={BROWN} />
+              <Text style={styles.ghostBtnText}>Site</Text>
+            </Pressable>
+          ) : null}
+          {onCook ? (
+            <Pressable onPress={() => onCook(recipe)} style={styles.primaryBtn}>
+              <MaterialCommunityIcons name="silverware-fork-knife" size={16} color="#fff" />
+              <Text style={styles.primaryBtnText}>Cook it</Text>
+            </Pressable>
+          ) : null}
+        </>
+      }
+    >
+      <>
           {state.loading ? (
             <View style={styles.centered}>
               <ActivityIndicator color={ORANGE} size="large" />
@@ -129,34 +153,8 @@ export default function RecipeViewDialog({ visible, recipe, onClose, onAddToList
             </View>
           )}
 
-          <View style={styles.foot}>
-            {hasRecipe && onAddToList ? (
-              <Pressable
-                onPress={() => onAddToList(data.ingredients.map(l => scaleIngredient(l, factor)))}
-                style={styles.ghostBtn}
-              >
-                <MaterialCommunityIcons name="cart-plus" size={16} color={BROWN} />
-                <Text style={styles.ghostBtnText}>Add to list</Text>
-              </Pressable>
-            ) : <View />}
-            <View style={styles.footRight}>
-              {recipe?.url ? (
-                <Pressable onPress={() => Linking.openURL(recipe.url)} style={styles.ghostBtn}>
-                  <MaterialCommunityIcons name="open-in-new" size={16} color={BROWN} />
-                  <Text style={styles.ghostBtnText}>Site</Text>
-                </Pressable>
-              ) : null}
-              {onCook ? (
-                <Pressable onPress={() => onCook(recipe)} style={styles.primaryBtn}>
-                  <MaterialCommunityIcons name="silverware-fork-knife" size={16} color="#fff" />
-                  <Text style={styles.primaryBtnText}>Cook it</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          </View>
-        </View>
-      </View>
-    </Modal>
+      </>
+    </DialogShell>
   );
 }
 

@@ -1,211 +1,81 @@
+// "Support Cook-IT" - the content only.
+//
+// Same rewrite as HelpDialog: the shared DialogShell now supplies the header,
+// padding and footer buttons, so this file is just the message. Previously it
+// drew its own centred title and two full-width stacked buttons, which looked
+// cramped and unlike every other dialog once the shell was around it.
 import React from 'react';
-import { View, Text, StyleSheet, Linking, ScrollView, Alert } from 'react-native';
-import { Surface, useTheme, Dialog } from 'react-native-paper';
+import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Button } from './Button';
+import { BROWN, ORANGE, YELLOW, INK, MUTED } from '../theme/webPalette';
 
-const BuyCoffeeDialog = ({ visible, onClose }) => {
-  const theme = useTheme();
+const PERKS = [
+  { icon: 'creation', text: 'Access to future premium features' },
+  { icon: 'heart-outline', text: 'A thank you message in the app' },
+  { icon: 'party-popper', text: 'The warm feeling of supporting open source' },
+];
 
-  const handleBuyCoffee = async () => {
-    const url = 'https://ko-fi.com/worrador';
-    try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert('No browser available', 'Install a web browser on the emulator/device to open links.');
-      }
-    } catch (e) {
-      Alert.alert('Could not open link', 'There was a problem opening the browser.');
-    }
-  };
-
+export default function BuyCoffeeDialog() {
   return (
-    <>
-      <View style={styles.header}>
-        <MaterialCommunityIcons name="coffee" size={28} color={theme.colors.primary} style={styles.headerIcon} />
-        <Text style={[styles.title, { color: theme.colors.primary }]}>Support Cook-IT</Text>
-      </View>
-      <Dialog.Content style={styles.content}>
-        <ScrollView>
-          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
-            <MaterialCommunityIcons name="heart" size={32} color={theme.colors.primary} style={styles.infoIcon} />
-            <Text style={[styles.infoText, { color: theme.colors.primary }]}>
-              <Text style={styles.bold}>Cook-IT is free and open source</Text>, but if you find it helpful, consider buying me a coffee to support its development!
-            </Text>
-          </View>
-
-          <Section
-            icon="☕"
-            title="Why Support?"
-            content="Your support helps me maintain and improve Cook-IT, add new features, and keep it free for everyone to use."
-            theme={theme}
-          />
-
-          <Section
-            icon="💡"
-            title="What You Get"
-            content={
-              <View>
-                <ListItem icon="✨" text="Access to future premium features" theme={theme} />
-                <ListItem icon="💌" text="Special thank you message in the app" theme={theme} />
-                <ListItem icon="🎉" text="The warm feeling of supporting open source" theme={theme} />
-              </View>
-            }
-            theme={theme}
-          />
-
-          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
-            <MaterialCommunityIcons name="star" size={32} color={theme.colors.primary} style={styles.infoIcon} />
-            <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
-              Every contribution, no matter how small, makes a big difference in keeping Cook-IT alive and growing!
-            </Text>
-          </View>
-        </ScrollView>
-      </Dialog.Content>
-      <Dialog.Actions>
-        <View style={styles.buttonContainer}>
-          <Button
-            onPress={handleBuyCoffee}
-            style={[styles.buyButton, { backgroundColor: theme.colors.secondary }]}
-            labelStyle={styles.buyButtonLabel}
-            icon="coffee"
-          >
-            Buy Me a Coffee
-          </Button>
-          <Button
-            onPress={onClose}
-            style={[styles.closeButton, { backgroundColor: theme.colors.primary }]}
-            labelStyle={styles.closeButtonLabel}
-          >
-            Maybe Later
-          </Button>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <View style={styles.hero}>
+        <View style={styles.heroIcon}>
+          <MaterialCommunityIcons name="coffee" size={26} color={BROWN} />
         </View>
-      </Dialog.Actions>
-    </>
-  );
-};
-
-const Section = ({ icon, title, content, theme }) => (
-  <View style={styles.section}>
-    <View style={styles.sectionHeader}>
-      <View style={[styles.iconContainer, { backgroundColor: '#F2BC42' }]}>
-        <Text style={styles.iconText}>{icon}</Text>
+        <Text style={styles.heroText}>
+          <Text style={styles.strong}>Cook-IT is free and open source.</Text> If it&apos;s
+          earning its place in your kitchen, a coffee helps keep it going.
+        </Text>
       </View>
-      <Text style={[styles.sectionTitle, { color: '#E06D3D' }]}>{title}</Text>
-    </View>
-    <View style={[styles.sectionContent, { borderLeftColor: '#F2BC42' }]}>
-      {typeof content === 'string' ? (
-        <Text style={[styles.sectionText, { color: theme.colors.primary }]}>{content}</Text>
-      ) : (
-        content
-      )}
-    </View>
-  </View>
-);
 
-const ListItem = ({ icon, text, theme }) => (
-  <View style={styles.listItem}>
-    <Text style={[styles.listItemIcon, { color: '#E06D3D' }]}>{icon}</Text>
-    <Text style={[styles.listItemText, { color: theme.colors.primary }]}>{text}</Text>
-  </View>
-);
+      <Text style={styles.sectionTitle}>Where it goes</Text>
+      <Text style={styles.body}>
+        Straight into maintaining Cook-IT, adding features, and keeping it free for
+        everyone.
+      </Text>
+
+      <Text style={styles.sectionTitle}>What you get</Text>
+      {PERKS.map(perk => (
+        <View key={perk.text} style={styles.perk}>
+          <MaterialCommunityIcons name={perk.icon} size={18} color={ORANGE} />
+          <Text style={styles.perkText}>{perk.text}</Text>
+        </View>
+      ))}
+
+      <Text style={styles.footnote}>
+        Every contribution, however small, makes a difference — and no pressure if not.
+      </Text>
+    </ScrollView>
+  );
+}
 
 const styles = StyleSheet.create({
-  content: {
-    flexShrink: 1,
+  scroll: { flexGrow: 0 },
+  content: { paddingHorizontal: 22, paddingTop: 20, paddingBottom: 6 },
+
+  hero: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    backgroundColor: YELLOW, borderRadius: 12, padding: 16, marginBottom: 22,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 16,
-    paddingBottom: 16,
+  heroIcon: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.55)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  headerIcon: {
-    marginRight: 8,
-  },
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 16,
-    marginBottom: 16,
-    gap: 8,
-  },
-  infoIcon: {},
-  infoText: {
-    flex: 1,
-    fontSize: 14,
-  },
-  section: {
-    marginBottom: 16,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  iconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  iconText: {
-    fontSize: 18,
-  },
+  heroText: { flex: 1, color: BROWN, fontSize: 15, lineHeight: 23 },
+  strong: { fontWeight: '800' },
+
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: ORANGE, fontSize: 13, fontWeight: '800',
+    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8, marginTop: 6,
   },
-  sectionContent: {
-    marginLeft: 15,
-    paddingLeft: 12,
-    borderLeftWidth: 2,
-  },
-  sectionText: {
-    fontSize: 14,
-  },
-  listItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  listItemIcon: {
-    marginRight: 8,
-    fontSize: 16,
-  },
-  listItemText: {
-    flex: 1,
-    fontSize: 14,
-  },
-  buttonContainer: {
-    width: '100%',
-    gap: 8,
-  },
-  buyButton: {},
-  buyButtonLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#f7f0e2',
-  },
-  closeButton: {},
-  closeButtonLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#f7f0e2',
-  },
-  bold: {
-    fontWeight: 'bold',
+  body: { color: INK, fontSize: 15, lineHeight: 23, marginBottom: 18 },
+
+  perk: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 7 },
+  perkText: { flex: 1, color: INK, fontSize: 15, lineHeight: 22 },
+
+  footnote: {
+    color: MUTED, fontSize: 13.5, lineHeight: 21, fontStyle: 'italic',
+    marginTop: 18, paddingTop: 14,
+    borderTopWidth: 1, borderTopColor: 'rgba(90,66,48,0.12)',
   },
 });
-
-export default BuyCoffeeDialog;

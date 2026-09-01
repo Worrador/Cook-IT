@@ -4,7 +4,8 @@
 // (no DOM, no web-only APIs) and its storage is AsyncStorage, so the same
 // component works on both. Keeping one copy means the two can't drift.
 import React, { useEffect, useState } from 'react';
-import { View, Text, Modal, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import DialogShell from './DialogShell';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   getShoppingList, toggleItem, removeItem, clearChecked, groupByRecipe,
@@ -22,19 +23,26 @@ export default function ShoppingListDialog({ visible, onClose }) {
   const hasChecked = items.some(item => item.checked);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          <View style={styles.head}>
-            <View style={styles.headLeft}>
-              <MaterialCommunityIcons name="cart-outline" size={22} color={CREAM} />
-              <Text style={styles.headTitle}>Shopping list</Text>
-            </View>
-            <Pressable onPress={onClose} style={styles.iconBtn}>
-              <MaterialCommunityIcons name="close" size={20} color={CREAM} />
+    <DialogShell
+      visible={visible}
+      onClose={onClose}
+      title="Shopping list"
+      icon="cart-outline"
+      footer={
+        <>
+          {hasChecked ? (
+            <Pressable onPress={async () => setItems(await clearChecked())} style={styles.ghostBtn}>
+              <Text style={styles.ghostBtnText}>Clear ticked</Text>
             </Pressable>
-          </View>
-
+          ) : null}
+          <Pressable onPress={onClose} style={styles.primaryBtn}>
+            <MaterialCommunityIcons name="check" size={17} color="#fff" />
+            <Text style={styles.primaryBtnText}>Done</Text>
+          </Pressable>
+        </>
+      }
+    >
+      <>
           {items.length === 0 ? (
             <View style={styles.empty}>
               <MaterialCommunityIcons name="cart-outline" size={40} color={MUTED} />
@@ -73,23 +81,8 @@ export default function ShoppingListDialog({ visible, onClose }) {
             </ScrollView>
           )}
 
-          <View style={styles.foot}>
-            {hasChecked ? (
-              <Pressable
-                onPress={async () => setItems(await clearChecked())}
-                style={styles.ghostBtn}
-              >
-                <Text style={styles.ghostBtnText}>Clear ticked</Text>
-              </Pressable>
-            ) : <View />}
-            <Pressable onPress={onClose} style={styles.primaryBtn}>
-              <MaterialCommunityIcons name="check" size={17} color="#fff" />
-              <Text style={styles.primaryBtnText}>Done</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
+      </>
+    </DialogShell>
   );
 }
 

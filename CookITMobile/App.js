@@ -12,6 +12,7 @@ import HelpDialog from './src/components/HelpDialog';
 import CookCalendar from './src/screens/CookCalendar';
 import ShoppingListDialog from './src/components/ShoppingListDialog';
 import RecipeViewDialog from './src/components/RecipeViewDialog';
+import DialogShell from './src/components/DialogShell';
 import VoteSession from './src/screens/VoteSession';
 import { addRecipeToList } from './src/services/shoppingList';
 import WebShell from './src/components/WebShell';
@@ -1389,28 +1390,50 @@ const AppContent = () => {
         setPinnedRecipes={setPinnedRecipes}
       />
 
-      <Portal>
-        <Dialog
-          visible={showHelp}
-          onDismiss={() => setShowHelp(false)}
-          style={[styles.dialog, { backgroundColor: theme.colors.surface, maxHeight: dialogMaxHeight }]}
-        >
-          <HelpDialog
-            onClose={handleHelpDialogClose}
-            isFirstTime={tutorialCount <= 5}
-          />
-        </Dialog>
-      </Portal>
+      {/* Same DialogShell the web screen uses, so help and support look identical
+          on both platforms instead of each getting its own chrome. */}
+      <DialogShell
+        visible={showHelp}
+        onClose={handleHelpDialogClose}
+        title={tutorialCount <= 5 ? 'Welcome to Cook-IT' : 'How Cook-IT works'}
+        icon="help-circle-outline"
+        width={620}
+        footer={
+          <PaperButton mode="contained" onPress={handleHelpDialogClose} buttonColor={theme.colors.secondary}>
+            Got it
+          </PaperButton>
+        }
+      >
+        <HelpDialog isFirstTime={tutorialCount <= 5} />
+      </DialogShell>
 
-      <Portal>
-        <Dialog
-          visible={showBuyCoffee}
-          onDismiss={() => setShowBuyCoffee(false)}
-          style={[styles.dialog, { backgroundColor: theme.colors.surface, maxHeight: dialogMaxHeight }]}
-        >
-          <BuyCoffeeDialog onClose={() => setShowBuyCoffee(false)} />
-        </Dialog>
-      </Portal>
+      <DialogShell
+        visible={showBuyCoffee}
+        onClose={() => setShowBuyCoffee(false)}
+        title="Support Cook-IT"
+        icon="coffee-outline"
+        width={520}
+        footer={
+          <>
+            <PaperButton mode="outlined" onPress={() => setShowBuyCoffee(false)}>
+              Maybe later
+            </PaperButton>
+            <PaperButton
+              mode="contained"
+              icon="coffee"
+              buttonColor={theme.colors.secondary}
+              onPress={() => {
+                Linking.openURL('https://www.buymeacoffee.com/worrador');
+                setShowBuyCoffee(false);
+              }}
+            >
+              Buy me a coffee
+            </PaperButton>
+          </>
+        }
+      >
+        <BuyCoffeeDialog />
+      </DialogShell>
 
       <Portal>
         <Dialog

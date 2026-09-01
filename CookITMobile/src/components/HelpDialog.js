@@ -1,253 +1,163 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions, Platform } from 'react-native';
-import { Surface, useTheme, Dialog } from 'react-native-paper';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Button } from './Button';
-
+// "How Cook-IT works" - the content only.
+//
+// Rewritten from a phone-shaped dialog that drew its own title bar and a
+// full-width stacked action button. Inside the shared DialogShell that read as
+// cramped: no breathing room, and two competing sets of chrome. This is now
+// content alone; the shell supplies the header, the padding, and the footer
+// button, so it looks the same as every other dialog on both platforms.
+//
 // The web build has its own screen (src/screens/WebHome.js) with different
-// button labels and a few features the phone doesn't have, so the help text
-// branches rather than describing an app the reader isn't looking at.
+// button labels and a few features the phone doesn't have, so the text branches
+// rather than describing an app the reader isn't looking at.
+import React from 'react';
+import { View, Text, ScrollView, StyleSheet, Platform } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { BROWN, ORANGE, YELLOW, CREAM, INK, MUTED } from '../theme/webPalette';
+
 const IS_WEB = Platform.OS === 'web';
 
-const HelpDialog = ({ onClose, isFirstTime = false }) => {
-  const theme = useTheme();
-  const screenWidth = Dimensions.get('window').width;
-
-  // Adjust title font size based on screen width
-  const getTitleFontSize = () => {
-    if (screenWidth < 400) return 18;  // Very small phones (reduced for longer title)
-    if (screenWidth < 500) return 20;  // Small phones (reduced for longer title)
-    return 22;  // Normal and large phones (reduced for longer title)
-  };
-
-  const getTitle = () => {
-    return isFirstTime ? "Welcome to Cook-IT!" : "How does Cook-IT work?";
-  };
-
+function Note({ children, icon = 'lightbulb-on-outline' }) {
   return (
-    <>
-      <View style={styles.header}>
-        <MaterialCommunityIcons name="chef-hat" size={28} color={theme.colors.primary} style={styles.headerIcon} />
-        <Text style={[styles.title, { color: theme.colors.primary, fontSize: getTitleFontSize() }]}>
-          {getTitle()}
-        </Text>
-      </View>
-      <Dialog.Content style={styles.content}>
-        <ScrollView
-          showsVerticalScrollIndicator={true}
-        >
-          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
-            <Text style={[styles.infoText, { color: theme.colors.primary }]}>
-              <Text style={styles.bold}>Cook-IT helps you decide what to cook</Text> by suggesting recipes you haven't made in a while.
-              No more "What should we eat tonight?" dilemmas!
-            </Text>
-          </View>
-
-          <Section
-            icon="🚀"
-            title="Getting Started"
-            content="When you first use Cook-IT, it automatically creates a recipe file in your Google Drive. If you've used Cook-IT before, it finds your existing recipe file and syncs it with your device."
-            theme={theme}
-          />
-
-          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
-            <MaterialCommunityIcons name="lightbulb" size={32} color={theme.colors.primary} style={styles.infoIcon} />
-            <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
-              Tip: You can share your Cook-IT recipe file in Google Drive with a partner so you both have the same recipe book.
-            </Text>
-          </View>
-
-          <Section
-            icon="📜"
-            title="Adding Recipes"
-            content={
-              <View>
-                <ListItem icon="➕" text={IS_WEB ? "Click 'Add recipe', paste a link and hit Fetch - the name and picture fill themselves in" : "Click 'Add Recipe'"} theme={theme} />
-                <ListItem icon="📝" text="Enter a name" theme={theme} />
-                <ListItem icon="🌐" text="Add a web URL to the recipe or just a path to a local file (e.g: C:\Documents\Recipe.pdf)" theme={theme} />
-                <ListItem icon="💬" text="Add optional comments or notes (e.g: Use more water)" theme={theme} />
-              </View>
-            }
-            theme={theme}
-          />
-
-          <Section
-            icon="🎲"
-            title="Choosing What to Cook"
-            content={IS_WEB
-              ? "Click 'Choose a recipe' and Cook-IT suggests something based on how recently you've made each dish - recipes you haven't cooked in a while are more likely to come up. Or hit 'Vote' to let the whole household pick together."
-              : "Click 'Choose Recipe' and Cook-IT suggests something based on how recently you've made each dish. Recipes you haven't cooked in a while are more likely to be picked."}
-            theme={theme}
-          />
-
-          <Section
-            icon="📖"
-            title="Managing Your Recipes"
-            content={
-              <View>
-                <Text style={[styles.sectionText, { color: theme.colors.primary }]}>
-                  After you get a suggestion you have the options to:
-                </Text>
-                <ListItem icon="🗑️" text="Delete recipes you no longer want" theme={theme} />
-                <ListItem icon="✏️" text="Edit comments anytime" theme={theme} />
-                <ListItem icon="➔" text="Navigate to the next recipe suggestion by clicking 'Next'" theme={theme} />
-                <ListItem icon="👀" text={IS_WEB ? "Open the recipe itself with the notes icon - ingredients and method are pulled from the site, and you can rescale them for more or fewer people" : "View recipe details by clicking 'I will Cook IT!'. The app will remember your choice"} theme={theme} />
-                <ListItem icon="↺" text="You then will have the option to undo your choice" theme={theme} />
-                <ListItem icon="📌" text={IS_WEB ? "Pin a recipe to keep it at the top of your library" : "Or save the recipe to the homescreen"} theme={theme} />
-              </View>
-            }
-            theme={theme}
-          />
-
-          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
-            <MaterialCommunityIcons name="lightbulb" size={32} color={theme.colors.primary} style={styles.infoIcon} />
-            <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
-              {IS_WEB
-                ? "Tip: open a recipe, set how many people you're feeding, then 'Add to list' - the shopping list is scaled to match. The calendar icon shows what you've cooked and when."
-                : 'Tip: By first clicking "I will Cook IT!" you get the chance to create your shopping list. And then by saving the recipe to the homescreen, you can quickly find the recipe again for the actual cooking.'}
-            </Text>
-          </View>
-
-          <Section
-            icon="💾"
-            title="Saving Your Recipes"
-            content="Your new or modified recipes are saved automatically. When you close Cook-IT, all changes are securely uploaded to your Google Drive, ensuring nothing is lost."
-            theme={theme}
-          />
-
-          <View style={[styles.infoBox, { backgroundColor: '#FBE7A0' }]}>
-            <MaterialCommunityIcons name="lock" size={32} color={theme.colors.primary} style={styles.infoIcon} />
-            <Text style={[styles.infoText, { color: theme.colors.primary, fontStyle: 'italic' }]}>
-              All your recipe data stays private in your own Google Drive account.
-            </Text>
-          </View>
-        </ScrollView>
-      </Dialog.Content>
-      <Dialog.Actions>
-        <Button
-          onPress={onClose}
-          style={[styles.closeButton, { backgroundColor: theme.colors.primary }]}
-          labelStyle={styles.closeButtonLabel}
-        >
-          Got it!
-        </Button>
-      </Dialog.Actions>
-    </>
+    <View style={styles.note}>
+      <MaterialCommunityIcons name={icon} size={20} color={BROWN} style={styles.noteIcon} />
+      <Text style={styles.noteText}>{children}</Text>
+    </View>
   );
-};
+}
 
-const Section = ({ icon, title, content, theme }) => (
-  <View style={styles.section}>
-    <View style={styles.sectionHeader}>
-      <View style={[styles.iconContainer, { backgroundColor: '#F2BC42' }]}>
-        <Text style={[styles.iconText, { }]}>{icon}</Text>
+function Section({ icon, title, children }) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHead}>
+        <View style={styles.sectionIcon}>
+          <MaterialCommunityIcons name={icon} size={17} color={BROWN} />
+        </View>
+        <Text style={styles.sectionTitle}>{title}</Text>
       </View>
-      <Text style={[styles.sectionTitle, { color: '#E06D3D' }]}>{title}</Text>
+      <View style={styles.sectionBody}>{children}</View>
     </View>
-    <View style={[styles.sectionContent, { borderLeftColor: '#F2BC42' }]}>
-      {typeof content === 'string' ? (
-        <Text style={[styles.sectionText, { color: theme.colors.primary }]}>{content}</Text>
-      ) : (
-        content
-      )}
-    </View>
-  </View>
-);
+  );
+}
 
-const ListItem = ({ icon, text, theme }) => (
-  <View style={styles.listItem}>
-    <Text style={[styles.listItemIcon, { color: '#E06D3D' }]}>{icon}</Text>
-    <Text style={[styles.listItemText, { color: theme.colors.primary }]}>{text}</Text>
-  </View>
-);
+function Line({ children }) {
+  return (
+    <View style={styles.line}>
+      <View style={styles.bullet} />
+      <Text style={styles.lineText}>{children}</Text>
+    </View>
+  );
+}
+
+export default function HelpDialog({ isFirstTime = false }) {
+  return (
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <Text style={styles.lead}>
+        {isFirstTime ? 'Welcome! ' : ''}
+        <Text style={styles.leadStrong}>Cook-IT helps you decide what to cook</Text> by
+        suggesting recipes you haven&apos;t made in a while. No more &ldquo;what should we eat
+        tonight?&rdquo;
+      </Text>
+
+      <Section icon="google-drive" title="Getting started">
+        <Text style={styles.body}>
+          Cook-IT keeps your recipes on this device and, if you connect Google Drive, backs
+          them up to a single workbook there. Connect once and it finds or creates that file
+          for you.
+        </Text>
+        <Note>
+          Share that file in Google Drive with your partner and you both get the same recipe
+          book.
+        </Note>
+      </Section>
+
+      <Section icon="plus-circle-outline" title="Adding recipes">
+        {IS_WEB ? (
+          <>
+            <Line>Hit <Text style={styles.strong}>Add recipe</Text>, paste a link, press Fetch — the name and picture fill themselves in.</Line>
+            <Line>Add a note if you want (&ldquo;use more water&rdquo;, &ldquo;needs guanciale&rdquo;).</Line>
+          </>
+        ) : (
+          <>
+            <Line>Tap <Text style={styles.strong}>Add Recipe</Text> and give it a name.</Line>
+            <Line>Add a web link, or a path to a local file.</Line>
+            <Line>Add optional notes (&ldquo;use more water&rdquo;).</Line>
+          </>
+        )}
+      </Section>
+
+      <Section icon="shuffle-variant" title="Choosing what to cook">
+        <Text style={styles.body}>
+          {IS_WEB
+            ? 'Choose a recipe suggests something based on how recently you made each dish — the longer it has been, the more likely it comes up. Never-cooked recipes come up most of all.'
+            : 'Choose Recipe suggests something based on how recently you made each dish — the longer it has been, the more likely it comes up.'}
+        </Text>
+        <Note icon="vote-outline">
+          Can&apos;t agree? <Text style={styles.strong}>Vote</Text> deals everyone a deck of your
+          most overdue recipes. {IS_WEB ? 'Everyone votes from their own device' : 'Swipe right for yes, left for no'} — matches
+          are shown when you all agree.
+        </Note>
+      </Section>
+
+      <Section icon="book-open-variant" title="Your recipe book">
+        <Line>Pin a recipe to keep it at the top.</Line>
+        <Line>Tap a note to edit it, any time.</Line>
+        <Line>Add photos of the dish, or of a page from a cookbook.</Line>
+        {IS_WEB ? (
+          <Line>
+            Open a recipe to read its ingredients and method pulled straight from the site —
+            and set how many people you&apos;re feeding to rescale the amounts.
+          </Line>
+        ) : (
+          <Line>Open a recipe to read its ingredients and method, rescaled for however many you&apos;re feeding.</Line>
+        )}
+      </Section>
+
+      <Section icon="calendar-month-outline" title="Keeping track">
+        <Text style={styles.body}>
+          Every time you confirm you&apos;ve cooked something it&apos;s recorded, so the calendar
+          shows what you made and when — and the suggestions get better the more you use it.
+        </Text>
+        <Note icon="cart-outline">
+          Building a shopping list? Open a recipe, set the servings, then{' '}
+          <Text style={styles.strong}>Add to list</Text> — the amounts follow.
+        </Note>
+      </Section>
+    </ScrollView>
+  );
+}
 
 const styles = StyleSheet.create({
-  content: {
-    flexShrink: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 16,
-    paddingBottom: 16,
-    paddingHorizontal: 2, // Added horizontal padding
-  },
-  title: {
-    fontWeight: 'bold',
-    flexShrink: 1, // Allow text to shrink if needed
-  },
-  headerIcon: {
-    marginRight: 8,
-  },
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 16,
-    marginBottom: 16,
-    gap: 8,
-  },
-  infoIcon: {},
-  infoText: {
-    flex: 1,
-    fontSize: 14,
-  },
-  section: {
-    marginBottom: 16,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  iconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  iconText: {
-    fontSize: 18,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  sectionContent: {
-    marginLeft: 15,
-    paddingLeft: 12,
-    borderLeftWidth: 2,
-  },
-  sectionText: {
-    fontSize: 14,
-  },
-  listItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  listItemIcon: {
-    marginRight: 8,
-    fontSize: 16,
-  },
-  listItemText: {
-    flex: 1,
-    fontSize: 14,
-  },
-  closeButton: {
-    width: '100%',
-  },
-  closeButtonLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#f7f0e2',
-  },
-  bold: {
-    fontWeight: 'bold',
-  },
-});
+  scroll: { flexGrow: 0 },
+  content: { paddingHorizontal: 22, paddingTop: 20, paddingBottom: 8 },
 
-export default HelpDialog;
+  lead: { color: INK, fontSize: 16, lineHeight: 25, marginBottom: 24 },
+  leadStrong: { fontWeight: '800', color: BROWN },
+
+  section: { marginBottom: 22 },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  sectionIcon: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: YELLOW,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  sectionTitle: { color: ORANGE, fontSize: 17, fontWeight: '800' },
+  // Indented to line up under the section title, with a rule tying the block
+  // to its heading.
+  sectionBody: {
+    paddingLeft: 14, marginLeft: 15,
+    borderLeftWidth: 2, borderLeftColor: 'rgba(90,66,48,0.14)',
+  },
+
+  body: { color: INK, fontSize: 15, lineHeight: 23 },
+  strong: { fontWeight: '800', color: BROWN },
+
+  line: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
+  bullet: { width: 5, height: 5, borderRadius: 3, backgroundColor: ORANGE, marginTop: 9 },
+  lineText: { flex: 1, color: INK, fontSize: 15, lineHeight: 23 },
+
+  note: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: YELLOW, borderRadius: 10, padding: 13, marginTop: 12,
+  },
+  noteIcon: { marginTop: 1 },
+  noteText: { flex: 1, color: BROWN, fontSize: 14, lineHeight: 21, fontStyle: 'italic' },
+});
