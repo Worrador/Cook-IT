@@ -15,6 +15,7 @@ import RecipeViewDialog from './src/components/RecipeViewDialog';
 import DialogShell from './src/components/DialogShell';
 import VoteSession from './src/screens/VoteSession';
 import { addRecipeToList } from './src/services/shoppingList';
+import { getUnitPreference, toggleUnitPreference, METRIC } from './src/services/unitPreference';
 import WebShell from './src/components/WebShell';
 import WebHome from './src/screens/WebHome';
 import BuyCoffeeDialog from './src/components/BuyCoffeeDialog';
@@ -101,6 +102,7 @@ const AppContent = () => {
   const [showShoppingList, setShowShoppingList] = useState(false);
   const [showVote, setShowVote] = useState(false);
   const [recipeView, setRecipeView] = useState(null);
+  const [useMetric, setUseMetric] = useState(false);
   const [cookedRecipes, setCookedRecipes] = useState({});
   const [lastCookedDates, setLastCookedDates] = useState({});
   const [cookCounts, setCookCounts] = useState({});
@@ -169,6 +171,11 @@ const AppContent = () => {
   };
 
   // Sync icon rotation animation
+  // Reflect the saved unit preference in the header on launch.
+  useEffect(() => {
+    getUnitPreference().then(pref => setUseMetric(pref === METRIC));
+  }, []);
+
   useEffect(() => {
     if (syncStatus.inProgress) {
       // Create a continuous rotation animation that actually spins
@@ -1048,6 +1055,12 @@ const AppContent = () => {
               onPress={() => setShowPinnedOnly(!showPinnedOnly)}
             />
             <IconButton
+              icon={useMetric ? 'scale-balance' : 'scale-off'}
+              size={28}
+              iconColor={useMetric ? theme.colors.secondary : theme.colors.tertiary}
+              onPress={async () => setUseMetric((await toggleUnitPreference()) === METRIC)}
+            />
+            <IconButton
               icon="vote-outline"
               size={28}
               iconColor={theme.colors.tertiary}
@@ -1359,6 +1372,7 @@ const AppContent = () => {
 
       <RecipeViewDialog
         visible={!!recipeView}
+        key={`${recipeView?.name || ''}-${useMetric}`}
         recipe={recipeView}
         onClose={() => setRecipeView(null)}
         onAddToList={async (ingredients) => {
@@ -1367,6 +1381,10 @@ const AppContent = () => {
           setShowShoppingList(true);
         }}
         onCook={(recipe) => { setRecipeView(null); setSelectedRecipe(recipe); setShowRecipeDetails(true); }}
+        onSaveComment={async (r, text) => {
+          const updated = await updateRecipe(r.name, { comment: text.trim() });
+          setRecipes(updated);
+        }}
       />
       <ShoppingListDialog visible={showShoppingList} onClose={() => setShowShoppingList(false)} />
 

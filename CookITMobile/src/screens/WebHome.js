@@ -39,10 +39,12 @@ import HelpDialog from '../components/HelpDialog';
 import BuyCoffeeDialog from '../components/BuyCoffeeDialog';
 import VoteSession from './VoteSession';
 import CookCalendar from './CookCalendar';
+import RecipeViewDialog from '../components/RecipeViewDialog';
 import DialogShell from '../components/DialogShell';
 import ShoppingListDialog from '../components/ShoppingListDialog';
 import { pickWeighted } from '../services/suggestion';
 import { scaleIngredient, parseServings } from '../services/ingredientScaling';
+import { getUnitPreference, toggleUnitPreference, METRIC } from '../services/unitPreference';
 import { askForAdvice, isAdvisorAvailable } from '../services/cookAdvisor';
 import { adviseLocally } from '../services/localAdvisor';
 import {
@@ -218,6 +220,7 @@ export default function WebHome() {
   const [showCoffee, setShowCoffee] = useState(false);
   const [voteOpen, setVoteOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [useMetric, setUseMetric] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
   const [shopItems, setShopItems] = useState([]);
   const [advisorOn, setAdvisorOn] = useState(false);
@@ -248,6 +251,7 @@ export default function WebHome() {
       // fetch, which would cost the user-activation needed to open its window.
       preloadPicker().catch(() => {});
       setShopItems(await getShoppingList());
+      setUseMetric((await getUnitPreference()) === METRIC);
       // Only probe the proxy when the feature is switched on at all.
       setAdvisorOn(ADVISOR_ENABLED ? await isAdvisorAvailable() : false);
       setLoading(false);
@@ -602,6 +606,21 @@ export default function WebHome() {
             {/* Icon actions are grouped and separated from the Drive chip: they
                 are app-level utilities, the chip is account state, and mixing
                 them at equal weight made the bar read as a row of loose icons. */}
+            <Hoverable
+              onPress={async () => setUseMetric((await toggleUnitPreference()) === METRIC)}
+              style={[styles.unitPill, useMetric && styles.unitPillOn]}
+              hoverStyle={styles.navIconHover}
+            >
+              <MaterialCommunityIcons
+                name="scale-balance"
+                size={16}
+                color={useMetric ? PAGE_BG : CREAM}
+              />
+              <Text style={[styles.unitPillText, useMetric && { color: PAGE_BG }]}>
+                {useMetric ? 'Metric' : 'To metric'}
+              </Text>
+            </Hoverable>
+
             <View style={styles.navGroup}>
               <Hoverable onPress={() => setShopOpen(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
                 <MaterialCommunityIcons name="cart-outline" size={20} color={CREAM} />
@@ -817,23 +836,21 @@ export default function WebHome() {
                   key={recipe.name}
                   style={[styles.card, { width: `${100 / columns}%` }]}
                 >
-                  <View style={[styles.cardInner, isPinned && styles.cardPinned]}>
+                  {/* One clickable surface. Everything you can do to a recipe
+                      now lives in the dialog it opens - a card carrying four
+                      competing buttons made the primary action ambiguous. Pin
+                      stays out here because it's a property of the card itself. */}
+                  <Hoverable
+                    onPress={() => openRecipe(recipe)}
+                    style={[styles.cardInner, isPinned && styles.cardPinned]}
+                    hoverStyle={styles.cardInnerHover}
+                  >
                     {recipe.images?.length ? (
-                      <Photo
-                        imageRef={recipe.images[0]}
-                        style={styles.cardPhoto}
-                        onPress={() => setGallery(recipe)}
-                      />
+                      <Photo imageRef={recipe.images[0]} style={styles.cardPhoto} />
                     ) : recipe.url ? (
-                      // Opens the parsed recipe rather than navigating away: the
-                      // whole point of parsing is that you can read it here.
-                      // "Open site" inside that view still goes to the source.
-                      <LinkPreview
-                        url={recipe.url}
-                        style={styles.cardPhoto}
-                        onPress={() => openRecipe(recipe)}
-                      />
+                      <LinkPreview url={recipe.url} style={styles.cardPhoto} />
                     ) : null}
+
                     <View style={styles.cardTop}>
                       <Text style={styles.cardTitle} numberOfLines={2}>{recipe.name}</Text>
                       <Hoverable
@@ -849,60 +866,53 @@ export default function WebHome() {
                       </Hoverable>
                     </View>
 
-                    <Pressable
-                      onPress={() => { setEditing(recipe); setEditText(recipe.comment || ''); }}
-                      style={styles.cardNoteWrap}
+                    <Text
+                      style={[styles.cardNote, !recipe.comment && styles.cardNoteEmpty]}
+                      numberOfLines={2}
                     >
-                      <Text style={[styles.cardNote, !recipe.comment && styles.cardNoteEmpty]} numberOfLines={3}>
-                        {recipe.comment || 'Add a note…'}
-                      </Text>
-                    </Pressable>
+                      {recipe.comment || 'No note yet'}
+                    </Text>
 
-                    <View style={styles.cardMeta}>
+                    <View style={styles.cardFooter}>
                       {count > 0 ? (
                         <View style={styles.badge}>
                           <MaterialCommunityIcons name="fire" size={13} color={BROWN} />
                           <Text style={styles.badgeText}>cooked {count}×</Text>
                         </View>
                       ) : <View />}
-                    </View>
 
-                    <View style={styles.cardActions}>
-                      <Button
-                        label="Cook it"
-                        icon="silverware-fork-knife"
-                        onPress={() => handleCook(recipe)}
-                        style={styles.cardBtn}
-                      />
-                      {recipe.url ? (
+                      {/* Quick actions, back by request. Nested Pressables: the
+                          innermost handles the touch, so tapping an icon does
+                          not also open the dialog behind it. */}
+                      <View style={styles.cardActions}>
                         <Hoverable
-                          onPress={() => openRecipe(recipe)}
+                          onPress={() => handleCook(recipe)}
                           style={styles.cardIcon}
                           hoverStyle={styles.cardIconHover}
                         >
-                          <MaterialCommunityIcons name="text-box-outline" size={18} color={NAVY} />
+                          <MaterialCommunityIcons name="silverware-fork-knife" size={17} color={ORANGE} />
                         </Hoverable>
-                      ) : null}
-                      <Hoverable
-                        onPress={() => setGallery(recipe)}
-                        style={styles.cardIcon}
-                        hoverStyle={styles.cardIconHover}
-                      >
-                        <MaterialCommunityIcons
-                          name={recipe.images?.length ? 'image-multiple' : 'camera-plus-outline'}
-                          size={18}
-                          color={BROWN}
-                        />
-                      </Hoverable>
-                      <Hoverable
-                        onPress={() => setConfirm(recipe)}
-                        style={styles.cardIcon}
-                        hoverStyle={styles.cardIconHover}
-                      >
-                        <MaterialCommunityIcons name="trash-can-outline" size={18} color={ERROR} />
-                      </Hoverable>
+                        <Hoverable
+                          onPress={() => setGallery(recipe)}
+                          style={styles.cardIcon}
+                          hoverStyle={styles.cardIconHover}
+                        >
+                          <MaterialCommunityIcons
+                            name={recipe.images?.length ? 'image-multiple' : 'camera-plus-outline'}
+                            size={17}
+                            color={recipe.images?.length ? BROWN : MUTED}
+                          />
+                        </Hoverable>
+                        <Hoverable
+                          onPress={() => setConfirm(recipe)}
+                          style={styles.cardIcon}
+                          hoverStyle={styles.cardIconHover}
+                        >
+                          <MaterialCommunityIcons name="trash-can-outline" size={17} color={ERROR} />
+                        </Hoverable>
+                      </View>
                     </View>
-                  </View>
+                  </Hoverable>
                 </View>
               );
             })}
@@ -1165,130 +1175,27 @@ export default function WebHome() {
         ) : null}
       </Sheet>
 
-      <Sheet
+      {/* Same component the phone uses, so comment editing, unit conversion
+          and serving scaling can't diverge between the two screens. */}
+      <RecipeViewDialog
         visible={!!recipeView}
+        key={`${recipeView?.name || ''}-${useMetric}`}
+        recipe={recipeView}
         onClose={() => setRecipeView(null)}
-        title={recipeView?.name || ''} icon="text-box-outline"
-        width={760}
-        footer={
-          <>
-            <Button label="Close" kind="ghost" onPress={() => setRecipeView(null)} />
-            {recipeData.data?.ingredients?.length ? (
-              <Button
-                label="Add to list"
-                icon="cart-plus"
-                kind="secondary"
-                onPress={handleAddToList}
-              />
-            ) : null}
-            <Button label="Open site" icon="open-in-new" kind="secondary" onPress={() => openUrl(recipeView?.url)} />
-            <Button label="Cook it" icon="silverware-fork-knife" onPress={() => { setRecipeView(null); handleCook(recipeView); }} />
-          </>
-        }
-      >
-        {recipeData.loading ? (
-          <View style={styles.recipeLoading}>
-            <ActivityIndicator color={ORANGE} />
-            <Text style={styles.galleryEmptyText}>Reading the recipe…</Text>
-          </View>
-        ) : recipeData.data?.ingredients?.length || recipeData.data?.steps?.length ? (
-          <ScrollView style={styles.recipeScroll}>
-            {/* The user's own photo wins over the site's og:image - if they
-                bothered to take one, it's the more useful picture. */}
-            {recipeView?.images?.length ? (
-              <Photo imageRef={recipeView.images[0]} style={styles.recipeHero} />
-            ) : recipeData.data?.image ? (
-              <Image source={{ uri: recipeData.data.image }} style={styles.recipeHero} resizeMode="cover" />
-            ) : null}
+        onCook={(r) => { setRecipeView(null); handleCook(r); }}
+        onPhotos={(r) => { setRecipeView(null); setGallery(r); }}
+        onDelete={(r) => { setRecipeView(null); setConfirm(r); }}
+        onSaveComment={async (r, text) => {
+          await updateRecipe(r.name, { comment: text.trim() });
+          await refresh();
+        }}
+        onAddToList={async (ingredients) => {
+          setShopItems(await addRecipeToList(recipeView.name, ingredients));
+          setRecipeView(null);
+          setShopOpen(true);
+        }}
+      />
 
-            <View style={styles.recipeMetaRow}>
-              {formatDuration(recipeData.data.totalTime) ? (
-                <View style={styles.badge}>
-                  <MaterialCommunityIcons name="clock-outline" size={13} color={BROWN} />
-                  <Text style={styles.badgeText}>{formatDuration(recipeData.data.totalTime)}</Text>
-                </View>
-              ) : null}
-
-              {/* The stepper only appears when the page published a serving count
-                  we could parse - without a baseline there is nothing to scale
-                  against, and guessing one would silently produce wrong amounts. */}
-              {baseServings ? (
-                <View style={styles.servingStepper}>
-                  <MaterialCommunityIcons name="account-group-outline" size={15} color={BROWN} />
-                  <Hoverable
-                    onPress={() => setServings(s => Math.max(1, s - 1))}
-                    style={styles.stepBtn}
-                    hoverStyle={styles.stepBtnHover}
-                  >
-                    <MaterialCommunityIcons name="minus" size={15} color={BROWN} />
-                  </Hoverable>
-                  <Text style={styles.servingCount}>serves {servings}</Text>
-                  <Hoverable
-                    onPress={() => setServings(s => Math.min(99, s + 1))}
-                    style={styles.stepBtn}
-                    hoverStyle={styles.stepBtnHover}
-                  >
-                    <MaterialCommunityIcons name="plus" size={15} color={BROWN} />
-                  </Hoverable>
-                </View>
-              ) : recipeData.data.servings ? (
-                <View style={styles.badge}>
-                  <MaterialCommunityIcons name="account-group-outline" size={13} color={BROWN} />
-                  <Text style={styles.badgeText}>{recipeData.data.servings}</Text>
-                </View>
-              ) : null}
-
-              {baseServings && servings !== baseServings ? (
-                <View style={styles.scaledBadge}>
-                  <MaterialCommunityIcons name="scale-balance" size={13} color={BROWN} />
-                  <Text style={styles.badgeText}>scaled from {baseServings}</Text>
-                </View>
-              ) : null}
-            </View>
-
-            {recipeData.data.ingredients.length ? (
-              <>
-                <Text style={styles.recipeHeading}>Ingredients</Text>
-                {recipeData.data.ingredients.map((item, i) => (
-                  <View key={i} style={styles.ingredientRow}>
-                    <View style={styles.bullet} />
-                    {/* selectable: an ingredient list is the one thing here
-                        people genuinely want to copy (into a shopping list). */}
-                    <Text selectable style={styles.ingredientText}>
-                      {scaleIngredient(item, scaleFactor)}
-                    </Text>
-                  </View>
-                ))}
-              </>
-            ) : null}
-
-            {recipeData.data.steps.length ? (
-              <>
-                <Text style={styles.recipeHeading}>Method</Text>
-                {recipeData.data.steps.map((step, i) => (
-                  <View key={i} style={styles.stepRow}>
-                    <Text style={styles.stepNum}>{i + 1}</Text>
-                    <Text selectable style={styles.stepText}>{step}</Text>
-                  </View>
-                ))}
-              </>
-            ) : null}
-          </ScrollView>
-        ) : (
-          <View style={styles.galleryEmpty}>
-            <MaterialCommunityIcons name="text-box-remove-outline" size={40} color={MUTED} />
-            <Text style={styles.galleryEmptyText}>
-              Couldn&apos;t read a recipe from this page. Not every site publishes one in a
-              machine-readable form — open the site to view it.
-            </Text>
-          </View>
-        )}
-      </Sheet>
-
-      {/* Both dialogs render their own Paper Dialog.Title/Content and have no
-          `visible` prop of their own - App.js controls them by wrapping in a
-          Portal + Dialog, so this mirrors that rather than inventing a new
-          contract. Rendering them bare would show their content permanently. */}
       <DialogShell
         visible={showHelp}
         onClose={() => setShowHelp(false)}
@@ -1456,6 +1363,13 @@ const styles = StyleSheet.create({
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -8 },
   cardInner: { flex: 1, padding: 20, ...card },
+  cardInnerHover: { borderColor: 'rgba(90,66,48,0.34)', backgroundColor: '#fffdf6' },
+  cardFooter: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 12, minHeight: 24,
+  },
+  cardMetaIcon: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  cardMetaText: { color: MUTED, fontSize: 12, fontWeight: '700' },
   // Pinned cards are visually distinct on their own, not just grouped - the
   // grouping explains where they went, this explains which ones they are.
   cardPinned: { borderColor: ORANGE, borderWidth: 2, backgroundColor: '#fffdf6' },
@@ -1477,7 +1391,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: YELLOW,
   },
   badgeText: { color: BROWN, fontSize: 12, fontWeight: '700' },
-  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   cardBtn: { flex: 1 },
   cardIcon: { padding: 9, borderRadius: 8 },
   cardIconHover: { backgroundColor: 'rgba(90,66,48,0.10)' },
@@ -1517,6 +1431,13 @@ const styles = StyleSheet.create({
   navIcon: { padding: 9, borderRadius: 999 },
   navIconHover: { backgroundColor: 'rgba(247,240,226,0.14)' },
   navGroup: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  unitPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 4,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
+    borderWidth: 1, borderColor: 'rgba(247,240,226,0.28)',
+  },
+  unitPillOn: { backgroundColor: YELLOW, borderColor: YELLOW },
+  unitPillText: { color: CREAM, fontSize: 13, fontWeight: '700' },
   navDot: {
     position: 'absolute', top: 7, right: 7, width: 8, height: 8,
     borderRadius: 4, backgroundColor: ORANGE,

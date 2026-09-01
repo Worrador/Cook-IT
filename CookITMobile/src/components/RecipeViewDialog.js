@@ -13,16 +13,48 @@ import DialogShell from './DialogShell';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getPreview, formatDuration } from '../services/linkPreview';
 import { scaleIngredient, parseServings } from '../services/ingredientScaling';
-import { BROWN, ORANGE, YELLOW, SAND, CREAM, PAGE_BG, INK, MUTED } from '../theme/webPalette';
+import {
+  convertIngredientToMetric, convertStepToMetric, hasImperialUnits,
+} from '../services/unitConversion';
+import { getUnitPreference, METRIC } from '../services/unitPreference';
+import { BROWN, ORANGE, YELLOW, SAND, CREAM, PAGE_BG, INK, MUTED, ERROR } from '../theme/webPalette';
 
-export default function RecipeViewDialog({ visible, recipe, onClose, onAddToList, onCook }) {
+export default function RecipeViewDialog({
+  visible, recipe, onClose, onAddToList, onCook, onSaveComment, onDelete, onPhotos,
+}) {
   const [state, setState] = useState({ loading: false, data: null });
   const [baseServings, setBaseServings] = useState(null);
   const [servings, setServings] = useState(1);
+  const [metric, setMetric] = useState(false);
+  const [comment, setComment] = useState('');
+  const [editingComment, setEditingComment] = useState(false);
+
+  // Reset on every open, whether or not the recipe has a link.
+  //
+  // The metric toggle inside this dialog is a per-sitting override: it starts
+  // from the global preference and is deliberately NOT saved, so closing and
+  // reopening returns to your default. That only holds if the reset runs every
+  // time - when this was folded into the fetch effect below it was skipped for
+  // recipes with no URL, and the previous recipe's override (and comment) leaked
+  // into the next one.
+  useEffect(() => {
+    let cancelled = false;
+    if (!visible) return undefined;
+
+    getUnitPreference().then(pref => { if (!cancelled) setMetric(pref === METRIC); });
+    setComment(recipe?.comment || '');
+    setEditingComment(false);
+    return () => { cancelled = true; };
+  }, [visible, recipe]);
 
   useEffect(() => {
     let cancelled = false;
-    if (!visible || !recipe?.url) return undefined;
+    if (!visible || !recipe?.url) {
+      setState({ loading: false, data: null });
+      setBaseServings(null);
+      setServings(1);
+      return undefined;
+    }
 
     setState({ loading: true, data: null });
     getPreview(recipe.url).then(data => {
@@ -51,29 +83,54 @@ export default function RecipeViewDialog({ visible, recipe, onClose, onAddToList
       icon="text-box-outline"
       width={640}
       footer={
-        <>
-          {hasRecipe && onAddToList ? (
-            <Pressable
-              onPress={() => onAddToList(data.ingredients.map(l => scaleIngredient(l, factor)))}
-              style={styles.ghostBtn}
-            >
-              <MaterialCommunityIcons name="cart-plus" size={16} color={BROWN} />
-              <Text style={styles.ghostBtnText}>Add to list</Text>
-            </Pressable>
-          ) : null}
-          {recipe?.url ? (
-            <Pressable onPress={() => Linking.openURL(recipe.url)} style={styles.ghostBtn}>
-              <MaterialCommunityIcons name="open-in-new" size={16} color={BROWN} />
-              <Text style={styles.ghostBtnText}>Site</Text>
-            </Pressable>
-          ) : null}
-          {onCook ? (
-            <Pressable onPress={() => onCook(recipe)} style={styles.primaryBtn}>
-              <MaterialCommunityIcons name="silverware-fork-knife" size={16} color="#fff" />
-              <Text style={styles.primaryBtnText}>Cook it</Text>
-            </Pressable>
-          ) : null}
-        </>
+        // Five equal buttons in a row had no hierarchy - everything shouted.
+        // Destructive and secondary actions are now quiet icons on the left;
+        // the two things you actually came to do are on the right.
+        <View style={styles.footRow}>
+          <View style={styles.footLeft}>
+            {onPhotos ? (
+              <Pressable onPress={() => onPhotos(recipe)} style={styles.miniBtn} hitSlop={6}>
+                <MaterialCommunityIcons
+                  name={recipe?.images?.length ? 'image-multiple' : 'camera-plus-outline'}
+                  size={19} color={MUTED}
+                />
+              </Pressable>
+            ) : null}
+            {recipe?.url ? (
+              <Pressable onPress={() => Linking.openURL(recipe.url)} style={styles.miniBtn} hitSlop={6}>
+                <MaterialCommunityIcons name="open-in-new" size={19} color={MUTED} />
+              </Pressable>
+            ) : null}
+            {onDelete ? (
+              <Pressable onPress={() => onDelete(recipe)} style={styles.miniBtn} hitSlop={6}>
+                <MaterialCommunityIcons name="trash-can-outline" size={19} color={ERROR} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          <View style={styles.footRight}>
+            {hasRecipe && onAddToList ? (
+              <Pressable
+                onPress={() => onAddToList(
+                  data.ingredients.map(l => {
+                    const scaled = scaleIngredient(l, factor);
+                    return metric ? convertIngredientToMetric(scaled) : scaled;
+                  })
+                )}
+                style={styles.ghostBtn}
+              >
+                <MaterialCommunityIcons name="cart-plus" size={16} color={BROWN} />
+                <Text style={styles.ghostBtnText}>Add to list</Text>
+              </Pressable>
+            ) : null}
+            {onCook ? (
+              <Pressable onPress={() => onCook(recipe)} style={styles.primaryBtn}>
+                <MaterialCommunityIcons name="silverware-fork-knife" size={16} color="#fff" />
+                <Text style={styles.primaryBtnText}>Cook it</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
       }
     >
       <>
@@ -110,11 +167,74 @@ export default function RecipeViewDialog({ visible, recipe, onClose, onAddToList
                   </View>
                 ) : null}
 
+                {/* Only offered when there is actually something imperial to
+                    convert, so it isn't a dead switch on a metric recipe. */}
+                {hasImperialUnits(data.ingredients) ? (
+                  <Pressable
+                    onPress={() => setMetric(m => !m)}
+                    style={[styles.unitToggle, metric && styles.unitToggleOn]}
+                  >
+                    <MaterialCommunityIcons
+                      name="scale-balance"
+                      size={14}
+                      color={metric ? '#fff' : BROWN}
+                    />
+                    <Text style={[styles.unitToggleText, metric && { color: '#fff' }]}>
+                      {metric ? 'metric' : 'to metric'}
+                    </Text>
+                  </Pressable>
+                ) : null}
+
                 {baseServings && servings !== baseServings ? (
                   <View style={styles.scaledBadge}>
                     <Text style={styles.badgeText}>scaled from {baseServings}</Text>
                   </View>
                 ) : null}
+              </View>
+
+              {/* Your own note lives with the recipe, so it's here rather than
+                  needing a separate dialog to read or change it. */}
+              <View style={styles.noteBlock}>
+                <View style={styles.noteHead}>
+                  <MaterialCommunityIcons name="note-text-outline" size={15} color={MUTED} />
+                  <Text style={styles.noteLabel}>Your note</Text>
+                  {onSaveComment && !editingComment ? (
+                    <Pressable onPress={() => setEditingComment(true)} hitSlop={8}>
+                      <Text style={styles.noteEdit}>{comment ? 'Edit' : 'Add'}</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                {editingComment ? (
+                  <>
+                    <TextInput
+                      value={comment}
+                      onChangeText={setComment}
+                      placeholder="Adjust spice level to taste…"
+                      placeholderTextColor={MUTED}
+                      multiline
+                      autoFocus
+                      style={styles.noteInput}
+                    />
+                    <View style={styles.noteActions}>
+                      <Pressable
+                        onPress={() => { setComment(recipe.comment || ''); setEditingComment(false); }}
+                        style={styles.ghostBtn}
+                      >
+                        <Text style={styles.ghostBtnText}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={async () => { await onSaveComment(recipe, comment); setEditingComment(false); }}
+                        style={styles.primaryBtn}
+                      >
+                        <Text style={styles.primaryBtnText}>Save note</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : (
+                  <Text style={[styles.noteText, !comment && styles.notePlaceholder]}>
+                    {comment || 'No note yet.'}
+                  </Text>
+                )}
               </View>
 
               {data.ingredients.length ? (
@@ -124,7 +244,9 @@ export default function RecipeViewDialog({ visible, recipe, onClose, onAddToList
                     <View key={i} style={styles.ingredientRow}>
                       <View style={styles.bullet} />
                       <Text selectable style={styles.ingredientText}>
-                        {scaleIngredient(item, factor)}
+                        {metric
+                          ? convertIngredientToMetric(scaleIngredient(item, factor))
+                          : scaleIngredient(item, factor)}
                       </Text>
                     </View>
                   ))}
@@ -137,7 +259,7 @@ export default function RecipeViewDialog({ visible, recipe, onClose, onAddToList
                   {data.steps.map((step, i) => (
                     <View key={i} style={styles.stepRow}>
                       <Text style={styles.stepNum}>{i + 1}</Text>
-                      <Text selectable style={styles.stepBody}>{step}</Text>
+                      <Text selectable style={styles.stepBody}>{metric ? convertStepToMetric(step) : step}</Text>
                     </View>
                   ))}
                 </>
@@ -194,6 +316,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, backgroundColor: YELLOW,
   },
   stepBtn: { padding: 3 },
+  unitToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
+    borderWidth: 1, borderColor: 'rgba(90,66,48,0.28)',
+  },
+  unitToggleOn: { backgroundColor: BROWN, borderColor: BROWN },
+  unitToggleText: { color: BROWN, fontSize: 12, fontWeight: '800' },
+
+  noteBlock: {
+    marginTop: 16, padding: 14, borderRadius: 12, backgroundColor: '#fffdf6',
+    borderWidth: 1, borderColor: 'rgba(90,66,48,0.14)',
+  },
+  noteHead: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 7 },
+  noteLabel: {
+    flex: 1, color: MUTED, fontSize: 12, fontWeight: '800',
+    letterSpacing: 0.8, textTransform: 'uppercase',
+  },
+  noteEdit: { color: ORANGE, fontSize: 13, fontWeight: '800' },
+  noteText: { color: INK, fontSize: 15, lineHeight: 22 },
+  notePlaceholder: { color: MUTED, fontStyle: 'italic' },
+  noteInput: {
+    borderWidth: 1, borderColor: 'rgba(90,66,48,0.22)', borderRadius: 9,
+    paddingHorizontal: 11, paddingVertical: 9, fontSize: 15, color: INK,
+    backgroundColor: '#fff', minHeight: 68, textAlignVertical: 'top',
+  },
+  noteActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 9 },
   stepText: { color: BROWN, fontSize: 12, fontWeight: '800', minWidth: 62, textAlign: 'center' },
 
   heading: { color: BROWN, fontSize: 17, fontWeight: '800', marginTop: 18, marginBottom: 10 },
@@ -211,7 +359,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     padding: 14, gap: 10,
   },
+  footRow: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+  },
+  footLeft: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   footRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  miniBtn: { padding: 9, borderRadius: 8 },
   ghostBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingVertical: 10, paddingHorizontal: 13, borderRadius: 9,
