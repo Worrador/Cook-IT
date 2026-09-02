@@ -1280,6 +1280,11 @@ export default function WebHome() {
           await updateRecipe(r.name, { comment: text.trim() });
           await refresh();
         }}
+        onCacheParsed={async (r, parsed) => {
+          // Stored so every device gets it, including ones the publisher blocks.
+          await updateRecipe(r.name, { parsed: { ...parsed, parsedAt: new Date().toISOString() } });
+          await refresh();
+        }}
         onAddToList={async (ingredients) => {
           setShopItems(await addRecipeToList(recipeView.name, ingredients));
           setRecipeView(null);

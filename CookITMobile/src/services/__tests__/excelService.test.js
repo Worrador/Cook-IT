@@ -133,8 +133,8 @@ beforeEach(async () => {
   await excelService.initialize();
 });
 
-describe('prepareExcelData (eight-column export schema)', () => {
-  test('emits all eight columns in desktop order, with Images then Id appended last', () => {
+describe('prepareExcelData (nine-column export schema)', () => {
+  test('emits all nine columns in desktop order, with mobile-only columns appended last', () => {
     const cookedMs = new Date(2024, 0, 15, 9, 5, 3).getTime(); // Jan 15 2024, 09:05:03 local
     const recipes = [
       { name: 'Soup', url: 'http://example.com/soup', comment: 'Tasty' },
@@ -152,7 +152,8 @@ describe('prepareExcelData (eight-column export schema)', () => {
     // 'Id' is appended after 'Images' for the same reason 'Images' comes after
     // 'Pinned': mobile-only columns must never shift the desktop-shared indexes.
     expect(Object.keys(rows[0])).toEqual([
-      'Recipe Name', 'URL', 'Comment', 'Last Shown', 'Last Cooked Date', 'Pinned', 'Images', 'Id'
+      'Recipe Name', 'URL', 'Comment', 'Last Shown', 'Last Cooked Date', 'Pinned',
+      'Images', 'Id', 'Parsed'
     ]);
 
     const soupRow = rows.find(r => r['Recipe Name'] === 'Soup');
@@ -501,5 +502,73 @@ describe('parseExcelFile vs importFromExcel side effects (Fix 6)', () => {
     // it would have clobbered local storage with remote data BEFORE the
     // `loadRecipes()` call a few lines later, and 'Local Only' would be lost.
     expect(result.recipes.map(r => r.name)).toEqual(expect.arrayContaining(['Local Only', 'Remote Only']));
+  });
+});
+
+
+describe('Parsed column (cached recipe parse)', () => {
+  test('serialises a parse and reads it back intact', async () => {
+    const parsed = {
+      ingredients: ['1 cup water', '2 eggs'],
+      steps: ['Boil the water.', 'Add the eggs.'],
+      totalTime: 'PT20M',
+      servings: '4',
+    };
+
+    const rows = excelService.prepareExcelData(
+      [{ name: 'Boiled Eggs', parsed }], {}, []
+    );
+    expect(rows[0].Parsed).toContain('1 cup water');
+
+    loadRecipes.mockResolvedValue([]);
+    await writeWorkbook({
+      Recipes: [{
+        'Recipe Name': 'Boiled Eggs', URL: '', Comment: '', 'Last Shown': '',
+        'Last Cooked Date': '', Pinned: 'No', Parsed: rows[0].Parsed,
+      }]
+    });
+
+    const result = await excelService.parseExcelFile();
+    expect(result.recipes[0].parsed.ingredients).toEqual(['1 cup water', '2 eggs']);
+    expect(result.recipes[0].parsed.steps).toHaveLength(2);
+  });
+
+  test('a recipe with no parse writes an empty cell rather than junk', () => {
+    const rows = excelService.prepareExcelData([{ name: 'Plain' }], {}, []);
+    expect(rows[0].Parsed).toBe('');
+  });
+
+  test('an empty remote cell does NOT wipe a parse this device already has', async () => {
+    // The whole point of the cache: a device that cannot fetch a page (blocked
+    // by the publisher) writes an empty cell. If that overwrote a parse another
+    // device obtained, the two would erase each other's work forever.
+    const existing = {
+      name: 'Apple Pie',
+      parsed: { ingredients: ['8 apples'], steps: ['Bake.'] },
+    };
+    loadRecipes.mockResolvedValue([existing]);
+
+    await writeWorkbook({
+      Recipes: [{
+        'Recipe Name': 'Apple Pie', URL: '', Comment: '', 'Last Shown': '',
+        'Last Cooked Date': '', Pinned: 'No', Parsed: '',
+      }]
+    });
+
+    const result = await excelService.parseExcelFile();
+    expect(result.recipes[0].parsed.ingredients).toEqual(['8 apples']);
+  });
+
+  test('a corrupt Parsed cell is ignored rather than throwing', async () => {
+    loadRecipes.mockResolvedValue([]);
+    await writeWorkbook({
+      Recipes: [{
+        'Recipe Name': 'Broken', URL: '', Comment: '', 'Last Shown': '',
+        'Last Cooked Date': '', Pinned: 'No', Parsed: '{not valid json',
+      }]
+    });
+
+    const result = await excelService.parseExcelFile();
+    expect(result.recipes[0].parsed).toBeUndefined();
   });
 });

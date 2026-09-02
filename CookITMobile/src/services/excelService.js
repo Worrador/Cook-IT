@@ -16,6 +16,40 @@ import {
 // crossPlatformFileSystem.js for why web needs its own branch.
 import fileSystem from './crossPlatformFileSystem';
 
+// Excel caps a cell at 32,767 characters. A parsed recipe is typically 1-4 KB,
+// so this only trips on something pathological - and a truncated JSON string is
+// worse than none, so it is dropped instead.
+const MAX_CELL_CHARS = 32000;
+
+function serialiseParsed(parsed) {
+  if (!parsed || (!parsed.ingredients?.length && !parsed.steps?.length)) return '';
+  try {
+    const json = JSON.stringify({
+      ingredients: parsed.ingredients || [],
+      steps: parsed.steps || [],
+      totalTime: parsed.totalTime || null,
+      servings: parsed.servings || null,
+      image: parsed.image || null,
+      parsedAt: parsed.parsedAt || new Date().toISOString(),
+    });
+    return json.length > MAX_CELL_CHARS ? '' : json;
+  } catch (_error) {
+    return '';
+  }
+}
+
+function deserialiseParsed(cell) {
+  if (!cell || typeof cell !== 'string') return null;
+  try {
+    const parsed = JSON.parse(cell);
+    // Guard against a cell holding something that isn't a parse result.
+    if (!parsed?.ingredients?.length && !parsed?.steps?.length) return null;
+    return parsed;
+  } catch (_error) {
+    return null;
+  }
+}
+
 const EXCEL_FILE_NAME = 'CookIT_Recipes.xlsx';
 const EXCEL_METADATA_KEY = '@cookit_excel_metadata';
 const EXCEL_CONFLICT_KEY = '@cookit_excel_conflict';
@@ -233,7 +267,7 @@ class ExcelService {
       // plus mobile-only 'Images' and 'Id' columns appended LAST so they don't
       // shift any of the indexes below:
       // 0 Recipe Name, 1 URL, 2 Comment, 3 Last Shown, 4 Last Cooked Date,
-      // 5 Pinned, 6 Images, 7 Id. Hide 'Pinned' (index 5) since it's an internal
+      // 5 Pinned, 6 Images, 7 Id, 8 Parsed. Hide 'Pinned' (index 5) since it's an internal
       // flag that's mirrored in the separate 'Pinned Recipes' sheet for
       // desktop. Desktop's ExcelWriter round-trips extra COLUMNS on the
       // 'Recipes' sheet untouched (it only rebuilds extra SHEETS), so
@@ -374,6 +408,7 @@ class ExcelService {
           // Create recipe object. storage.js writes createdAt/lastModified
           // as ISO strings (addRecipe/updateRecipe) - stay consistent with
           // that instead of the epoch numbers this file used to write.
+          const parsed = deserialiseParsed(row['Parsed']);
           const recipe = {
             // Prefer the id from the file, then whatever the local copy already
             // had, and only mint a new one if neither side has ever had one.
@@ -383,7 +418,11 @@ class ExcelService {
             comment: row['Comment'] || '',
             createdAt: existing?.createdAt || nowIso,
             lastModified: existing?.lastModified || nowIso,
-            images: this.parseImagesColumn(row['Images'], existing?.images)
+            images: this.parseImagesColumn(row['Images'], existing?.images),
+            // Keep whichever side actually has a parse. A device that could not
+            // fetch the page writes an empty cell, and that must not wipe a
+            // parse another device managed to obtain.
+            ...(parsed || existing?.parsed ? { parsed: parsed || existing.parsed } : {})
           };
           recipes.push(recipe);
 
@@ -815,7 +854,19 @@ class ExcelService {
         // survives a desktop save even though desktop never reads it. Blank for
         // a recipe that somehow has no id rather than inventing one here -
         // storage.loadRecipes owns id assignment.
-        'Id': recipe.id || ''
+        'Id': recipe.id || '',
+        // Cached parse of the linked page (ingredients, method, servings).
+        //
+        // Carried between devices because not every device can fetch every
+        // site: publishers that block datacenter IPs return 403 to the web
+        // build's Pages Function but serve a phone normally. Whichever device
+        // managed to read the page shares the result with the rest.
+        //
+        // JSON in a single cell. Excel's per-cell limit is 32,767 characters
+        // and a parsed recipe is a couple of KB, so this is comfortable - but
+        // it is dropped rather than truncated if it ever exceeds the limit,
+        // since half a JSON document parses to nothing useful.
+        'Parsed': serialiseParsed(recipe.parsed)
       };
     });
   }

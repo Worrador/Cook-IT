@@ -1385,6 +1385,14 @@ const AppContent = () => {
           const updated = await updateRecipe(r.name, { comment: text.trim() });
           setRecipes(updated);
         }}
+        onCacheParsed={async (r, parsed) => {
+          // The phone can usually reach sites the web build cannot, so this is
+          // where most cached parses come from.
+          const updated = await updateRecipe(r.name, {
+            parsed: { ...parsed, parsedAt: new Date().toISOString() },
+          });
+          setRecipes(updated);
+        }}
       />
       <ShoppingListDialog visible={showShoppingList} onClose={() => setShowShoppingList(false)} />
 

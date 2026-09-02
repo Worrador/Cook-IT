@@ -20,7 +20,7 @@ import { getUnitPreference, METRIC } from '../services/unitPreference';
 import { BROWN, ORANGE, YELLOW, SAND, CREAM, PAGE_BG, INK, MUTED, ERROR } from '../theme/webPalette';
 
 export default function RecipeViewDialog({
-  visible, recipe, onClose, onAddToList, onCook, onSaveComment, onDelete, onPhotos,
+  visible, recipe, onClose, onAddToList, onCook, onSaveComment, onDelete, onPhotos, onCacheParsed,
 }) {
   const [state, setState] = useState({ loading: false, data: null });
   const [baseServings, setBaseServings] = useState(null);
@@ -47,6 +47,16 @@ export default function RecipeViewDialog({
     return () => { cancelled = true; };
   }, [visible, recipe]);
 
+  // Applies a parse result to the view.
+  const applyData = (data) => {
+    setState({ loading: false, data });
+    // Start at whatever the recipe says it serves, so the amounts shown first
+    // are the ones the author wrote.
+    const parsed = parseServings(data?.servings);
+    setBaseServings(parsed);
+    setServings(parsed || 1);
+  };
+
   useEffect(() => {
     let cancelled = false;
     if (!visible || !recipe?.url) {
@@ -56,15 +66,31 @@ export default function RecipeViewDialog({
       return undefined;
     }
 
+    // A previously-parsed copy stored on the recipe is used immediately, with no
+    // network call at all.
+    //
+    // This is what makes recipe reading work everywhere. Some publishers (the
+    // Dotdash sites - allrecipes, seriouseats) return 403 to datacenter IPs, so
+    // the web build's Pages Function cannot fetch them, while a phone can
+    // because it fetches from a home connection. Caching the parse onto the
+    // recipe and syncing it through the Drive workbook means whichever device
+    // *could* read the page shares the result with the ones that can't.
+    if (recipe.parsed?.ingredients?.length || recipe.parsed?.steps?.length) {
+      applyData(recipe.parsed);
+      return () => { cancelled = true; };
+    }
+
     setState({ loading: true, data: null });
     getPreview(recipe.url).then(data => {
       if (cancelled) return;
-      setState({ loading: false, data });
-      // Start at whatever the recipe says it serves, so the amounts shown first
-      // are the ones the author wrote.
-      const parsed = parseServings(data?.servings);
-      setBaseServings(parsed);
-      setServings(parsed || 1);
+      applyData(data);
+
+      // Persist a successful parse so other devices - and this one, offline -
+      // don't need to fetch it again. Only worth storing if it actually yielded
+      // a recipe; an empty result would just cache a failure.
+      if (onCacheParsed && (data?.ingredients?.length || data?.steps?.length)) {
+        onCacheParsed(recipe, data);
+      }
     });
     return () => { cancelled = true; };
   }, [visible, recipe]);
