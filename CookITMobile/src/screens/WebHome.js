@@ -17,7 +17,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView, Modal,
-  ActivityIndicator, StyleSheet, useWindowDimensions, Image,
+  ActivityIndicator, StyleSheet, useWindowDimensions, Image, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Portal, Dialog as PaperDialog } from 'react-native-paper';
@@ -58,7 +58,10 @@ import {
 } from '../services/shoppingList';
 import { BROWN, ORANGE, YELLOW, SAND, CREAM, NAVY, ERROR, PAGE_BG, INK, MUTED } from '../theme/webPalette';
 
-const CONTENT_MAX = 1180;
+// Wide enough to use a modern monitor, capped so text lines don't become
+// unreadably long on an ultrawide. 1180 left ~370px of dead gutter each side at
+// 1920, which made the page look like it was hiding in the middle.
+const CONTENT_MAX = 1640;
 
 // Human phrasing for how stale a recipe is, so the suggestion can explain itself
 // rather than looking arbitrary.
@@ -73,6 +76,32 @@ function describeAge(isoDate) {
 }
 
 // --- small building blocks ------------------------------------------------
+
+// A nav icon that names itself on hover. Five unlabelled glyphs in a row is a
+// guessing game, and there is no room for permanent labels - a tooltip is the
+// standard resolution and costs nothing until you hover.
+function NavIcon({ icon, label, onPress, badge }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <View style={styles.navIconWrap}>
+      <Pressable
+        onPress={onPress}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+        style={[styles.navIcon, hovered && styles.navIconHover]}
+        accessibilityLabel={label}
+      >
+        <MaterialCommunityIcons name={icon} size={23} color={CREAM} />
+        {badge ? <View style={styles.navDot} /> : null}
+      </Pressable>
+      {hovered ? (
+        <View style={styles.tooltip} pointerEvents="none">
+          <Text style={styles.tooltipText}>{label}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 // Pressable with a hover state, since the desktop layout leans on hover
 // affordances that the phone screen has no need for.
@@ -197,7 +226,10 @@ function Sheet({ visible, onClose, title, icon, children, footer, width = 520 })
 
 export default function WebHome() {
   const { width } = useWindowDimensions();
-  const columns = width >= 1180 ? 3 : width >= 820 ? 2 : 1;
+  const columns =
+    width >= 1560 ? 4 :
+    width >= 1120 ? 3 :
+    width >= 760 ? 2 : 1;
   const narrow = width < 720;
 
   const [recipes, setRecipes] = useState([]);
@@ -631,64 +663,28 @@ export default function WebHome() {
   }
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.rootContent}>
+    // Header lives outside the ScrollView rather than scrolling away with the
+    // content. The library can run to dozens of cards, and having to scroll back
+    // to the top to reach search, the cart or the Drive state is a nuisance.
+    <View style={styles.root}>
       {/* --- nav ------------------------------------------------------- */}
       <View style={styles.nav}>
         <View style={[styles.navInner, { maxWidth: CONTENT_MAX }]}>
-          <View style={styles.brand}>
-            <MaterialCommunityIcons name="chef-hat" size={30} color={YELLOW} />
-            <Text style={styles.brandName}>Cook<Text style={{ color: YELLOW }}>-IT</Text></Text>
-          </View>
-          <View style={styles.navRight}>
-            {/* Icon actions are grouped and separated from the Drive chip: they
-                are app-level utilities, the chip is account state, and mixing
-                them at equal weight made the bar read as a row of loose icons. */}
-            <Hoverable
-              onPress={async () => setUseMetric((await toggleUnitPreference()) === METRIC)}
-              style={[styles.unitPill, useMetric && styles.unitPillOn]}
-              hoverStyle={styles.navIconHover}
-            >
-              <MaterialCommunityIcons
-                name="scale-balance"
-                size={16}
-                color={useMetric ? PAGE_BG : CREAM}
-              />
-              <Text style={[styles.unitPillText, useMetric && { color: PAGE_BG }]}>
-                {useMetric ? 'Metric' : 'To metric'}
-              </Text>
-            </Hoverable>
-
-            <View style={styles.navGroup}>
-              <Hoverable onPress={() => setShopOpen(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
-                <MaterialCommunityIcons name="cart-outline" size={20} color={CREAM} />
-                {shopItems.some(i => !i.checked) ? <View style={styles.navDot} /> : null}
-              </Hoverable>
-              <Hoverable onPress={() => setCalendarOpen(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
-                <MaterialCommunityIcons name="calendar-month-outline" size={20} color={CREAM} />
-              </Hoverable>
-              <Hoverable onPress={() => setVoteOpen(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
-                <MaterialCommunityIcons name="vote-outline" size={20} color={CREAM} />
-              </Hoverable>
-              <Hoverable onPress={() => setShowHelp(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
-                <MaterialCommunityIcons name="help-circle-outline" size={20} color={CREAM} />
-              </Hoverable>
-              <Hoverable onPress={() => setShowCoffee(true)} style={styles.navIcon} hoverStyle={styles.navIconHover}>
-                <MaterialCommunityIcons name="coffee-outline" size={20} color={CREAM} />
-              </Hoverable>
+          {/* Three zones: identity left, navigation centre, account state
+              right. Previously everything but the logo was crammed on the right,
+              so the unit switch and the Drive chip - which are settings, not
+              navigation - sat in the middle of the icon run. */}
+          {/* Drive sits beside the wordmark, separated by a rule: it is the one
+              thing here describing the app's connection to your data, so it
+              belongs with the identity rather than among the preferences. */}
+          <View style={styles.navLeft}>
+            <View style={styles.brand}>
+              <MaterialCommunityIcons name="chef-hat" size={30} color={YELLOW} />
+              <Text style={styles.brandName}>Cook<Text style={{ color: YELLOW }}>-IT</Text></Text>
             </View>
+
             <View style={styles.navDivider} />
-            {/* Hidden entirely until a Picker API key is configured - a button
-                that can only ever explain why it doesn't work is just noise. */}
-            {isPickerConfigured() ? (
-              <Hoverable
-                onPress={handleChooseFile}
-                style={styles.chip}
-                hoverStyle={styles.chipHover}
-              >
-                <MaterialCommunityIcons name="file-find-outline" size={18} color={CREAM} />
-                <Text style={styles.chipText}>Choose Drive file</Text>
-              </Hoverable>
-            ) : null}
+
             <Hoverable
               onPress={handleDrive}
               style={[styles.chip, driveState.connected && styles.chipOn]}
@@ -705,6 +701,48 @@ export default function WebHome() {
                 {driveState.connected ? 'Drive synced' : 'Connect Drive'}
               </Text>
             </Hoverable>
+
+            {isPickerConfigured() ? (
+              <Hoverable onPress={handleChooseFile} style={styles.chip} hoverStyle={styles.chipHover}>
+                <MaterialCommunityIcons name="file-find-outline" size={18} color={CREAM} />
+                <Text style={styles.chipText}>Choose file</Text>
+              </Hoverable>
+            ) : null}
+          </View>
+
+          {/* Tools only. Help and Support moved to the footer: they are read-once
+              meta, and mixing them in here gave a rarely-used link the same
+              visual weight as the shopping list. Grouping the three in a subtle
+              container makes them read as one control cluster rather than five
+              loose glyphs. */}
+          <View style={styles.navCenter}>
+            <NavIcon
+              icon="cart-outline"
+              label="Shopping list"
+              onPress={() => setShopOpen(true)}
+              badge={shopItems.some(i => !i.checked)}
+            />
+            <NavIcon icon="calendar-month-outline" label="Cooking history" onPress={() => setCalendarOpen(true)} />
+            <NavIcon icon="vote-outline" label="Vote on dinner" onPress={() => setVoteOpen(true)} />
+          </View>
+
+          <View style={styles.navRight}>
+            <Hoverable
+              onPress={async () => setUseMetric((await toggleUnitPreference()) === METRIC)}
+              style={[styles.unitPill, useMetric && styles.unitPillOn]}
+              // Hover must respect the toggle state. The shared navIconHover
+              // paints a translucent cream background, which over the yellow
+              // "on" pill left dark brown text on a dark surface - unreadable.
+              hoverStyle={useMetric ? styles.unitPillOnHover : styles.unitPillOffHover}
+            >
+              <MaterialCommunityIcons name="scale-balance" size={16} color={useMetric ? PAGE_BG : CREAM} />
+              <Text style={[styles.unitPillText, useMetric && { color: PAGE_BG }]}>
+                {useMetric ? 'Metric' : 'To metric'}
+              </Text>
+            </Hoverable>
+
+            {/* Icon only - the label lives on the footer button. */}
+            <NavIcon icon="coffee-outline" label="Support Cook-IT" onPress={() => setShowCoffee(true)} />
           </View>
         </View>
       </View>
@@ -728,6 +766,7 @@ export default function WebHome() {
         </Hoverable>
       ) : null}
 
+      <ScrollView style={styles.scroller} contentContainerStyle={styles.rootContent}>
       {/* --- hero ------------------------------------------------------ */}
       <View style={styles.hero}>
         <View style={[styles.heroInner, { maxWidth: CONTENT_MAX }, narrow && styles.heroNarrow]}>
@@ -1016,10 +1055,22 @@ export default function WebHome() {
       </View>
 
       <View style={styles.footer}>
+        <View style={styles.footerLinks}>
+          <Hoverable onPress={() => setShowHelp(true)} style={styles.footerLink} hoverStyle={styles.footerLinkHover}>
+            <MaterialCommunityIcons name="help-circle-outline" size={16} color={CREAM} />
+            <Text style={styles.footerLinkText}>How it works</Text>
+          </Hoverable>
+          <Hoverable onPress={() => setShowCoffee(true)} style={styles.footerLink} hoverStyle={styles.footerLinkHover}>
+            <MaterialCommunityIcons name="coffee-outline" size={16} color={CREAM} />
+            <Text style={styles.footerLinkText}>Support Cook-IT</Text>
+          </Hoverable>
+        </View>
         <Text style={styles.footerText}>
-          Cook-IT — recipes stay on this device and sync to your own Google Drive.
+          Recipes stay on this device and sync to your own Google Drive.
         </Text>
       </View>
+
+      </ScrollView>
 
       {/* --- modals ---------------------------------------------------- */}
       <Sheet
@@ -1381,7 +1432,7 @@ export default function WebHome() {
           Remove “{confirm?.name}” from your recipe book? This cannot be undone.
         </Text>
       </Sheet>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -1394,23 +1445,49 @@ const card = {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: SAND },
+  scroller: { flex: 1 },
   rootContent: { alignItems: 'center', paddingBottom: 0 },
 
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PAGE_BG, gap: 14 },
   loadingText: { color: CREAM, fontSize: 16 },
 
   // nav
-  nav: { width: '100%', backgroundColor: PAGE_BG, paddingHorizontal: 24, paddingVertical: 14, alignItems: 'center' },
+  nav: {
+    width: '100%', backgroundColor: PAGE_BG, paddingHorizontal: 32, paddingVertical: 12,
+    alignItems: 'center', zIndex: 20,
+    // A hairline plus a soft shadow so the bar reads as sitting above the page
+    // once content scrolls beneath it.
+    borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.25)',
+    ...Platform.select({ web: { boxShadow: '0 2px 12px rgba(0,0,0,0.18)' }, default: {} }),
+  },
   navInner: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   brandName: { color: CREAM, fontSize: 24, fontWeight: '800', letterSpacing: 0.4 },
-  navRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  navLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  navDivider: { width: 1, height: 26, backgroundColor: 'rgba(247,240,226,0.22)' },
+  navCenter: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    // A quiet inset panel: enough to bind the three together, not enough to
+    // compete with the Drive chip, which is the one thing here with state.
+    backgroundColor: 'rgba(0,0,0,0.22)', borderRadius: 999, padding: 3,
+  },
+  navIconWrap: { position: 'relative' },
+  tooltip: {
+    position: 'absolute', top: '100%', left: '50%', marginTop: 8,
+    transform: [{ translateX: '-50%' }],
+    backgroundColor: 'rgba(24,17,10,0.95)', paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 7, zIndex: 40,
+  },
+  tooltipText: { color: CREAM, fontSize: 12.5, fontWeight: '600', whiteSpace: 'nowrap' },
+  navRight: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
-    borderWidth: 1, borderColor: 'rgba(247,240,226,0.28)',
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
+    borderWidth: 1, borderColor: 'rgba(247,240,226,0.35)',
   },
-  chipOn: { borderColor: YELLOW },
+  // Connected is a resting state, so it reads as filled-and-settled rather than
+  // as another button asking to be pressed.
+  chipOn: { borderColor: 'rgba(242,188,66,0.55)', backgroundColor: 'rgba(242,188,66,0.14)' },
   chipHover: { backgroundColor: 'rgba(247,240,226,0.12)' },
   chipText: { color: CREAM, fontSize: 14, fontWeight: '600' },
 
@@ -1427,13 +1504,13 @@ const styles = StyleSheet.create({
   bannerText: { color: INK, fontSize: 14, fontWeight: '600' },
 
   // hero
-  hero: { width: '100%', backgroundColor: SAND, paddingHorizontal: 24, paddingTop: 56, paddingBottom: 48, alignItems: 'center' },
+  hero: { width: '100%', backgroundColor: SAND, paddingHorizontal: 32, paddingTop: 56, paddingBottom: 48, alignItems: 'center' },
   heroInner: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 48 },
   heroNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 32 },
   heroCopy: { flex: 1, minWidth: 280 },
   heroKicker: { color: ORANGE, fontSize: 13, fontWeight: '800', letterSpacing: 2, marginBottom: 12 },
   heroTitle: { color: BROWN, fontSize: 54, fontWeight: '800', lineHeight: 60, marginBottom: 14 },
-  heroSub: { color: INK, fontSize: 17, lineHeight: 26, marginBottom: 28, maxWidth: 460 },
+  heroSub: { color: INK, fontSize: 17, lineHeight: 26, marginBottom: 28, maxWidth: 520 },
   heroActions: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
   heroPrimary: { paddingHorizontal: 26, paddingVertical: 15 },
 
@@ -1449,13 +1526,13 @@ const styles = StyleSheet.create({
   panelEmptyText: { color: MUTED, fontSize: 15, textAlign: 'center', lineHeight: 22, maxWidth: 280 },
 
   // stats
-  stats: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 14, paddingHorizontal: 24, marginBottom: 40 },
+  stats: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 14, paddingHorizontal: 32, marginBottom: 40 },
   stat: { flex: 1, minWidth: 150, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 18, ...card },
   statValue: { color: BROWN, fontSize: 24, fontWeight: '800' },
   statLabel: { color: MUTED, fontSize: 14 },
 
   // library
-  section: { width: '100%', paddingHorizontal: 24, marginBottom: 56 },
+  section: { width: '100%', paddingHorizontal: 32, marginBottom: 56 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, gap: 16 },
   sectionHeadNarrow: { flexDirection: 'column', alignItems: 'stretch' },
   sectionTitle: { color: BROWN, fontSize: 26, fontWeight: '800' },
@@ -1546,15 +1623,19 @@ const styles = StyleSheet.create({
     maxHeight: '85%',
     backgroundColor: CREAM,
   },
-  navIcon: { padding: 9, borderRadius: 999 },
+  navIcon: { padding: 11, borderRadius: 999 },
   navIconHover: { backgroundColor: 'rgba(247,240,226,0.14)' },
-  navGroup: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  // Quieter than the Drive chip on purpose: this is a preference, not status.
   unitPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 4,
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
-    borderWidth: 1, borderColor: 'rgba(247,240,226,0.28)',
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.22)',
   },
-  unitPillOn: { backgroundColor: YELLOW, borderColor: YELLOW },
+  unitPillOn: { backgroundColor: YELLOW },
+  // Deeper yellow, so dark text stays legible.
+  unitPillOnHover: { backgroundColor: '#e0a92f' },
+  // Lighter than the resting inset, so cream text stays legible.
+  unitPillOffHover: { backgroundColor: 'rgba(247,240,226,0.18)' },
   unitPillText: { color: CREAM, fontSize: 13, fontWeight: '700' },
   navDot: {
     position: 'absolute', top: 7, right: 7, width: 8, height: 8,
@@ -1576,7 +1657,6 @@ const styles = StyleSheet.create({
   shopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, paddingHorizontal: 6, borderRadius: 8 },
   shopText: { flex: 1, color: INK, fontSize: 15, lineHeight: 21 },
   shopTextDone: { color: MUTED, textDecorationLine: 'line-through' },
-  navDivider: { width: 1, height: 22, backgroundColor: 'rgba(247,240,226,0.20)', marginHorizontal: 6 },
   pinRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16,
     padding: 12, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(90,66,48,0.18)',
@@ -1617,7 +1697,18 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', gap: 14, paddingVertical: 60, ...card },
   emptyText: { color: MUTED, fontSize: 16 },
 
-  footer: { width: '100%', backgroundColor: PAGE_BG, paddingVertical: 26, alignItems: 'center', paddingHorizontal: 24 },
+  footer: {
+    width: '100%', backgroundColor: PAGE_BG, paddingVertical: 26,
+    alignItems: 'center', paddingHorizontal: 24, gap: 16,
+  },
+  footerLinks: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
+  footerLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
+    borderWidth: 1, borderColor: 'rgba(247,240,226,0.22)',
+  },
+  footerLinkHover: { backgroundColor: 'rgba(247,240,226,0.12)' },
+  footerLinkText: { color: CREAM, fontSize: 14, fontWeight: '600' },
   footerText: { color: 'rgba(247,240,226,0.65)', fontSize: 13, textAlign: 'center' },
 
   // buttons
