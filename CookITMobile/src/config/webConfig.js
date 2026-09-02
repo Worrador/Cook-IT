@@ -35,27 +35,24 @@ export const isPickerConfigured = () => Boolean(GOOGLE_PICKER_API_KEY);
 // back. Nothing else references the advisor when this is false.
 export const ADVISOR_ENABLED = false;
 
-// Optional endpoint used to fetch a link's og:image for recipes that have a URL
-// but no photo. See linkPreview.js for why a browser cannot do this by itself.
+// Endpoint that fetches a recipe page and returns its image, ingredients and
+// method. A browser cannot do this itself - reading another site's HTML needs
+// that site to send Access-Control-Allow-Origin, and recipe sites don't.
 //
-// Expected contract: GET <this>?url=<encoded page url> returning JSON with either
-// { data: { image: { url } } } (microlink's shape) or { image }.
+// In production this is a RELATIVE path: the Cloudflare Pages Function in
+// functions/api/preview.js is served from the same origin as the app, so there
+// is one deployment and one URL rather than a site plus a separate proxy.
 //
-// Empty by default, deliberately. Whatever you point this at will receive the URL
-// of every recipe your users open, which is a privacy decision worth making
-// consciously. Without it, recipes fall back to a favicon-and-domain card, which
-// needs no third party at all.
+// In local development the app runs on :8081 where no such function exists, so
+// it falls back to the standalone dev proxy (tools/preview-proxy.js) on :8791.
 //
-// Points at the local dev proxy (tools/preview-proxy.js). Start it with:
-//   node tools/preview-proxy.js
-//
-// Hosted services were tried first and rejected: microlink's free tier refuses
-// allrecipes.com outright ("uses antibot protection, upgrade to PRO"), and
-// allrecipes is the main site these recipes use. Fetching the page directly with
-// a browser User-Agent works fine, so a self-hosted proxy is both cheaper and
-// more reliable here.
-//
-// For production, deploy tools/preview-worker.js to Cloudflare Workers and point
-// this at that URL. Leaving it empty is also fine - recipes then fall back to the
-// favicon-and-domain card, which needs no third party at all.
-export const PREVIEW_PROXY_URL = 'http://localhost:8791';
+// Native builds never use any of this - React Native's fetch has no CORS, so
+// the app fetches and parses recipe pages directly.
+const IS_LOCAL_DEV =
+  typeof window !== 'undefined' &&
+  /^(localhost|127\.0\.0\.1)$/.test(window.location?.hostname || '') &&
+  window.location?.port === '8081';
+
+export const PREVIEW_PROXY_URL = IS_LOCAL_DEV
+  ? 'http://localhost:8791'
+  : '/api/preview';
