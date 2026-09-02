@@ -14,7 +14,7 @@
 // this session, give up after 10 attempts and reset).
 //
 // Colours are the app's existing theme values, unchanged - see src/theme/webPalette.js.
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView, Modal,
   ActivityIndicator, StyleSheet, useWindowDimensions, Image,
@@ -44,7 +44,10 @@ import DialogShell from '../components/DialogShell';
 import ShoppingListDialog from '../components/ShoppingListDialog';
 import { pickWeighted } from '../services/suggestion';
 import { collectTags, filterRecipes } from '../services/recipeTags';
-import Animated, { FadeInDown, FadeIn, LinearTransition } from 'react-native-reanimated';
+import Animated, {
+  FadeInDown, FadeIn, LinearTransition,
+  useSharedValue, useAnimatedStyle, withTiming,
+} from 'react-native-reanimated';
 import { scaleIngredient, parseServings } from '../services/ingredientScaling';
 import { getUnitPreference, toggleUnitPreference, METRIC } from '../services/unitPreference';
 import { askForAdvice, isAdvisorAvailable } from '../services/cookAdvisor';
@@ -533,6 +536,31 @@ export default function WebHome() {
   // no-op and leaves the author's original text untouched.
   const scaleFactor = baseServings ? servings / baseServings : 1;
 
+  // Drive status messages are transient notifications, not state - "Popup window
+  // closed" describing something that happened ten minutes ago is just noise
+  // taking up the top of the page. Errors linger a little longer than successes
+  // because they're worth reading.
+  // Reanimated rather than RN's Animated: this file already uses reanimated for
+  // the card transitions, and importing both collides on the name `Animated`.
+  const bannerProgress = useSharedValue(1);
+  const bannerBarStyle = useAnimatedStyle(() => ({
+    width: `${Math.max(0, bannerProgress.value) * 100}%`,
+  }));
+
+  useEffect(() => {
+    if (!driveState.message || driveState.busy) return undefined;
+    const isError = /fail|error|not |could not|closed|denied/i.test(driveState.message);
+    const duration = isError ? 8000 : 4000;
+
+    // A draining bar makes the countdown visible, so the banner disappearing
+    // reads as intentional rather than as something vanishing mid-read.
+    bannerProgress.value = 1;
+    bannerProgress.value = withTiming(0, { duration });
+
+    const timer = setTimeout(() => setDriveState(s => ({ ...s, message: '' })), duration);
+    return () => clearTimeout(timer);
+  }, [driveState.message, driveState.busy, bannerProgress]);
+
   const pinnedVisible = useMemo(
     () => visible.filter(r => pinned.includes(r.name)),
     [visible, pinned]
@@ -682,9 +710,22 @@ export default function WebHome() {
       </View>
 
       {driveState.message ? (
-        <View style={styles.banner}>
+        <Hoverable
+          onPress={() => setDriveState(s => ({ ...s, message: '' }))}
+          style={styles.banner}
+          hoverStyle={styles.bannerHover}
+        >
           <Text style={styles.bannerText}>{driveState.message}</Text>
-        </View>
+          {/* Absolutely positioned so the message stays optically centred in
+              the bar rather than being shoved left by the button's width. */}
+          <View style={styles.bannerClose}>
+            <MaterialCommunityIcons name="close" size={16} color={INK} />
+          </View>
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.bannerProgress, bannerBarStyle]}
+          />
+        </Hoverable>
       ) : null}
 
       {/* --- hero ------------------------------------------------------ */}
@@ -1368,7 +1409,16 @@ const styles = StyleSheet.create({
   chipHover: { backgroundColor: 'rgba(247,240,226,0.12)' },
   chipText: { color: CREAM, fontSize: 14, fontWeight: '600' },
 
-  banner: { width: '100%', backgroundColor: YELLOW, paddingVertical: 10, paddingHorizontal: 24, alignItems: 'center' },
+  banner: {
+    width: '100%', backgroundColor: YELLOW, paddingVertical: 10, paddingHorizontal: 44,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  bannerClose: { position: 'absolute', right: 16, top: 0, bottom: 0, justifyContent: 'center' },
+  bannerProgress: {
+    position: 'absolute', left: 0, bottom: 0, height: 3,
+    backgroundColor: 'rgba(90,66,48,0.45)',
+  },
+  bannerHover: { backgroundColor: '#e6ae35' },
   bannerText: { color: INK, fontSize: 14, fontWeight: '600' },
 
   // hero

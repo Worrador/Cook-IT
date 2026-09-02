@@ -49,8 +49,25 @@ export async function onRequestGet({ request }) {
 
   let payload;
   try {
+    // A bare UA string isn't enough for some publishers: Dotdash Meredith sites
+    // (allrecipes, seriouseats) fingerprint the whole header set and return 403
+    // to anything that looks automated. Sending what a real Chrome sends gets
+    // past some of them. It does not defeat IP-reputation blocking, which is why
+    // this can still fail for a given site - see the fallback below.
     const upstream = await fetch(target, {
-      headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html,application/xhtml+xml' },
+      headers: {
+        'User-Agent': BROWSER_UA,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-GB,en;q=0.9',
+        'Sec-Ch-Ua': '"Chromium";v="120", "Not:A-Brand";v="99"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+      },
       redirect: 'follow',
     });
     if (!upstream.ok) throw new Error(`Upstream returned ${upstream.status}`);

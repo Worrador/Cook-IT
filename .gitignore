@@ -15,3 +15,6 @@ source/*service-account*.json
 /python_resources/venv/
 *.spec
 CLAUDE.md
+
+# Cloudflare Wrangler local cache (account id, build state)
+.wrangler/
