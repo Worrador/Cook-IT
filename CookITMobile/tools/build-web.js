@@ -40,7 +40,10 @@ fs.rmSync(dist, { recursive: true, force: true });
 
 const run = (command) => execSync(command, { stdio: 'inherit', cwd: root, env });
 
-run('npx expo export --platform web --output-dir dist');
+// --clear is required, not tidiness: Metro caches the transform of
+// buildInfo.js along with the inlined EXPO_PUBLIC_* values, so a warm cache
+// re-emits the previous build's timestamp and the bundle comes out byte-identical.
+run('npx expo export --platform web --output-dir dist --clear');
 
 // Renames the vector-icon fonts out of a node_modules path, which Cloudflare
 // Pages silently refuses to upload. Read the header of that file before
