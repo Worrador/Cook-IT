@@ -30,6 +30,32 @@ const IS_WEB = Platform.OS === 'web';
 
 const ogCache = new Map();
 
+// url -> in-flight promise. A library page renders one card per recipe and every
+// card asks for its own preview, so without this the same URL is fetched once
+// per component that wants it.
+const inFlight = new Map();
+
+// Each lookup makes the proxy fetch and parse a whole recipe page. Eighty cards
+// firing at once queues behind the browser's per-host connection limit and
+// leaves the page unresponsive, so lookups run a few at a time.
+const MAX_PARALLEL = 4;
+let active = 0;
+const waiting = [];
+
+function acquireSlot() {
+  if (active < MAX_PARALLEL) {
+    active += 1;
+    return Promise.resolve();
+  }
+  return new Promise(resolve => { waiting.push(resolve); });
+}
+
+function releaseSlot() {
+  const next = waiting.shift();
+  if (next) next();
+  else active -= 1;
+}
+
 export function getDomain(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -70,7 +96,23 @@ export function getFaviconUrl(url, size = 128) {
 export async function getPreview(url) {
   if (!url) return null;
   if (ogCache.has(url)) return ogCache.get(url);
+  if (inFlight.has(url)) return inFlight.get(url);
 
+  const request = runPreview(url).finally(() => inFlight.delete(url));
+  inFlight.set(url, request);
+  return request;
+}
+
+async function runPreview(url) {
+  await acquireSlot();
+  try {
+    return await fetchPreview(url);
+  } finally {
+    releaseSlot();
+  }
+}
+
+async function fetchPreview(url) {
   // --- native: fetch and parse in-app, no server ---------------------------
   if (!IS_WEB) {
     try {

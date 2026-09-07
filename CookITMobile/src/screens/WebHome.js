@@ -75,6 +75,12 @@ function describeAge(isoDate) {
   return `${Math.floor(days / 30)} months ago`;
 }
 
+// noopener/noreferrer: the target page should get no handle on this window.
+function openUrl(url) {
+  if (!url) return;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 // --- small building blocks ------------------------------------------------
 
 // A nav icon that names itself on hover. Five unlabelled glyphs in a row is a
@@ -165,16 +171,20 @@ function Photo({ imageRef, style, onPress }) {
 // Shown in place of a photo when a recipe has only a link. Uses the site's
 // og:image when a preview proxy is configured, otherwise a favicon-and-domain
 // card - see linkPreview.js for why a browser can't scrape og:image unaided.
-function LinkPreview({ url, style, onPress }) {
-  const [ogImage, setOgImage] = useState(null);
+// `image` short-circuits the lookup: a recipe that has been opened once carries
+// its parsed og:image, and re-fetching it per card is what made a large library
+// crawl - one proxy round trip per card, every load.
+function LinkPreview({ url, image, style, onPress }) {
+  const [ogImage, setOgImage] = useState(image || null);
   const domain = getDomain(url);
   const favicon = getFaviconUrl(url);
 
   useEffect(() => {
+    if (image) { setOgImage(image); return undefined; }
     let cancelled = false;
-    getOgImage(url).then(image => { if (!cancelled) setOgImage(image); });
+    getOgImage(url).then(found => { if (!cancelled) setOgImage(found); });
     return () => { cancelled = true; };
-  }, [url]);
+  }, [url, image]);
 
   const body = ogImage
     ? <Image source={{ uri: ogImage }} style={styles.photoImg} resizeMode="cover" />
@@ -224,6 +234,108 @@ function Sheet({ visible, onClose, title, icon, children, footer, width = 520 })
   );
 }
 
+// One library card, memoised: a big book renders 80+ of these, and without this
+// every keystroke in the search box and every hover elsewhere re-renders them
+// all. The handlers it takes are stable so the memo actually holds.
+const RecipeCard = React.memo(function RecipeCard({
+  recipe, index, columns, isPinned, count, animate,
+  onOpen, onPin, onCook, onPhotos, onDelete,
+}) {
+  // Reanimated's layout transitions measure every card on each change, which a
+  // large grid cannot afford - past that size the cards just appear.
+  const Wrapper = animate ? Animated.View : View;
+  return (
+    <Wrapper
+      // Staggered entrance, capped so a large book doesn't spend a
+      // second and a half dealing itself out. Cards also glide to
+      // their new positions when a filter changes.
+      {...(animate ? {
+        entering: FadeInDown.delay(Math.min(index, 12) * 35).duration(280),
+        layout: LinearTransition.duration(220),
+      } : {})}
+      style={[styles.card, { width: `${100 / columns}%` }]}
+    >
+      {/* One clickable surface. Everything you can do to a recipe
+          now lives in the dialog it opens - a card carrying four
+          competing buttons made the primary action ambiguous. Pin
+          stays out here because it's a property of the card itself. */}
+      <Hoverable
+        onPress={() => onOpen(recipe)}
+        style={[styles.cardInner, isPinned && styles.cardPinned]}
+        hoverStyle={styles.cardInnerHover}
+      >
+        {recipe.images?.length ? (
+          <Photo imageRef={recipe.images[0]} style={styles.cardPhoto} />
+        ) : recipe.url ? (
+          <LinkPreview url={recipe.url} image={recipe.parsed?.image} style={styles.cardPhoto} />
+        ) : null}
+
+        <View style={styles.cardTop}>
+          <Text style={styles.cardTitle} numberOfLines={2}>{recipe.name}</Text>
+          <Hoverable
+            onPress={() => onPin(recipe)}
+            style={styles.cardIcon}
+            hoverStyle={styles.cardIconHover}
+          >
+            <MaterialCommunityIcons
+              name={isPinned ? 'pin' : 'pin-outline'}
+              size={18}
+              color={isPinned ? ORANGE : MUTED}
+            />
+          </Hoverable>
+        </View>
+
+        <Text
+          style={[styles.cardNote, !recipe.comment && styles.cardNoteEmpty]}
+          numberOfLines={2}
+        >
+          {recipe.comment || 'No note yet'}
+        </Text>
+
+        <View style={styles.cardFooter}>
+          {count > 0 ? (
+            <View style={styles.badge}>
+              <MaterialCommunityIcons name="fire" size={13} color={BROWN} />
+              <Text style={styles.badgeText}>cooked {count}×</Text>
+            </View>
+          ) : <View />}
+
+          {/* Quick actions, back by request. Nested Pressables: the
+              innermost handles the touch, so tapping an icon does
+              not also open the dialog behind it. */}
+          <View style={styles.cardActions}>
+            <Hoverable
+              onPress={() => onCook(recipe)}
+              style={styles.cardIcon}
+              hoverStyle={styles.cardIconHover}
+            >
+              <MaterialCommunityIcons name="silverware-fork-knife" size={17} color={ORANGE} />
+            </Hoverable>
+            <Hoverable
+              onPress={() => onPhotos(recipe)}
+              style={styles.cardIcon}
+              hoverStyle={styles.cardIconHover}
+            >
+              <MaterialCommunityIcons
+                name={recipe.images?.length ? 'image-multiple' : 'camera-plus-outline'}
+                size={17}
+                color={recipe.images?.length ? BROWN : MUTED}
+              />
+            </Hoverable>
+            <Hoverable
+              onPress={() => onDelete(recipe)}
+              style={styles.cardIcon}
+              hoverStyle={styles.cardIconHover}
+            >
+              <MaterialCommunityIcons name="trash-can-outline" size={17} color={ERROR} />
+            </Hoverable>
+          </View>
+        </View>
+      </Hoverable>
+    </Wrapper>
+  );
+});
+
 export default function WebHome() {
   const { width } = useWindowDimensions();
   const columns =
@@ -238,6 +350,9 @@ export default function WebHome() {
   const [lastCooked, setLastCooked] = useState({});
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
+  // Filtering re-renders the whole grid, so it runs on a settled query rather
+  // than on every keystroke.
+  const [searchTerm, setSearchTerm] = useState('');
   const [activeTags, setActiveTags] = useState([]);
 
   const [suggestion, setSuggestion] = useState(null);
@@ -303,8 +418,13 @@ export default function WebHome() {
 
   // Text and tag filtering both live in recipeTags.js so the behaviour is
   // tested rather than reimplemented inline.
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(query), 150);
+    return () => clearTimeout(timer);
+  }, [query]);
+
   const visible = useMemo(() => {
-    const filtered = filterRecipes(recipes, { query, tags: activeTags });
+    const filtered = filterRecipes(recipes, { query: searchTerm, tags: activeTags });
     // Pinned first, then alphabetical - the grid has no other ordering cue.
     return [...filtered].sort((a, b) => {
       const ap = pinned.includes(a.name) ? 0 : 1;
@@ -312,7 +432,11 @@ export default function WebHome() {
       if (ap !== bp) return ap - bp;
       return (a.name || '').localeCompare(b.name || '');
     });
-  }, [recipes, query, activeTags, pinned]);
+  }, [recipes, searchTerm, activeTags, pinned]);
+
+  // Entrance and layout animations are worth it for a grid you can take in at a
+  // glance; past that they cost more than they add.
+  const animateCards = visible.length <= 40;
 
   // Derived from the recipes themselves - there is no tagging UI to maintain.
   const availableTags = useMemo(() => collectTags(recipes), [recipes]);
@@ -351,12 +475,6 @@ export default function WebHome() {
     setSuggestion(next);
   }, [recipes, seen, lastCooked]);
 
-  const openUrl = (url) => {
-    if (!url) return;
-    // noopener/noreferrer: the target page should get no handle on this window.
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
   // "Cook it" opens the recipe and then asks for confirmation, rather than
   // recording the cook straight away - the user hasn't cooked anything yet at
   // the moment they click. Confirming is what marks it.
@@ -365,10 +483,10 @@ export default function WebHome() {
   // 3-day guard so re-cooking the same thing twice in a week doesn't inflate the
   // number. Calling incrementCookCount() alongside it double-counts and bypasses
   // that guard - which is exactly the bug that made one click read as "cooked 2x".
-  const handleCook = (recipe) => {
+  const handleCook = useCallback((recipe) => {
     openUrl(recipe.url);
     setCookConfirm(recipe);
-  };
+  }, []);
 
   const confirmCooked = async () => {
     const recipe = cookConfirm;
@@ -493,7 +611,7 @@ export default function WebHome() {
   // site that publishes schema.org/Recipe JSON-LD, which most recipe sites do
   // because it's what drives Google's recipe cards. Sites without it show just
   // the link, which is the pre-existing behaviour.
-  const openRecipe = async (recipe) => {
+  const openRecipe = useCallback(async (recipe) => {
     setRecipeView(recipe);
     setRecipeData({ loading: true, data: null });
     const data = await getPreview(recipe.url);
@@ -504,12 +622,12 @@ export default function WebHome() {
     const parsed = parseServings(data?.servings);
     setBaseServings(parsed);
     setServings(parsed || 1);
-  };
+  }, []);
 
-  const handlePin = async (recipe) => {
+  const handlePin = useCallback(async (recipe) => {
     await togglePinnedRecipe(recipe.name);
     setPinned(await getPinnedRecipes());
-  };
+  }, []);
 
   const handleDrive = async () => {
     setDriveState(s => ({ ...s, busy: true, message: '' }));
@@ -952,100 +1070,22 @@ export default function WebHome() {
                     </View>
                   ) : null}
                   <View style={styles.grid}>
-            {group.items.map((recipe, index) => {
-              const isPinned = pinned.includes(recipe.name);
-              const count = cookCounts[recipe.name] || 0;
-              return (
-                <Animated.View
-                  key={recipe.name}
-                  // Staggered entrance, capped so a large book doesn't spend a
-                  // second and a half dealing itself out.
-                  entering={FadeInDown.delay(Math.min(index, 12) * 35).duration(280)}
-                  // Cards glide to their new positions when a filter changes,
-                  // instead of teleporting.
-                  layout={LinearTransition.duration(220)}
-                  style={[styles.card, { width: `${100 / columns}%` }]}
-                >
-                  {/* One clickable surface. Everything you can do to a recipe
-                      now lives in the dialog it opens - a card carrying four
-                      competing buttons made the primary action ambiguous. Pin
-                      stays out here because it's a property of the card itself. */}
-                  <Hoverable
-                    onPress={() => openRecipe(recipe)}
-                    style={[styles.cardInner, isPinned && styles.cardPinned]}
-                    hoverStyle={styles.cardInnerHover}
-                  >
-                    {recipe.images?.length ? (
-                      <Photo imageRef={recipe.images[0]} style={styles.cardPhoto} />
-                    ) : recipe.url ? (
-                      <LinkPreview url={recipe.url} style={styles.cardPhoto} />
-                    ) : null}
-
-                    <View style={styles.cardTop}>
-                      <Text style={styles.cardTitle} numberOfLines={2}>{recipe.name}</Text>
-                      <Hoverable
-                        onPress={() => handlePin(recipe)}
-                        style={styles.cardIcon}
-                        hoverStyle={styles.cardIconHover}
-                      >
-                        <MaterialCommunityIcons
-                          name={isPinned ? 'pin' : 'pin-outline'}
-                          size={18}
-                          color={isPinned ? ORANGE : MUTED}
-                        />
-                      </Hoverable>
-                    </View>
-
-                    <Text
-                      style={[styles.cardNote, !recipe.comment && styles.cardNoteEmpty]}
-                      numberOfLines={2}
-                    >
-                      {recipe.comment || 'No note yet'}
-                    </Text>
-
-                    <View style={styles.cardFooter}>
-                      {count > 0 ? (
-                        <View style={styles.badge}>
-                          <MaterialCommunityIcons name="fire" size={13} color={BROWN} />
-                          <Text style={styles.badgeText}>cooked {count}×</Text>
-                        </View>
-                      ) : <View />}
-
-                      {/* Quick actions, back by request. Nested Pressables: the
-                          innermost handles the touch, so tapping an icon does
-                          not also open the dialog behind it. */}
-                      <View style={styles.cardActions}>
-                        <Hoverable
-                          onPress={() => handleCook(recipe)}
-                          style={styles.cardIcon}
-                          hoverStyle={styles.cardIconHover}
-                        >
-                          <MaterialCommunityIcons name="silverware-fork-knife" size={17} color={ORANGE} />
-                        </Hoverable>
-                        <Hoverable
-                          onPress={() => setGallery(recipe)}
-                          style={styles.cardIcon}
-                          hoverStyle={styles.cardIconHover}
-                        >
-                          <MaterialCommunityIcons
-                            name={recipe.images?.length ? 'image-multiple' : 'camera-plus-outline'}
-                            size={17}
-                            color={recipe.images?.length ? BROWN : MUTED}
-                          />
-                        </Hoverable>
-                        <Hoverable
-                          onPress={() => setConfirm(recipe)}
-                          style={styles.cardIcon}
-                          hoverStyle={styles.cardIconHover}
-                        >
-                          <MaterialCommunityIcons name="trash-can-outline" size={17} color={ERROR} />
-                        </Hoverable>
-                      </View>
-                    </View>
-                  </Hoverable>
-                </Animated.View>
-              );
-            })}
+            {group.items.map((recipe, index) => (
+              <RecipeCard
+                key={recipe.name}
+                recipe={recipe}
+                index={index}
+                columns={columns}
+                animate={animateCards}
+                isPinned={pinned.includes(recipe.name)}
+                count={cookCounts[recipe.name] || 0}
+                onOpen={openRecipe}
+                onPin={handlePin}
+                onCook={handleCook}
+                onPhotos={setGallery}
+                onDelete={setConfirm}
+              />
+            ))}
                   </View>
                 </View>
               ) : null
