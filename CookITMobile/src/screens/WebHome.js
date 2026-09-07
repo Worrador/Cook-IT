@@ -1754,7 +1754,7 @@ const styles = StyleSheet.create({
   footerLinkHover: { backgroundColor: 'rgba(247,240,226,0.12)' },
   footerLinkText: { color: CREAM, fontSize: 14, fontWeight: '600' },
   footerText: { color: 'rgba(247,240,226,0.65)', fontSize: 13, textAlign: 'center' },
-  footerBuild: { color: 'rgba(247,240,226,0.38)', fontSize: 11, textAlign: 'center', marginTop: 6 },
+  footerBuild: { color: 'rgba(247,240,226,0.6)', fontSize: 12.5, textAlign: 'center', marginTop: 8 },
 
   // buttons
   btn: {

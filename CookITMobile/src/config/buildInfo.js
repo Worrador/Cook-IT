@@ -20,3 +20,10 @@ export function formatBuildStamp() {
 
   return BUILD_COMMIT ? `${stamp} · ${BUILD_COMMIT}` : stamp;
 }
+
+// Also logged, so the running build can be read from the console without
+// scrolling to the footer - which is the first thing worth checking when a
+// change appears not to have landed.
+if (typeof console !== 'undefined') {
+  console.info(`Cook-IT build: ${formatBuildStamp()}`);
+}
