@@ -7,7 +7,7 @@
 // which.
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, Pressable, ScrollView, Image, ActivityIndicator, StyleSheet, Linking,
+  View, Text, Pressable, ScrollView, Image, ActivityIndicator, StyleSheet, Linking, TextInput,
 } from 'react-native';
 import DialogShell from './DialogShell';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
