@@ -87,7 +87,7 @@ function openUrl(url) {
 // A nav icon that names itself on hover. Five unlabelled glyphs in a row is a
 // guessing game, and there is no room for permanent labels - a tooltip is the
 // standard resolution and costs nothing until you hover.
-function NavIcon({ icon, label, onPress, badge }) {
+function NavIcon({ icon, label, onPress, badge, compact }) {
   const [hovered, setHovered] = useState(false);
   return (
     <View style={styles.navIconWrap}>
@@ -95,10 +95,10 @@ function NavIcon({ icon, label, onPress, badge }) {
         onPress={onPress}
         onHoverIn={() => setHovered(true)}
         onHoverOut={() => setHovered(false)}
-        style={[styles.navIcon, hovered && styles.navIconHover]}
+        style={[styles.navIcon, compact && styles.navIconCompact, hovered && styles.navIconHover]}
         accessibilityLabel={label}
       >
-        <MaterialCommunityIcons name={icon} size={23} color={CREAM} />
+        <MaterialCommunityIcons name={icon} size={compact ? 20 : 23} color={CREAM} />
         {badge ? <View style={styles.navDot} /> : null}
       </Pressable>
       {hovered ? (
@@ -796,17 +796,23 @@ export default function WebHome() {
           {/* Drive sits beside the wordmark, separated by a rule: it is the one
               thing here describing the app's connection to your data, so it
               belongs with the identity rather than among the preferences. */}
-          <View style={styles.navLeft}>
+          {/* At phone widths the three zones want more room than the bar has.
+              Nothing here shrinks gracefully - a too-narrow zone overflows and
+              paints over its neighbour - so the labels are dropped and the
+              controls stand as icons instead. */}
+          <View style={[styles.navLeft, narrow && styles.navZoneNarrow]}>
             <View style={styles.brand}>
-              <MaterialCommunityIcons name="chef-hat" size={30} color={YELLOW} />
-              <Text style={styles.brandName}>Cook<Text style={{ color: YELLOW }}>-IT</Text></Text>
+              <MaterialCommunityIcons name="chef-hat" size={narrow ? 24 : 30} color={YELLOW} />
+              <Text style={[styles.brandName, narrow && styles.brandNameNarrow]}>
+                Cook<Text style={{ color: YELLOW }}>-IT</Text>
+              </Text>
             </View>
 
-            <View style={styles.navDivider} />
+            {narrow ? null : <View style={styles.navDivider} />}
 
             <Hoverable
               onPress={handleDrive}
-              style={[styles.chip, driveState.connected && styles.chipOn]}
+              style={[styles.chip, narrow && styles.chipIconOnly, driveState.connected && styles.chipOn]}
               hoverStyle={styles.chipHover}
             >
               {driveState.busy
@@ -816,9 +822,11 @@ export default function WebHome() {
                     size={18}
                     color={driveState.connected ? YELLOW : CREAM}
                   />}
-              <Text style={styles.chipText}>
-                {driveState.connected ? 'Drive synced' : 'Connect Drive'}
-              </Text>
+              {narrow ? null : (
+                <Text style={styles.chipText}>
+                  {driveState.connected ? 'Drive synced' : 'Connect Drive'}
+                </Text>
+              )}
             </Hoverable>
 
             {isPickerConfigured() ? (
@@ -840,28 +848,34 @@ export default function WebHome() {
               label="Shopping list"
               onPress={() => setShopOpen(true)}
               badge={shopItems.some(i => !i.checked)}
+              compact={narrow}
             />
-            <NavIcon icon="calendar-month-outline" label="Cooking history" onPress={() => setCalendarOpen(true)} />
-            <NavIcon icon="vote-outline" label="Vote on dinner" onPress={() => setVoteOpen(true)} />
+            <NavIcon icon="calendar-month-outline" label="Cooking history" onPress={() => setCalendarOpen(true)} compact={narrow} />
+            <NavIcon icon="vote-outline" label="Vote on dinner" onPress={() => setVoteOpen(true)} compact={narrow} />
           </View>
 
-          <View style={styles.navRight}>
+          <View style={[styles.navRight, narrow && styles.navZoneNarrow]}>
             <Hoverable
               onPress={async () => setUseMetric((await toggleUnitPreference()) === METRIC)}
-              style={[styles.unitPill, useMetric && styles.unitPillOn]}
+              style={[styles.unitPill, narrow && styles.unitPillIconOnly, useMetric && styles.unitPillOn]}
               // Hover must respect the toggle state. The shared navIconHover
               // paints a translucent cream background, which over the yellow
               // "on" pill left dark brown text on a dark surface - unreadable.
               hoverStyle={useMetric ? styles.unitPillOnHover : styles.unitPillOffHover}
             >
               <MaterialCommunityIcons name="scale-balance" size={16} color={useMetric ? PAGE_BG : CREAM} />
-              <Text style={[styles.unitPillText, useMetric && { color: PAGE_BG }]}>
-                {useMetric ? 'Metric' : 'To metric'}
-              </Text>
+              {narrow ? null : (
+                <Text style={[styles.unitPillText, useMetric && { color: PAGE_BG }]}>
+                  {useMetric ? 'Metric' : 'To metric'}
+                </Text>
+              )}
             </Hoverable>
 
-            {/* Icon only - the label lives on the footer button. */}
-            <NavIcon icon="coffee-outline" label="Support Cook-IT" onPress={() => setShowCoffee(true)} />
+            {/* Icon only - the label lives on the footer button, which is where
+                this goes entirely once the bar is too narrow to hold it. */}
+            {narrow ? null : (
+              <NavIcon icon="coffee-outline" label="Support Cook-IT" onPress={() => setShowCoffee(true)} />
+            )}
           </View>
         </View>
       </View>
@@ -887,9 +901,9 @@ export default function WebHome() {
 
       <ScrollView style={styles.scroller} contentContainerStyle={styles.rootContent}>
       {/* --- hero ------------------------------------------------------ */}
-      <View style={styles.hero}>
+      <View style={[styles.hero, narrow && styles.heroPad]}>
         <View style={[styles.heroInner, { maxWidth: CONTENT_MAX }, narrow && styles.heroNarrow]}>
-          <View style={styles.heroCopy}>
+          <View style={[styles.heroCopy, narrow && styles.heroStackChild]}>
             <Text style={styles.heroKicker}>YOUR RECIPE BOOK</Text>
             <Text style={[styles.heroTitle, narrow && { fontSize: 40 }]}>
               What shall we cook?
@@ -930,7 +944,7 @@ export default function WebHome() {
           </View>
 
           {/* Suggestion panel doubles as the hero's visual weight on desktop. */}
-          <View style={styles.heroPanel}>
+          <View style={[styles.heroPanel, narrow && styles.heroStackChild, narrow && styles.heroPanelNarrow]}>
             {suggestion ? (
               <Animated.View key={suggestion.name} entering={FadeIn.duration(260)}>
                 {suggestion.images?.length ? (
@@ -1095,26 +1109,45 @@ export default function WebHome() {
         )}
       </View>
 
-      <View style={styles.footer}>
-        <View style={styles.footerLinks}>
-          <Hoverable onPress={() => setShowHelp(true)} style={styles.footerLink} hoverStyle={styles.footerLinkHover}>
-            <MaterialCommunityIcons name="help-circle-outline" size={16} color={CREAM} />
-            <Text style={styles.footerLinkText}>How it works</Text>
-          </Hoverable>
-          <Hoverable onPress={() => setShowCoffee(true)} style={styles.footerLink} hoverStyle={styles.footerLinkHover}>
-            <MaterialCommunityIcons name="coffee-outline" size={16} color={CREAM} />
-            <Text style={styles.footerLinkText}>Support Cook-IT</Text>
-          </Hoverable>
-        </View>
-        <Text style={styles.footerText}>
-          Recipes stay on this device and sync to your own Google Drive.
-        </Text>
-        {/* Nothing deploys this site automatically, and a browser will happily
-            serve a cached bundle, so the page states which build it is. */}
-        <Text style={styles.footerBuild}>Deployed {formatBuildStamp()}</Text>
-      </View>
-
       </ScrollView>
+
+      {/* Pinned below the scroller, mirroring the nav above it. The build stamp
+          is only useful if it can be read without scrolling past the whole
+          library first. */}
+      <View style={[styles.footer, narrow && styles.footerPad]}>
+        <View style={[styles.footerInner, { maxWidth: CONTENT_MAX }, narrow && styles.footerInnerNarrow]}>
+          <View style={styles.footerLinks}>
+            <Hoverable
+              onPress={() => setShowHelp(true)}
+              style={[styles.footerLink, narrow && styles.footerLinkIconOnly]}
+              hoverStyle={styles.footerLinkHover}
+            >
+              <MaterialCommunityIcons name="help-circle-outline" size={15} color={CREAM} />
+              {narrow ? null : <Text style={styles.footerLinkText}>How it works</Text>}
+            </Hoverable>
+            <Hoverable
+              onPress={() => setShowCoffee(true)}
+              style={[styles.footerLink, narrow && styles.footerLinkIconOnly]}
+              hoverStyle={styles.footerLinkHover}
+            >
+              <MaterialCommunityIcons name="coffee-outline" size={15} color={CREAM} />
+              {narrow ? null : <Text style={styles.footerLinkText}>Support Cook-IT</Text>}
+            </Hoverable>
+          </View>
+
+          {/* First to go when the row runs out of room: it is reassurance, not
+              something anyone needs on screen at all times. */}
+          {narrow ? null : (
+            <Text style={styles.footerText} numberOfLines={1}>
+              Recipes stay on this device and sync to your own Google Drive.
+            </Text>
+          )}
+
+          {/* Nothing deploys this site automatically, and a browser will happily
+              serve a cached bundle, so the page states which build it is. */}
+          <Text style={styles.footerBuild}>Deployed {formatBuildStamp()}</Text>
+        </View>
+      </View>
 
       {/* --- modals ---------------------------------------------------- */}
       <Sheet
@@ -1490,7 +1523,7 @@ const card = {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: SAND },
   scroller: { flex: 1 },
-  rootContent: { alignItems: 'center', paddingBottom: 0 },
+  rootContent: { alignItems: 'center', paddingBottom: 28 },
 
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PAGE_BG, gap: 14 },
   loadingText: { color: CREAM, fontSize: 16 },
@@ -1507,7 +1540,11 @@ const styles = StyleSheet.create({
   navInner: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   brandName: { color: CREAM, fontSize: 24, fontWeight: '800', letterSpacing: 0.4 },
-  navLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  brandNameNarrow: { fontSize: 18, letterSpacing: 0.2 },
+  navLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 0 },
+  // A zone wider than its share overflows and paints over the next one, so
+  // the phone layout keeps them tight and lets them shrink.
+  navZoneNarrow: { gap: 7, flexShrink: 1 },
   navDivider: { width: 1, height: 26, backgroundColor: 'rgba(247,240,226,0.22)' },
   navCenter: {
     flexDirection: 'row', alignItems: 'center', gap: 2,
@@ -1523,7 +1560,7 @@ const styles = StyleSheet.create({
     borderRadius: 7, zIndex: 40,
   },
   tooltipText: { color: CREAM, fontSize: 12.5, fontWeight: '600', whiteSpace: 'nowrap' },
-  navRight: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10 },
+  navRight: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, minWidth: 0 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
@@ -1534,6 +1571,7 @@ const styles = StyleSheet.create({
   chipOn: { borderColor: 'rgba(242,188,66,0.55)', backgroundColor: 'rgba(242,188,66,0.14)' },
   chipHover: { backgroundColor: 'rgba(247,240,226,0.12)' },
   chipText: { color: CREAM, fontSize: 14, fontWeight: '600' },
+  chipIconOnly: { paddingHorizontal: 9, gap: 0 },
 
   banner: {
     width: '100%', backgroundColor: YELLOW, paddingVertical: 10, paddingHorizontal: 44,
@@ -1551,6 +1589,11 @@ const styles = StyleSheet.create({
   hero: { width: '100%', backgroundColor: SAND, paddingHorizontal: 32, paddingTop: 56, paddingBottom: 48, alignItems: 'center' },
   heroInner: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 48 },
   heroNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 32 },
+  // Stacked, these must size to their content. Left at flex: 1 they are told
+  // to share a height the column does not have, and end up drawn on top of
+  // one another.
+  heroStackChild: { flex: 0, minWidth: 0, width: '100%' },
+  heroPad: { paddingHorizontal: 20, paddingTop: 28, paddingBottom: 28 },
   heroCopy: { flex: 1, minWidth: 280 },
   heroKicker: { color: ORANGE, fontSize: 13, fontWeight: '800', letterSpacing: 2, marginBottom: 12 },
   heroTitle: { color: BROWN, fontSize: 54, fontWeight: '800', lineHeight: 60, marginBottom: 14 },
@@ -1562,6 +1605,7 @@ const styles = StyleSheet.create({
     flex: 1, minWidth: 300, minHeight: 260, padding: 28, justifyContent: 'center',
     ...card, backgroundColor: '#fffdf6',
   },
+  heroPanelNarrow: { minHeight: 0, padding: 20 },
   panelKicker: { color: MUTED, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 10 },
   panelTitle: { color: BROWN, fontSize: 30, fontWeight: '800', lineHeight: 36, marginBottom: 10 },
   panelNote: { color: INK, fontSize: 15, lineHeight: 23, marginBottom: 22 },
@@ -1668,6 +1712,7 @@ const styles = StyleSheet.create({
     backgroundColor: CREAM,
   },
   navIcon: { padding: 11, borderRadius: 999 },
+  navIconCompact: { padding: 8 },
   navIconHover: { backgroundColor: 'rgba(247,240,226,0.14)' },
   // Quieter than the Drive chip on purpose: this is a preference, not status.
   unitPill: {
@@ -1675,6 +1720,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999,
     backgroundColor: 'rgba(0,0,0,0.22)',
   },
+  unitPillIconOnly: { paddingHorizontal: 9, gap: 0 },
   unitPillOn: { backgroundColor: YELLOW },
   // Deeper yellow, so dark text stays legible.
   unitPillOnHover: { backgroundColor: '#e0a92f' },
@@ -1741,20 +1787,36 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', gap: 14, paddingVertical: 60, ...card },
   emptyText: { color: MUTED, fontSize: 16 },
 
+  // Same padding as the nav, and the same hairline-plus-shadow treatment cast
+  // upward, so the two bars frame the page as a matched pair.
   footer: {
-    width: '100%', backgroundColor: PAGE_BG, paddingVertical: 26,
-    alignItems: 'center', paddingHorizontal: 24, gap: 16,
+    width: '100%', backgroundColor: PAGE_BG, paddingHorizontal: 32, paddingVertical: 12,
+    alignItems: 'center', zIndex: 20,
+    borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.25)',
+    ...Platform.select({ web: { boxShadow: '0 -2px 12px rgba(0,0,0,0.18)' }, default: {} }),
   },
-  footerLinks: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
+  // 45 is the height of the nav's tallest child (a 23px icon in 11px of
+  // padding). Stated rather than derived, because nothing in this row is that
+  // tall on its own and the two bars have to match.
+  footerInner: {
+    width: '100%', height: 45, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', gap: 16,
+  },
+  // Matches the compact nav icons, so the two bars stay the same height on a
+  // phone as they are on a desktop.
+  footerInnerNarrow: { height: 36, gap: 10 },
+  footerPad: { paddingHorizontal: 16 },
+  footerLinks: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   footerLink: {
-    flexDirection: 'row', alignItems: 'center', gap: 7,
-    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
     borderWidth: 1, borderColor: 'rgba(247,240,226,0.22)',
   },
+  footerLinkIconOnly: { paddingHorizontal: 9, gap: 0 },
   footerLinkHover: { backgroundColor: 'rgba(247,240,226,0.12)' },
-  footerLinkText: { color: CREAM, fontSize: 14, fontWeight: '600' },
-  footerText: { color: 'rgba(247,240,226,0.65)', fontSize: 13, textAlign: 'center' },
-  footerBuild: { color: 'rgba(247,240,226,0.6)', fontSize: 12.5, textAlign: 'center', marginTop: 8 },
+  footerLinkText: { color: CREAM, fontSize: 13, fontWeight: '600' },
+  footerText: { color: 'rgba(247,240,226,0.65)', fontSize: 12.5, flexShrink: 1 },
+  footerBuild: { color: 'rgba(247,240,226,0.6)', fontSize: 12.5, textAlign: 'right' },
 
   // buttons
   btn: {
