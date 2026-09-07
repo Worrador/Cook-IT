@@ -905,7 +905,7 @@ export default function WebHome() {
         <View style={[styles.heroInner, { maxWidth: CONTENT_MAX }, narrow && styles.heroNarrow]}>
           <View style={[styles.heroCopy, narrow && styles.heroStackChild]}>
             <Text style={styles.heroKicker}>YOUR RECIPE BOOK</Text>
-            <Text style={[styles.heroTitle, narrow && { fontSize: 40 }]}>
+            <Text style={[styles.heroTitle, narrow && styles.heroTitleNarrow]}>
               What shall we cook?
             </Text>
             <Text style={styles.heroSub}>
@@ -1589,14 +1589,19 @@ const styles = StyleSheet.create({
   hero: { width: '100%', backgroundColor: SAND, paddingHorizontal: 32, paddingTop: 56, paddingBottom: 48, alignItems: 'center' },
   heroInner: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 48 },
   heroNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 32 },
-  // Stacked, these must size to their content. Left at flex: 1 they are told
-  // to share a height the column does not have, and end up drawn on top of
+  // Stacked, these must size to their content. Left at flex: 1 they are told to
+  // share a height the column does not have, collapse, and get drawn on top of
   // one another.
-  heroStackChild: { flex: 0, minWidth: 0, width: '100%' },
+  //
+  // Spelled out rather than `flex: 0`, which is not "size to content": it sets
+  // flexBasis to 0 as well, so the box takes zero height in a column and its
+  // content spills outside it - the same overlap by a different route.
+  heroStackChild: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', minWidth: 0, width: '100%' },
   heroPad: { paddingHorizontal: 20, paddingTop: 28, paddingBottom: 28 },
   heroCopy: { flex: 1, minWidth: 280 },
   heroKicker: { color: ORANGE, fontSize: 13, fontWeight: '800', letterSpacing: 2, marginBottom: 12 },
   heroTitle: { color: BROWN, fontSize: 54, fontWeight: '800', lineHeight: 60, marginBottom: 14 },
+  heroTitleNarrow: { fontSize: 38, lineHeight: 44 },
   heroSub: { color: INK, fontSize: 17, lineHeight: 26, marginBottom: 28, maxWidth: 520 },
   heroActions: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
   heroPrimary: { paddingHorizontal: 26, paddingVertical: 15 },
@@ -1605,7 +1610,7 @@ const styles = StyleSheet.create({
     flex: 1, minWidth: 300, minHeight: 260, padding: 28, justifyContent: 'center',
     ...card, backgroundColor: '#fffdf6',
   },
-  heroPanelNarrow: { minHeight: 0, padding: 20 },
+  heroPanelNarrow: { minHeight: 200, padding: 20 },
   panelKicker: { color: MUTED, fontSize: 12, fontWeight: '800', letterSpacing: 2, marginBottom: 10 },
   panelTitle: { color: BROWN, fontSize: 30, fontWeight: '800', lineHeight: 36, marginBottom: 10 },
   panelNote: { color: INK, fontSize: 15, lineHeight: 23, marginBottom: 22 },
