@@ -27,7 +27,9 @@
     "test:unit": "jest --testPathPattern=__tests__ --testNamePattern='(Unit|should)'",
     "test:integration": "jest --testPathPattern=__tests__ --testNamePattern='Integration'",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "build:web": "node tools/build-web.js",
+    "deploy:web": "node tools/build-web.js && npx wrangler pages deploy dist --project-name=cook-it"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",

@@ -57,6 +57,7 @@ import {
   removeItem as removeShopItem, clearChecked, groupByRecipe,
 } from '../services/shoppingList';
 import { BROWN, ORANGE, YELLOW, SAND, CREAM, NAVY, ERROR, PAGE_BG, INK, MUTED } from '../theme/webPalette';
+import { formatBuildStamp } from '../config/buildInfo';
 
 // Wide enough to use a modern monitor, capped so text lines don't become
 // unreadably long on an ultrawide. 1180 left ~370px of dead gutter each side at
@@ -1108,6 +1109,9 @@ export default function WebHome() {
         <Text style={styles.footerText}>
           Recipes stay on this device and sync to your own Google Drive.
         </Text>
+        {/* Nothing deploys this site automatically, and a browser will happily
+            serve a cached bundle, so the page states which build it is. */}
+        <Text style={styles.footerBuild}>Deployed {formatBuildStamp()}</Text>
       </View>
 
       </ScrollView>
@@ -1750,6 +1754,7 @@ const styles = StyleSheet.create({
   footerLinkHover: { backgroundColor: 'rgba(247,240,226,0.12)' },
   footerLinkText: { color: CREAM, fontSize: 14, fontWeight: '600' },
   footerText: { color: 'rgba(247,240,226,0.65)', fontSize: 13, textAlign: 'center' },
+  footerBuild: { color: 'rgba(247,240,226,0.38)', fontSize: 11, textAlign: 'center', marginTop: 6 },
 
   // buttons
   btn: {
