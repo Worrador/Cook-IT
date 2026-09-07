@@ -787,8 +787,8 @@ export default function WebHome() {
     // to the top to reach search, the cart or the Drive state is a nuisance.
     <View style={styles.root}>
       {/* --- nav ------------------------------------------------------- */}
-      <View style={styles.nav}>
-        <View style={[styles.navInner, { maxWidth: CONTENT_MAX }]}>
+      <View style={[styles.nav, narrow && styles.navPad]}>
+        <View style={[styles.navInner, { maxWidth: CONTENT_MAX }, narrow && styles.navInnerNarrow]}>
           {/* Three zones: identity left, navigation centre, account state
               right. Previously everything but the logo was crammed on the right,
               so the unit switch and the Drive chip - which are settings, not
@@ -1538,16 +1538,21 @@ const styles = StyleSheet.create({
     ...Platform.select({ web: { boxShadow: '0 2px 12px rgba(0,0,0,0.18)' }, default: {} }),
   },
   navInner: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  // Keeps the zones off each other once they size to their content.
+  navInnerNarrow: { gap: 10 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   brandName: { color: CREAM, fontSize: 24, fontWeight: '800', letterSpacing: 0.4 },
   brandNameNarrow: { fontSize: 18, letterSpacing: 0.2 },
   navLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 0 },
-  // A zone wider than its share overflows and paints over the next one, so
-  // the phone layout keeps them tight and lets them shrink.
-  navZoneNarrow: { gap: 7, flexShrink: 1 },
+  // The zones carry flex: 1 from the desktop bar, which splits it into equal
+  // thirds - and a third of a phone is narrower than the wordmark and the Drive
+  // chip together, so the zone overflows into the icons beside it. Sized to
+  // their content here, with only shrinking allowed.
+  navZoneNarrow: { flexGrow: 0, flexShrink: 1, flexBasis: 'auto', gap: 7 },
+  navPad: { paddingHorizontal: 16 },
   navDivider: { width: 1, height: 26, backgroundColor: 'rgba(247,240,226,0.22)' },
   navCenter: {
-    flexDirection: 'row', alignItems: 'center', gap: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 0,
     // A quiet inset panel: enough to bind the three together, not enough to
     // compete with the Drive chip, which is the one thing here with state.
     backgroundColor: 'rgba(0,0,0,0.22)', borderRadius: 999, padding: 3,
