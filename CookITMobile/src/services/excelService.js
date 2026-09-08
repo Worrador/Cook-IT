@@ -348,6 +348,21 @@ class ExcelService {
   }
 
   /**
+   * The shopping list, tombstones included, as it stands on this device.
+   * Exposed as methods so syncService can reach it through the excelProcessor it
+   * is given rather than importing storage itself - it is deliberately free of
+   * React Native dependencies.
+   */
+  async getShoppingEntries() {
+    return getShoppingEntries();
+  }
+
+  /** Merge a remote list into the stored one. Returns every entry, tombstones included. */
+  async mergeShoppingList(remoteItems) {
+    return mergeShoppingList(remoteItems);
+  }
+
+  /**
    * Read-only parse of the local Excel file. Returns the parsed contents
    * WITHOUT writing anything to AsyncStorage. Safe to call purely to inspect
    * remote data for merge analysis (see syncService.performExcelSync and

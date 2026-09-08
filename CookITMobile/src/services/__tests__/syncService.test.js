@@ -1058,3 +1058,153 @@ describe('SyncService Integration Tests', () => {
     });
   });
 });
+
+// The shopping list travels in the same workbook as the recipes but is not part
+// of the recipe merge - it is keyed by item id with last-write-wins. The first
+// attempt at sharing it wrote and read the sheet correctly and still synced
+// nothing, because performExcelSync computes needsUpload purely from recipes,
+// cooked dates and pins: a sync where only the list had changed decided there
+// was nothing to push. These tests pin the fold that fixes that.
+describe('SyncService shopping list', () => {
+  const item = (id, extra = {}) => ({
+    id,
+    text: 'eggs',
+    recipe: 'Carbonara',
+    checked: false,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...extra,
+  });
+
+  /** An excelProcessor that merges by taking whichever side it is told to. */
+  const processorWith = (before, merged) => ({
+    getShoppingEntries: jest.fn().mockResolvedValue(before),
+    mergeShoppingList: jest.fn().mockResolvedValue(merged),
+  });
+
+  let service;
+
+  beforeEach(() => {
+    service = new SyncService({});
+  });
+
+  test('reports no change when both sides already agree', async () => {
+    const list = [item('a')];
+    service.excelProcessor = processorWith(list, list);
+
+    expect(await service.mergeShoppingList(list)).toEqual({
+      changedLocally: false,
+      changedRemotely: false,
+    });
+  });
+
+  test('an item only this device has must be uploaded', async () => {
+    const local = [item('a')];
+    service.excelProcessor = processorWith(local, local);
+
+    const { changedLocally, changedRemotely } = await service.mergeShoppingList([]);
+
+    expect(changedLocally).toBe(false);
+    expect(changedRemotely).toBe(true);
+  });
+
+  test('an item only the other device has must be saved locally', async () => {
+    const remote = [item('b')];
+    service.excelProcessor = processorWith([], remote);
+
+    const { changedLocally, changedRemotely } = await service.mergeShoppingList(remote);
+
+    expect(changedLocally).toBe(true);
+    expect(changedRemotely).toBe(false);
+  });
+
+  test('a crossed-off item counts as a change on both sides', async () => {
+    const before = [item('a')];
+    const merged = [item('a', { deleted: true, updatedAt: '2026-02-01T00:00:00.000Z' })];
+    service.excelProcessor = processorWith(before, merged);
+
+    expect(await service.mergeShoppingList(before)).toEqual({
+      changedLocally: true,
+      changedRemotely: true,
+    });
+  });
+
+  test('order is not a change - the same items in a different order agree', async () => {
+    const before = [item('a'), item('b')];
+    const merged = [item('b'), item('a')];
+    service.excelProcessor = processorWith(before, merged);
+
+    expect(await service.mergeShoppingList(merged)).toEqual({
+      changedLocally: false,
+      changedRemotely: false,
+    });
+  });
+
+  test('a processor that cannot merge lists reports no change instead of failing the sync', async () => {
+    service.excelProcessor = new MockExcelProcessor({ mockData: {} });
+
+    expect(await service.mergeShoppingList([item('a')])).toEqual({
+      changedLocally: false,
+      changedRemotely: false,
+    });
+  });
+
+  test('a merge that throws does not take the rest of the sync down with it', async () => {
+    service.excelProcessor = {
+      getShoppingEntries: jest.fn().mockResolvedValue([]),
+      mergeShoppingList: jest.fn().mockRejectedValue(new Error('storage gone')),
+    };
+
+    expect(await service.mergeShoppingList([item('a')])).toEqual({
+      changedLocally: false,
+      changedRemotely: false,
+    });
+  });
+});
+
+// End to end through performExcelSync, because the unit tests above pass just as
+// happily when the fold is never wired into needsUpload - which is precisely how
+// the first version shipped: sheet written, sheet read, nothing uploaded.
+describe('SyncService uploads a shopping list nobody else has seen', () => {
+  test('a sync with identical recipes still pushes when only the list differs', async () => {
+    const mockStorage = new MockStorageProvider();
+    const mockDrive = new MockDriveClient();
+    const recipes = [{ name: 'Test Recipe', url: 'http://example.com/test', comment: '' }];
+
+    const mockExcel = new MockExcelProcessor({
+      mockData: { recipes, lastCookedDates: {}, pinnedRecipes: [] },
+    });
+    await mockStorage.saveRecipes(recipes);
+    mockDrive.setAuthenticationState(true);
+    mockExcel.setConflicts([]);
+
+    // Remote workbook already exists, so this is a merge rather than a first push.
+    mockDrive.getDriveFileId = jest.fn().mockResolvedValue('file-1');
+    mockDrive.getFileInfo = jest.fn().mockResolvedValue({ modifiedTime: new Date(0).toISOString() });
+    mockExcel.parseExcelFile = jest.fn().mockResolvedValue({
+      recipes, lastCookedDates: {}, pinnedRecipes: [], cookHistory: [], shoppingList: [],
+    });
+
+    // One item this device has and the remote copy does not.
+    const localOnly = [{
+      id: 'a', text: 'eggs', recipe: 'Carbonara', checked: false,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }];
+    mockExcel.getShoppingEntries = jest.fn().mockResolvedValue(localOnly);
+    mockExcel.mergeShoppingList = jest.fn().mockResolvedValue(localOnly);
+    mockExcel.uploadToDrive = jest.fn().mockResolvedValue(true);
+    mockExcel.createLocalExcelFile = jest.fn().mockResolvedValue(true);
+
+    const service = new SyncService({
+      storageProvider: mockStorage,
+      driveClient: mockDrive,
+      excelProcessor: mockExcel,
+    });
+
+    const result = await service.performExcelSync();
+
+    expect(result.success).toBe(true);
+    // The recipes match on both sides, so nothing but the list justifies this.
+    expect(mockExcel.createLocalExcelFile).toHaveBeenCalled();
+    expect(mockExcel.uploadToDrive).toHaveBeenCalled();
+  });
+});

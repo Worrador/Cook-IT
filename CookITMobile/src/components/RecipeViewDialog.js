@@ -389,11 +389,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     padding: 14, gap: 10,
   },
+  // Wraps because five controls do not fit across a phone-width dialog. Without
+  // it the row overflowed the sheet and the primary action was clipped off the
+  // right edge by the sheet's own overflow: hidden.
   footRow: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: 12, flexWrap: 'wrap',
   },
   footLeft: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  footRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  footRight: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
+    gap: 8, flexGrow: 1, flexShrink: 1, flexWrap: 'wrap',
+  },
   miniBtn: { padding: 9, borderRadius: 8 },
   ghostBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

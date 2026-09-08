@@ -341,16 +341,26 @@ class SyncService {
         remoteModified
       );
 
+      // The shopping list rides in the same workbook but is not part of the
+      // recipe merge: it is keyed by item id with last-write-wins, so it is
+      // merged on its own and folded into the flags below. Without that fold a
+      // sync where only the list changed would compute needsUpload = false and
+      // never push it.
+      const shopping = await this.mergeShoppingList(remoteData.shoppingList);
+
       // hasChanges/needsUpload reflect whether the merged data actually differs from
       // each side - not which merge branch fired. Without this, every sync (including
       // true no-ops) would re-save locally and re-upload to Drive.
-      const { hasChanges, needsUpload } = this.computeSyncFlags(
+      const flags = this.computeSyncFlags(
         { recipes: mergeResult.recipes, lastCookedDates: mergeResult.lastCookedDates, pinnedRecipes: mergeResult.pinnedRecipes },
         { recipes: localRecipes, lastCookedDates: localLastCookedDates, pinnedRecipes: localPinnedRecipes },
         { recipes: remoteData.recipes, lastCookedDates: remoteData.lastCookedDates, pinnedRecipes: remoteData.pinnedRecipes }
       );
 
-      if (hasChanges) {
+      const hasChanges = flags.hasChanges || shopping.changedLocally;
+      const needsUpload = flags.needsUpload || shopping.changedRemotely;
+
+      if (flags.hasChanges) {
         onProgress(0.8, 'Saving merged data...');
         // Save the merged data (skip modification time update during merge decision)
         await this.storageProvider.saveRecipes(mergeResult.recipes, true);
@@ -759,6 +769,53 @@ class SyncService {
   // Compares the merged dataset against each original side to determine what actually
   // needs to happen: hasChanges drives saving locally / reloading the UI, needsUpload
   // drives re-uploading to Drive. Each dataset is { recipes, lastCookedDates, pinnedRecipes }.
+  /**
+   * Canonical form of a shopping list, for comparing two of them. Order is not
+   * meaningful and tombstones count, so it sorts by id and keeps the fields the
+   * merge can actually change.
+   */
+  canonicalizeShoppingList(items) {
+    return JSON.stringify(
+      (items || [])
+        .filter(item => item?.id)
+        .map(item => [item.id, item.text, !!item.checked, !!item.deleted, item.updatedAt || ''])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+    );
+  }
+
+  /**
+   * Merge the remote shopping list into this device's copy and report whether
+   * the result differs from either side - which is what decides saving and
+   * uploading. Persisting happens inside the merge, so a caller that skips the
+   * upload still keeps the merged list.
+   *
+   * A processor without these methods (an older mock, or a build predating the
+   * shared list) reports no change rather than failing the whole sync.
+   */
+  async mergeShoppingList(remoteList) {
+    const unchanged = { changedLocally: false, changedRemotely: false };
+    if (typeof this.excelProcessor?.mergeShoppingList !== 'function'
+      || typeof this.excelProcessor?.getShoppingEntries !== 'function') {
+      return unchanged;
+    }
+
+    try {
+      const before = await this.excelProcessor.getShoppingEntries();
+      const merged = await this.excelProcessor.mergeShoppingList(remoteList || []);
+
+      const mergedCanon = this.canonicalizeShoppingList(merged);
+      return {
+        changedLocally: mergedCanon !== this.canonicalizeShoppingList(before),
+        changedRemotely: mergedCanon !== this.canonicalizeShoppingList(remoteList),
+      };
+    } catch (error) {
+      // The list is the least important thing in the workbook; failing to merge
+      // it should not take the recipes down with it.
+      console.warn('Shopping list merge failed, continuing with the rest of the sync', error);
+      return unchanged;
+    }
+  }
+
   computeSyncFlags(merged, local, drive) {
     const mergedCanon = this.canonicalizeSyncData(merged.recipes, merged.lastCookedDates, merged.pinnedRecipes);
     const localCanon = this.canonicalizeSyncData(local.recipes, local.lastCookedDates, local.pinnedRecipes);
