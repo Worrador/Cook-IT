@@ -104,7 +104,13 @@ class GoogleDriveService {
       // hasPreviousSignIn() replaces isSignedIn(), which was removed in v13 of
       // @react-native-google-signin/google-signin. It is synchronous, unlike the
       // promise-returning call it replaces.
-      if (GoogleSignin.hasPreviousSignIn()) {
+      //
+      // Only when the stored token has actually run out. Tokens are good for ~55
+      // minutes and survive a page reload in storage, so renewing on every boot
+      // spends a request to replace something that already works - and on web
+      // that request runs with no user gesture behind it, which is exactly the
+      // case most likely to be refused.
+      if (GoogleSignin.hasPreviousSignIn() && (!this.accessToken || this.isTokenExpired())) {
         await this.refreshAccessToken();
       }
 
@@ -324,6 +330,15 @@ class GoogleDriveService {
       }
       return false;
     } catch (error) {
+      // A failed silent renewal does not mean the grant is gone. On web the
+      // token is requested from Google Identity Services during page load, with
+      // no user gesture behind it, so a popup blocker or a shields setting is
+      // enough to reject it. Clearing on that turned a blocked popup into a
+      // sign-out, and took a token that still had time left with it.
+      if (this.accessToken && !this.isTokenExpired()) {
+        console.warn('Silent token refresh failed; keeping the stored token until it expires', error);
+        return this.isAuthenticated();
+      }
       console.warn('Silent token refresh failed, clearing tokens', error);
       await this.clearTokens();
       return false;

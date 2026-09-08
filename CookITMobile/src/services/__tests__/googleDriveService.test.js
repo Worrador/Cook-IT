@@ -238,3 +238,79 @@ describe('setDriveFileId', () => {
     expect(googleDriveService.driveFileId).toBeNull();
   });
 });
+
+// Reloading the page must not sign the user out.
+//
+// A stored token is good for ~55 minutes and survives a reload, but boot used to
+// renew unconditionally and clear everything if that renewal failed. On web the
+// renewal is asked of Google Identity Services during page load, with no user
+// gesture behind it - precisely the request a popup blocker refuses - so a
+// working session was being thrown away by something that says nothing about
+// whether the grant is still valid.
+describe('surviving a page reload', () => {
+  const storedSession = (expiry) => {
+    AsyncStorage.getItem.mockImplementation(async (key) => {
+      if (key === '@cookit_access_token') return 'stored-token';
+      if (key === '@cookit_token_expiry') return expiry;
+      if (key === '@cookit_granted_scopes') return JSON.stringify(SCOPES_WITH_DRIVE);
+      return null;
+    });
+  };
+
+  // Built from `new Date()`, not `Date.now()`: setup.js freezes only Date.now(),
+  // and isTokenExpired() compares against `new Date()` - the real clock. Mixing
+  // the two makes an expiry an hour into the fake past look years expired.
+  const inAnHour = () => new Date(new Date().getTime() + 60 * 60 * 1000).toISOString();
+  const anHourAgo = () => new Date(new Date().getTime() - 60 * 60 * 1000).toISOString();
+
+  beforeEach(() => {
+    googleDriveService.isInitialized = false;
+    GoogleSignin.hasPreviousSignIn.mockReturnValue(true);
+    mockTokenInfo(SCOPES_WITH_DRIVE);
+  });
+
+  test('a still-valid stored token is used as-is, without asking for a new one', async () => {
+    storedSession(inAnHour());
+
+    await googleDriveService.initialize();
+
+    expect(GoogleSignin.getTokens).not.toHaveBeenCalled();
+    expect(googleDriveService.isAuthenticated()).toBe(true);
+  });
+
+  test('a blocked silent renewal does not discard a token that still has time left', async () => {
+    storedSession(inAnHour());
+    // Force the renewal path, then have it fail the way a blocked popup does.
+    googleDriveService.isInitialized = false;
+    GoogleSignin.getTokens.mockRejectedValue(new Error('Popup window closed'));
+    GoogleSignin.signInSilently.mockRejectedValue(new Error('Popup window closed'));
+
+    await googleDriveService.initialize();
+    const kept = await googleDriveService.refreshAccessToken();
+
+    expect(kept).toBe(true);
+    expect(googleDriveService.accessToken).toBe('stored-token');
+    expect(AsyncStorage.removeItem).not.toHaveBeenCalledWith('@cookit_access_token');
+  });
+
+  test('an expired token that cannot be renewed is cleared, so the UI stops claiming a connection', async () => {
+    storedSession(anHourAgo());
+    GoogleSignin.getTokens.mockRejectedValue(new Error('No live session'));
+    GoogleSignin.signInSilently.mockRejectedValue(new Error('No live session'));
+
+    await googleDriveService.initialize();
+
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith('@cookit_access_token');
+    expect(googleDriveService.isAuthenticated()).toBe(false);
+  });
+
+  test('an expired token is renewed on boot', async () => {
+    storedSession(anHourAgo());
+    GoogleSignin.getTokens.mockResolvedValue({ accessToken: 'fresh-token' });
+
+    await googleDriveService.initialize();
+
+    expect(GoogleSignin.getTokens).toHaveBeenCalled();
+    expect(googleDriveService.accessToken).toBe('fresh-token');
+  });
+});
