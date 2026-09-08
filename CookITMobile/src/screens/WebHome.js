@@ -388,13 +388,17 @@ export default function WebHome() {
   const [advice, setAdvice] = useState({ loading: false, data: null, error: '' });
 
   const refresh = useCallback(async () => {
-    const [list, pins, counts, dates] = await Promise.all([
+    const [list, pins, counts, dates, shopping] = await Promise.all([
       loadRecipes(), getPinnedRecipes(), getCookCounts(), getLastCookedDates(),
+      // Included because a Drive sync merges the shopping list too, and the
+      // cart would otherwise keep showing this device's pre-sync copy.
+      getShoppingList(),
     ]);
     setRecipes(list);
     setPinned(pins);
     setCookCounts(counts);
     setLastCooked(dates);
+    setShopItems(shopping);
   }, []);
 
   useEffect(() => {

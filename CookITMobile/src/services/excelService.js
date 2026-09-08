@@ -15,6 +15,7 @@ import {
 // web OPFS-backed implementation) - shared with recipeImageService.js, see
 // crossPlatformFileSystem.js for why web needs its own branch.
 import fileSystem from './crossPlatformFileSystem';
+import { getAllEntries as getShoppingEntries, mergeShoppingList } from './shoppingList';
 
 // Excel caps a cell at 32,767 characters. A parsed recipe is typically 1-4 KB,
 // so this only trips on something pathological - and a truncated JSON string is
@@ -305,6 +306,25 @@ class ExcelService {
       );
       XLSX.utils.book_append_sheet(workbook, historySheet, 'Cook History');
 
+      // Shopping list. Another MOBILE/WEB-ONLY sheet, with the same caveat as
+      // Cook History: a desktop save drops it, and it is rebuilt from local data
+      // on the next upload from here.
+      //
+      // Tombstones are written out too. They are how a crossed-off item stays
+      // crossed off - without them the next merge would find the row still
+      // present in the other device's copy and put it back.
+      const shoppingSheet = XLSX.utils.json_to_sheet(
+        (await getShoppingEntries()).map(item => ({
+          'Id': item.id,
+          'Item': item.text,
+          'Recipe': item.recipe,
+          'Checked': item.checked ? 'Yes' : 'No',
+          'Updated At': item.updatedAt,
+          'Deleted': item.deleted ? 'Yes' : 'No',
+        }))
+      );
+      XLSX.utils.book_append_sheet(workbook, shoppingSheet, 'Shopping List');
+
       // Write workbook directly to a base64 string
       const excelBase64 = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
 
@@ -377,6 +397,22 @@ class ExcelService {
           name: row['Recipe Name'],
           date: new Date(row['Cooked At']).toISOString(),
           ...(String(row['Approx']).toLowerCase() === 'yes' ? { backfilled: true } : {}),
+        }));
+
+      // Absent for files written before this sheet existed, or by the desktop
+      // app - treated as "no remote list", never as an error.
+      const shoppingSheet = workbook.Sheets['Shopping List'];
+      const shoppingList = (shoppingSheet ? XLSX.utils.sheet_to_json(shoppingSheet) : [])
+        .filter(row => row['Id'] && row['Item'])
+        .map(row => ({
+          id: String(row['Id']),
+          text: String(row['Item']),
+          recipe: row['Recipe'] ? String(row['Recipe']) : '',
+          checked: String(row['Checked']).toLowerCase() === 'yes',
+          updatedAt: row['Updated At']
+            ? new Date(row['Updated At']).toISOString()
+            : new Date(0).toISOString(),
+          ...(String(row['Deleted']).toLowerCase() === 'yes' ? { deleted: true } : {}),
         }));
 
       // Look up existing local recipes so we can preserve their timestamps.
@@ -453,7 +489,7 @@ class ExcelService {
       const dedupedPinnedRecipes = [...new Set(pinnedRecipes)];
 
       console.log(`Parsed ${recipes.length} recipes from Excel`);
-      return { recipes, lastCookedDates, pinnedRecipes: dedupedPinnedRecipes, cookHistory };
+      return { recipes, lastCookedDates, pinnedRecipes: dedupedPinnedRecipes, cookHistory, shoppingList };
     } catch (error) {
       console.error('Error parsing Excel file:', error);
       throw error;
@@ -469,7 +505,7 @@ class ExcelService {
    */
   async importFromExcel() {
     try {
-      const { recipes, lastCookedDates, pinnedRecipes, cookHistory } = await this.parseExcelFile();
+      const { recipes, lastCookedDates, pinnedRecipes, cookHistory, shoppingList } = await this.parseExcelFile();
 
       // Save imported data (skip modification time update since this is import, not user action)
       await saveRecipes(recipes, true);
@@ -485,8 +521,15 @@ class ExcelService {
       // adopting the remote wholesale would delete them.
       const mergedHistory = await mergeCookHistory(cookHistory);
 
+      // Merged for the same reason, by item rather than wholesale: this device
+      // may have added or crossed off things the remote copy has not seen.
+      const mergedShopping = await mergeShoppingList(shoppingList);
+
       console.log(`Imported ${recipes.length} recipes from Excel`);
-      return { recipes, lastCookedDates, pinnedRecipes, cookHistory: mergedHistory };
+      return {
+        recipes, lastCookedDates, pinnedRecipes,
+        cookHistory: mergedHistory, shoppingList: mergedShopping,
+      };
     } catch (error) {
       console.error('Error importing from Excel:', error);
       throw error;
@@ -675,6 +718,11 @@ class ExcelService {
       // Merge pinned recipes (union)
       const mergedPinnedRecipes = [...new Set([...localPinnedRecipes, ...remoteData.pinnedRecipes])];
 
+      // Merged per item, last write wins - see mergeShoppingLists. Written
+      // before createLocalExcelFile below, which reads it back out to build the
+      // sheet that gets uploaded.
+      const mergedShopping = await mergeShoppingList(remoteData.shoppingList);
+
       // Save merged data
       await saveRecipes(mergedRecipes);
       await setLastCookedDates(mergedLastCookedDates);
@@ -689,7 +737,12 @@ class ExcelService {
       await this.uploadToDrive();
 
       console.log(`🎯 Merge completed: ${mergedRecipes.length} recipes in final result`);
-      return { recipes: mergedRecipes, lastCookedDates: mergedLastCookedDates, pinnedRecipes: mergedPinnedRecipes };
+      return {
+        recipes: mergedRecipes,
+        lastCookedDates: mergedLastCookedDates,
+        pinnedRecipes: mergedPinnedRecipes,
+        shoppingList: mergedShopping,
+      };
     } catch (error) {
       console.error('Error merging data:', error);
       throw error;

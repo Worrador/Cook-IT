@@ -464,7 +464,8 @@ describe('parseExcelFile vs importFromExcel side effects (Fix 6)', () => {
       recipes: expect.any(Array),
       cookHistory: expect.any(Array),
       lastCookedDates: expect.any(Object),
-      pinnedRecipes: expect.any(Array)
+      pinnedRecipes: expect.any(Array),
+      shoppingList: expect.any(Array)
     });
     expect(saveRecipes).not.toHaveBeenCalled();
     expect(setLastCookedDates).not.toHaveBeenCalled();
