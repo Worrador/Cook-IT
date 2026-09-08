@@ -1,4 +1,4 @@
-import { SyncService } from '../syncService';
+import { SyncService, ExcelProcessorAdapter } from '../syncService';
 import {
   MockStorageProvider,
   MockDriveClient,
@@ -1206,5 +1206,37 @@ describe('SyncService uploads a shopping list nobody else has seen', () => {
     // The recipes match on both sides, so nothing but the list justifies this.
     expect(mockExcel.createLocalExcelFile).toHaveBeenCalled();
     expect(mockExcel.uploadToDrive).toHaveBeenCalled();
+  });
+});
+
+// syncService reaches the real excelService through ExcelProcessorAdapter, which
+// forwards a fixed list of methods. Adding a method to excelService and not to
+// the adapter makes it invisible to the sync - which is exactly what happened to
+// the shopping list: merged correctly in isolation, never called in production.
+describe('ExcelProcessorAdapter forwards what the sync needs', () => {
+  const excelServiceDouble = () => ({
+    getShoppingEntries: jest.fn().mockResolvedValue([{ id: 'a' }]),
+    mergeShoppingList: jest.fn().mockResolvedValue([{ id: 'a' }, { id: 'b' }]),
+  });
+
+  test('the methods the shopping merge looks for are present on the adapter', () => {
+    const adapter = new ExcelProcessorAdapter(excelServiceDouble());
+    expect(typeof adapter.getShoppingEntries).toBe('function');
+    expect(typeof adapter.mergeShoppingList).toBe('function');
+  });
+
+  test('a sync driven through the adapter actually reaches excelService', async () => {
+    const excel = excelServiceDouble();
+    const service = new SyncService({ excelProcessor: new ExcelProcessorAdapter(excel) });
+
+    const result = await service.mergeShoppingList([{ id: 'a' }]);
+
+    expect(excel.mergeShoppingList).toHaveBeenCalledWith([{ id: 'a' }]);
+    expect(result.changedLocally).toBe(true);
+  });
+
+  test('an excelService too old to know about lists reports an empty one rather than throwing', async () => {
+    const adapter = new ExcelProcessorAdapter({});
+    await expect(adapter.getShoppingEntries()).resolves.toEqual([]);
   });
 });

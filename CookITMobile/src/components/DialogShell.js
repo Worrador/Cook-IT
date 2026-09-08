@@ -69,8 +69,11 @@ const styles = StyleSheet.create({
   // flexShrink lets a long body scroll inside maxHeight instead of pushing the
   // footer off-screen - the bug that made the Help dialog unscrollable.
   body: { flexShrink: 1 },
+  // Wraps because a dialog can carry three or more actions, which is wider than
+  // a phone-width sheet - and the sheet's overflow: hidden clips whatever spills
+  // rather than letting it scroll into view.
   foot: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
-    gap: 10, padding: 16,
+    gap: 10, padding: 16, flexWrap: 'wrap',
   },
 });

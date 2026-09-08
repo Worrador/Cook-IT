@@ -796,6 +796,10 @@ class SyncService {
     const unchanged = { changedLocally: false, changedRemotely: false };
     if (typeof this.excelProcessor?.mergeShoppingList !== 'function'
       || typeof this.excelProcessor?.getShoppingEntries !== 'function') {
+      // Said out loud. A silent "no change" here is indistinguishable from a
+      // list that genuinely matches, which is how a processor missing these
+      // methods went unnoticed while the list quietly never synced.
+      console.warn('Excel processor cannot merge shopping lists - the list will not sync');
       return unchanged;
     }
 
@@ -1606,7 +1610,7 @@ class StorageProviderAdapter {
   }
 }
 
-class ExcelProcessorAdapter {
+export class ExcelProcessorAdapter {
   constructor(excelService) {
     this.excelService = excelService;
   }
@@ -1648,6 +1652,23 @@ class ExcelProcessorAdapter {
       return this.excelService.parseExcelFile();
     }
     return this.importFromExcel();
+  }
+
+  // The shopping list. Forwarded explicitly, like everything else here: this
+  // adapter exposes a fixed set of methods, so a method added to excelService
+  // and not added here simply does not exist as far as the sync is concerned.
+  async getShoppingEntries() {
+    if (!this.excelService || typeof this.excelService.getShoppingEntries !== 'function') {
+      return [];
+    }
+    return this.excelService.getShoppingEntries();
+  }
+
+  async mergeShoppingList(remoteItems) {
+    if (!this.excelService || typeof this.excelService.mergeShoppingList !== 'function') {
+      throw new Error('Excel service mergeShoppingList method not available');
+    }
+    return this.excelService.mergeShoppingList(remoteItems);
   }
 
   getLocalFilePath() {

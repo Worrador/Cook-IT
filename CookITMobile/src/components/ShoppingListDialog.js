@@ -8,15 +8,21 @@ import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import DialogShell from './DialogShell';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
-  getShoppingList, toggleItem, removeItem, clearChecked, groupByRecipe,
+  getShoppingList, toggleItem, removeItem, clearChecked, clearAll, groupByRecipe,
 } from '../services/shoppingList';
-import { BROWN, ORANGE, CREAM, PAGE_BG, INK, MUTED } from '../theme/webPalette';
+import { BROWN, ORANGE, CREAM, PAGE_BG, INK, MUTED, ERROR } from '../theme/webPalette';
 
 export default function ShoppingListDialog({ visible, onClose }) {
   const [items, setItems] = useState([]);
+  // Emptying the list cannot be undone, and on a shared list it empties it for
+  // the other person too, so the button asks once before doing it.
+  const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
-    if (visible) getShoppingList().then(setItems);
+    if (visible) {
+      getShoppingList().then(setItems);
+      setConfirmClear(false);
+    }
   }, [visible]);
 
   const groups = groupByRecipe(items);
@@ -30,8 +36,25 @@ export default function ShoppingListDialog({ visible, onClose }) {
       icon="cart-outline"
       footer={
         <>
+          {items.length ? (
+            <Pressable
+              onPress={async () => {
+                if (!confirmClear) { setConfirmClear(true); return; }
+                setItems(await clearAll());
+                setConfirmClear(false);
+              }}
+              style={[styles.ghostBtn, confirmClear && styles.dangerBtn]}
+            >
+              <Text style={[styles.ghostBtnText, confirmClear && styles.dangerBtnText]}>
+                {confirmClear ? 'Clear everything?' : 'Clear all'}
+              </Text>
+            </Pressable>
+          ) : null}
           {hasChecked ? (
-            <Pressable onPress={async () => setItems(await clearChecked())} style={styles.ghostBtn}>
+            <Pressable
+              onPress={async () => { setConfirmClear(false); setItems(await clearChecked()); }}
+              style={styles.ghostBtn}
+            >
               <Text style={styles.ghostBtnText}>Clear ticked</Text>
             </Pressable>
           ) : null}
@@ -123,6 +146,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(90,66,48,0.25)',
   },
   ghostBtnText: { color: BROWN, fontSize: 14, fontWeight: '700' },
+  dangerBtn: { borderColor: ERROR, backgroundColor: 'rgba(199,58,58,0.08)' },
+  dangerBtnText: { color: ERROR },
   primaryBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 7,
     backgroundColor: ORANGE, paddingVertical: 11, paddingHorizontal: 18, borderRadius: 9,
